@@ -657,6 +657,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         'path': 'assets/images/test_receipt_r1.png',
         'description': 'Real-world receipt format (R1)',
       },
+      {
+        'name': 'Test Receipt R2',
+        'path': 'assets/images/test_receipt_r2.png',
+        'description': 'Real-world receipt format (R2)',
+      },
     ];
 
     if (!mounted) return;

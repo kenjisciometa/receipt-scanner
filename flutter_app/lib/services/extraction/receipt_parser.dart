@@ -1064,296 +1064,61 @@ class ReceiptParser {
   }
 
   /// Extract amounts line by line (adds VAT-specific support + better selection)
-  /// Now with multi-candidate support and consistency checking
+  /// Now with unified candidate collection (table + line-based) and consistency checking
   Map<String, double> _extractAmountsLineByLine(
     List<String> lines,
     String? language,
     List<String> appliedPatterns, {
     List<TextLine>? textLines,
   }) {
-    final amounts = <String, double>{};
-    logger.d('Starting line-by-line amount extraction with consistency checking');
-
-    // Check for table format (Tax Breakdown table) - structure-based, language-independent
-    final tableAmounts = _extractAmountsFromTable(lines, appliedPatterns, textLines: textLines);
-    if (tableAmounts.isNotEmpty) {
-      logger.d('📊 Found table format, extracted amounts: $tableAmounts');
-      amounts.addAll(tableAmounts);
-      // Continue with regular extraction as fallback for any missing values
-    }
-
-    // Debug: Log pattern counts
-    logger.d('🔍 Pattern counts: subtotal=${RegexPatterns.subtotalPatterns.length}, tax=${RegexPatterns.taxPatterns.length}, total=${RegexPatterns.totalPatterns.length}');
-    if (RegexPatterns.subtotalPatterns.isNotEmpty) {
-      logger.d('🔍 First subtotal pattern: ${RegexPatterns.subtotalPatterns[0].pattern}');
-    }
-    if (RegexPatterns.taxPatterns.isNotEmpty) {
-      logger.d('🔍 First tax pattern: ${RegexPatterns.taxPatterns[0].pattern}');
-    }
-    if (RegexPatterns.totalPatterns.isNotEmpty) {
-      logger.d('🔍 First total pattern: ${RegexPatterns.totalPatterns[0].pattern}');
-    }
-
-    // Extra fallback patterns (template-friendly) - declared early for use in trySet
-    // Generated dynamically from LanguageKeywords for multi-language support
-    final totalLabel = PatternGenerator.generateLabelPattern('total');
-    final subtotalLabel = PatternGenerator.generateLabelPattern('subtotal');
-    final taxLabel = PatternGenerator.generateLabelPattern('tax');
-
-    // Track multiple candidates per field (for consistency checking)
-    final candidatesMap = <String, List<({double amount, int score, int lineIndex, String source})>>{
-      'total_amount': [],
-      'subtotal_amount': [],
-      'tax_amount': [],
-    };
-
-    void addCandidate(String key, double amount, int score, int i, String source) {
-      candidatesMap[key]!.add((amount: amount, score: score, lineIndex: i, source: source));
-    }
-
-    // Keep best candidate for backward compatibility (used in conversion)
-    final best = <String, ({double amount, int score, int lineIndex, String source})>{};
-
-    void trySet(String key, double amount, int score, int i, String source) {
-      // Add to candidates list (for consistency checking)
-      addCandidate(key, amount, score, i, source);
-      
-      // Also update best (for backward compatibility)
-      final current = best[key];
-      if (current == null) {
-        best[key] = (amount: amount, score: score, lineIndex: i, source: source);
-      } else if (score > current.score) {
-        // Higher score always wins
-        best[key] = (amount: amount, score: score, lineIndex: i, source: source);
-      } else if (score == current.score && key == 'total_amount') {
-        // For total_amount, if same score, prefer:
-        // 1. Explicit "TOTAL" label (not subtotal)
-        // 2. Later lines (usually total appears after subtotal)
-        // Support multiple languages: Generated dynamically from LanguageKeywords
-        final totalWordOnly = PatternGenerator.generateLabelPattern('total');
-        final isExplicitTotal = totalWordOnly.hasMatch(lines[i]) && 
-                                !subtotalLabel.hasMatch(lines[i].toLowerCase());
-        final currentIsExplicit = totalWordOnly.hasMatch(lines[current.lineIndex]) &&
-                                   !subtotalLabel.hasMatch(lines[current.lineIndex].toLowerCase());
-        
-        if (isExplicitTotal && !currentIsExplicit) {
-          // New candidate has explicit "TOTAL" and current doesn't
-          best[key] = (amount: amount, score: score, lineIndex: i, source: source);
-        } else if (i > current.lineIndex && isExplicitTotal == currentIsExplicit) {
-          // Both are equally explicit, prefer later lines (total usually appears after subtotal)
-          best[key] = (amount: amount, score: score, lineIndex: i, source: source);
-        }
-      }
-    }
-
-    final amountCapture = RegExp(
-      r'([€$£¥₹]?\s*[-]?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|[€$£¥₹]?\s*[-]?\d+(?:[.,]\d{2}))\b',
-      caseSensitive: false,
-    );
-
-    for (int i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final lower = line.toLowerCase();
-      logger.d('Analyzing line $i: "$line"');
-
-      // Check if line contains subtotal - exclude from total patterns
-      final isSubtotalLine = subtotalLabel.hasMatch(lower);
-
-      // 1) Project patterns first (strong signal)
-      // Only check total patterns if line is not a subtotal line
-      if (!isSubtotalLine) {
-        for (int p = 0; p < RegexPatterns.totalPatterns.length; p++) {
-          final match = RegexPatterns.totalPatterns[p].firstMatch(line);
-          if (match != null) {
-            // 金額は通常グループ2にマッチする（グループ1はキーワード）
-            final amountStr = match.groupCount >= 2 ? match.group(2) : match.group(match.groupCount);
-            final amount = amountStr == null ? null : _parseAmount(amountStr);
-            if (amount != null && amount > 0) {
-              trySet('total_amount', amount, 100, i, 'total_pattern_$p');
-              appliedPatterns.add('total_line_${i}_pattern_$p');
-              logger.d('✅ Candidate TOTAL: $amount (score 100) from line $i');
-            }
-          }
-        }
-      }
-
-      for (int p = 0; p < RegexPatterns.subtotalPatterns.length; p++) {
-        final pattern = RegexPatterns.subtotalPatterns[p];
-        final match = pattern.firstMatch(line);
-        if (match != null) {
-          logger.d('🔍 Subtotal pattern $p matched line $i: "$line"');
-          logger.d('🔍 Pattern: ${pattern.pattern}');
-          logger.d('🔍 Match groups: ${match.groupCount}, group(1): "${match.group(1)}", group(2): "${match.group(2)}"');
-          // 金額は通常グループ2にマッチする（グループ1はキーワード）
-          final amountStr = match.groupCount >= 2 ? match.group(2) : match.group(match.groupCount);
-          logger.d('🔍 Amount string: "$amountStr"');
-          final amount = amountStr == null ? null : _parseAmount(amountStr);
-          logger.d('🔍 Parsed amount: $amount');
-          if (amount != null && amount > 0) {
-            trySet('subtotal_amount', amount, 90, i, 'subtotal_pattern_$p');
-            appliedPatterns.add('subtotal_line_${i}_pattern_$p');
-            logger.d('✅ Candidate SUBTOTAL: $amount (score 90) from line $i');
-          } else {
-            logger.d('⚠️ Failed to parse amount or amount <= 0');
-          }
-        } else if (i == 11 && p == 0) {
-          // Debug: Log first pattern attempt on line 11 (usually subtotal line)
-          logger.d('🔍 Subtotal pattern $p did NOT match line $i: "$line"');
-          logger.d('🔍 Pattern: ${pattern.pattern}');
-        }
-      }
-
-      for (int p = 0; p < RegexPatterns.taxPatterns.length; p++) {
-        final match = RegexPatterns.taxPatterns[p].firstMatch(line);
-        if (match != null) {
-          // 金額は通常グループ2にマッチする（グループ1はキーワードまたはパーセンテージ）
-          final amountStr = match.groupCount >= 2 ? match.group(2) : match.group(match.groupCount);
-          final amount = amountStr == null ? null : _parseAmount(amountStr);
-          if (amount != null && amount > 0) {
-            trySet('tax_amount', amount, 80, i, 'tax_pattern_$p');
-            appliedPatterns.add('tax_line_${i}_pattern_$p');
-            logger.d('✅ Candidate TAX: $amount (score 80) from line $i');
-          }
-        }
-      }
-
-      // 2) VAT / TOTAL / SUBTOTAL heuristic (template receipts)
-      // Example:
-      // "Subtotal: €12.58"
-      // "VAT 24%: €3.02"
-      // "TOTAL: €15.60"
-      if (totalLabel.hasMatch(lower)) {
-        final m = amountCapture.allMatches(line).toList();
-        if (m.isNotEmpty) {
-          final amount = _parseAmount(m.last.group(0)!);
-          if (amount != null && amount > 0) {
-            // TOTAL usually appears near bottom -> add small bonus by position
-            final posBonus = (i > (lines.length * 0.6)) ? 10 : 0;
-            trySet('total_amount', amount, 85 + posBonus, i, 'total_label');
-            appliedPatterns.add('total_label_line_$i');
-            logger.d('✅ Candidate TOTAL(label): $amount (score ${85 + posBonus}) from line $i');
-          }
-        }
-      }
-
-      if (subtotalLabel.hasMatch(lower)) {
-        logger.d('🔍 Subtotal label matched in line $i: "$line"');
-        final m = amountCapture.allMatches(line).toList();
-        logger.d('🔍 Found ${m.length} amount matches in line $i');
-        if (m.isNotEmpty) {
-          final amount = _parseAmount(m.last.group(0)!);
-          logger.d('🔍 Parsed amount: $amount from "${m.last.group(0)}"');
-          if (amount != null && amount > 0) {
-            trySet('subtotal_amount', amount, 75, i, 'subtotal_label');
-            appliedPatterns.add('subtotal_label_line_$i');
-            logger.d('✅ Candidate SUBTOTAL(label): $amount (score 75) from line $i');
-          } else {
-            logger.d('⚠️ Failed to parse amount or amount <= 0');
-          }
-        } else {
-          logger.d('⚠️ No amount matches found in line with subtotal label');
-        }
-      }
-
-      if (taxLabel.hasMatch(lower)) {
-        final m = amountCapture.allMatches(line).toList();
-        if (m.isNotEmpty) {
-          final amount = _parseAmount(m.last.group(0)!);
-          if (amount != null && amount > 0) {
-            trySet('tax_amount', amount, 70, i, 'tax_label');
-            appliedPatterns.add('tax_label_line_$i');
-            logger.d('✅ Candidate TAX(label): $amount (score 70) from line $i');
-          }
-        }
-      }
-    }
-
-    // Convert candidates to FieldCandidates structure for consistency checking
-    // Sort by score (highest first) and take top candidates
-    final totalCandidates = _convertToAmountCandidates(
-      candidatesMap['total_amount']!,
-      'total_amount',
-      textLines,
-    );
-    final subtotalCandidates = _convertToAmountCandidates(
-      candidatesMap['subtotal_amount']!,
-      'subtotal_amount',
-      textLines,
-    );
-    final taxCandidates = _convertToAmountCandidates(
-      candidatesMap['tax_amount']!,
-      'tax_amount',
-      textLines,
-    );
-
-    // Apply position-based score bonuses
-    _applyPositionBonuses(totalCandidates, subtotalCandidates, taxCandidates, lines.length);
-
-    final allCandidates = <String, FieldCandidates>{
-      'total_amount': FieldCandidates(
-        fieldName: 'total_amount',
-        candidates: totalCandidates,
-      ),
-      'subtotal_amount': FieldCandidates(
-        fieldName: 'subtotal_amount',
-        candidates: subtotalCandidates,
-      ),
-      'tax_amount': FieldCandidates(
-        fieldName: 'tax_amount',
-        candidates: taxCandidates,
-      ),
-    };
-
-    // Apply consistency checking if we have at least 1 field
-    final fieldsWithCandidates = allCandidates.values.where((fc) => fc.candidates.isNotEmpty).length;
+    logger.d('Starting unified amount extraction with consistency checking');
     
-    if (fieldsWithCandidates >= 1) {
-      final consistencyResult = _selectBestCandidates(allCandidates);
+    // 1. すべての候補を統合収集（テーブル + 行ベース）
+    final allCandidates = _collectAllCandidates(
+      lines,
+      language,
+      appliedPatterns,
+      textLines: textLines,
+    );
+    
+    // 2. 整合性チェックで最適解を選択
+    final consistencyResult = _selectBestCandidates(allCandidates);
+    
+    // 3. 結果をマップに変換
+    final amounts = <String, double>{};
+    for (final entry in consistencyResult.selectedCandidates.entries) {
+      final fieldName = entry.key;
+      final candidate = entry.value;
       
-      // Use selected candidates
-      for (final entry in consistencyResult.selectedCandidates.entries) {
-        final fieldName = entry.key;
-        final candidate = entry.value;
-        
-        // Use corrected value if available
-        if (consistencyResult.correctedValues?.containsKey(fieldName) == true) {
-          amounts[fieldName] = consistencyResult.correctedValues![fieldName]!;
-          appliedPatterns.add('${fieldName}_corrected');
-          logger.d('✅ Using corrected value for $fieldName: ${amounts[fieldName]}');
-        } else {
-          amounts[fieldName] = candidate.amount;
-          appliedPatterns.add('${fieldName}_${candidate.source}');
-        }
-      }
-      
-      // Log warnings
-      if (consistencyResult.warnings.isNotEmpty) {
-        for (final warning in consistencyResult.warnings) {
-          logger.w('⚠️ Consistency warning: $warning');
-        }
-      }
-      
-      // Add needs_verification flag if needed
-      if (consistencyResult.needsVerification) {
-        appliedPatterns.add('needs_verification');
-        logger.w('⚠️ Receipt needs manual verification');
-      }
-      
-      logger.d('Consistency score: ${consistencyResult.consistencyScore.toStringAsFixed(2)}');
-    } else {
-      // Fallback to simple selection if not enough candidates
-      if (best['total_amount'] != null) {
-        amounts['total_amount'] = best['total_amount']!.amount;
-      }
-      if (best['subtotal_amount'] != null) {
-        amounts['subtotal_amount'] = best['subtotal_amount']!.amount;
-      }
-      if (best['tax_amount'] != null) {
-        amounts['tax_amount'] = best['tax_amount']!.amount;
+      // 修正された値があればそれを使用
+      if (consistencyResult.correctedValues?.containsKey(fieldName) == true) {
+        amounts[fieldName] = consistencyResult.correctedValues![fieldName]!;
+        appliedPatterns.add('${fieldName}_corrected');
+        logger.d('✅ Using corrected value for $fieldName: ${amounts[fieldName]}');
+      } else {
+        amounts[fieldName] = candidate.amount;
+        appliedPatterns.add('${fieldName}_${candidate.source}');
+        logger.d('✅ Selected $fieldName: ${candidate.amount} (source: ${candidate.source}, score: ${candidate.score})');
       }
     }
-
-    // If subtotal+tax exists but total missing, compute
+    
+    // 4. 警告をログに記録
+    if (consistencyResult.warnings.isNotEmpty) {
+      for (final warning in consistencyResult.warnings) {
+        logger.w('⚠️ Consistency warning: $warning');
+      }
+    }
+    
+    // 5. 要確認フラグをメタデータに追加
+    if (consistencyResult.needsVerification) {
+      appliedPatterns.add('needs_verification');
+      logger.w('⚠️ Receipt needs manual verification');
+    }
+    
+    logger.d('Unified extraction completed. Found amounts: $amounts');
+    logger.d('Consistency score: ${consistencyResult.consistencyScore.toStringAsFixed(2)}');
+    
+    // 6. フォールバック: 整合性チェックで選択されなかったフィールドがあれば計算
     if (!amounts.containsKey('total_amount') &&
         amounts.containsKey('subtotal_amount') &&
         amounts.containsKey('tax_amount')) {
@@ -1362,8 +1127,7 @@ class ReceiptParser {
       appliedPatterns.add('computed_total_from_subtotal_tax');
       logger.d('✅ Computed TOTAL from subtotal+tax: ${amounts['total_amount']}');
     }
-
-    logger.d('Line-by-line extraction completed. Found amounts: $amounts');
+    
     return amounts;
   }
 
@@ -1389,10 +1153,13 @@ class ReceiptParser {
     for (final pattern in paymentPatterns.skip(1)) {
       final match = pattern.firstMatch(text.toLowerCase());
       if (match != null) {
-        appliedPatterns.add('payment_pattern_${RegexPatterns.paymentMethodPatterns.indexOf(pattern)}');
-        return PaymentMethod.fromString(match.group(0)!);
+        final paymentMethod = match.groupCount >= 2 ? match.group(2) : match.group(1);
+        if (paymentMethod != null) {
+          return PaymentMethod.fromString(paymentMethod);
+        }
       }
     }
+
     return null;
   }
 
@@ -2430,6 +2197,289 @@ class ReceiptParser {
   }
 
   // ----------------------------
+  // Line-Based Candidate Collection (Phase 2)
+  // ----------------------------
+
+  /// 行ベースから候補を収集（既存ロジックの拡張）
+  Map<String, List<AmountCandidate>> _collectLineBasedCandidates(
+    List<String> lines,
+    String? language,
+    List<String> appliedPatterns, {
+    List<TextLine>? textLines,
+  }) {
+    final candidates = <String, List<AmountCandidate>>{
+      'total_amount': [],
+      'subtotal_amount': [],
+      'tax_amount': [],
+    };
+
+    // Extra fallback patterns (template-friendly) - declared early for use
+    // Generated dynamically from LanguageKeywords for multi-language support
+    final totalLabel = PatternGenerator.generateLabelPattern('total');
+    final subtotalLabel = PatternGenerator.generateLabelPattern('subtotal');
+    final taxLabel = PatternGenerator.generateLabelPattern('tax');
+
+    final amountCapture = RegExp(
+      r'([€$£¥₹]?\s*[-]?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|[€$£¥₹]?\s*[-]?\d+(?:[.,]\d{2}))\b',
+      caseSensitive: false,
+    );
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final lower = line.toLowerCase();
+
+      // Check if line contains subtotal - exclude from total patterns
+      final isSubtotalLine = subtotalLabel.hasMatch(lower);
+
+      // 1) Project patterns first (strong signal)
+      // Only check total patterns if line is not a subtotal line
+      if (!isSubtotalLine) {
+        for (int p = 0; p < RegexPatterns.totalPatterns.length; p++) {
+          final match = RegexPatterns.totalPatterns[p].firstMatch(line);
+          if (match != null) {
+            final amountStr = match.groupCount >= 2 ? match.group(2) : match.group(match.groupCount);
+            final amount = amountStr == null ? null : _parseAmount(amountStr);
+            if (amount != null && amount > 0) {
+              candidates['total_amount']!.add(AmountCandidate(
+                amount: amount,
+                score: 100,
+                lineIndex: i,
+                source: 'total_pattern_$p',
+                fieldName: 'total_amount',
+                boundingBox: textLines != null && i < textLines.length
+                    ? textLines[i].boundingBox
+                    : null,
+                confidence: textLines != null && i < textLines.length
+                    ? textLines[i].confidence
+                    : null,
+              ));
+            }
+          }
+        }
+      }
+
+      for (int p = 0; p < RegexPatterns.subtotalPatterns.length; p++) {
+        final pattern = RegexPatterns.subtotalPatterns[p];
+        final match = pattern.firstMatch(line);
+        if (match != null) {
+          final amountStr = match.groupCount >= 2 ? match.group(2) : match.group(match.groupCount);
+          final amount = amountStr == null ? null : _parseAmount(amountStr);
+          if (amount != null && amount > 0) {
+            candidates['subtotal_amount']!.add(AmountCandidate(
+              amount: amount,
+              score: 90,
+              lineIndex: i,
+              source: 'subtotal_pattern_$p',
+              fieldName: 'subtotal_amount',
+              boundingBox: textLines != null && i < textLines.length
+                  ? textLines[i].boundingBox
+                  : null,
+              confidence: textLines != null && i < textLines.length
+                  ? textLines[i].confidence
+                  : null,
+            ));
+          }
+        }
+      }
+
+      for (int p = 0; p < RegexPatterns.taxPatterns.length; p++) {
+        final match = RegexPatterns.taxPatterns[p].firstMatch(line);
+        if (match != null) {
+          final amountStr = match.groupCount >= 2 ? match.group(2) : match.group(match.groupCount);
+          final amount = amountStr == null ? null : _parseAmount(amountStr);
+          if (amount != null && amount > 0) {
+            candidates['tax_amount']!.add(AmountCandidate(
+              amount: amount,
+              score: 80,
+              lineIndex: i,
+              source: 'tax_pattern_$p',
+              fieldName: 'tax_amount',
+              boundingBox: textLines != null && i < textLines.length
+                  ? textLines[i].boundingBox
+                  : null,
+              confidence: textLines != null && i < textLines.length
+                  ? textLines[i].confidence
+                  : null,
+            ));
+          }
+        }
+      }
+
+      // 2) VAT / TOTAL / SUBTOTAL heuristic (template receipts)
+      if (totalLabel.hasMatch(lower)) {
+        final m = amountCapture.allMatches(line).toList();
+        if (m.isNotEmpty) {
+          final amount = _parseAmount(m.last.group(0)!);
+          if (amount != null && amount > 0) {
+            final posBonus = (i > (lines.length * 0.6)) ? 10 : 0;
+            candidates['total_amount']!.add(AmountCandidate(
+              amount: amount,
+              score: 85 + posBonus,
+              lineIndex: i,
+              source: 'total_label',
+              fieldName: 'total_amount',
+              boundingBox: textLines != null && i < textLines.length
+                  ? textLines[i].boundingBox
+                  : null,
+              confidence: textLines != null && i < textLines.length
+                  ? textLines[i].confidence
+                  : null,
+            ));
+          }
+        }
+      }
+
+      if (subtotalLabel.hasMatch(lower)) {
+        final m = amountCapture.allMatches(line).toList();
+        if (m.isNotEmpty) {
+          final amount = _parseAmount(m.last.group(0)!);
+          if (amount != null && amount > 0) {
+            candidates['subtotal_amount']!.add(AmountCandidate(
+              amount: amount,
+              score: 75,
+              lineIndex: i,
+              source: 'subtotal_label',
+              fieldName: 'subtotal_amount',
+              boundingBox: textLines != null && i < textLines.length
+                  ? textLines[i].boundingBox
+                  : null,
+              confidence: textLines != null && i < textLines.length
+                  ? textLines[i].confidence
+                  : null,
+            ));
+          }
+        }
+      }
+
+      if (taxLabel.hasMatch(lower)) {
+        final m = amountCapture.allMatches(line).toList();
+        if (m.isNotEmpty) {
+          final amount = _parseAmount(m.last.group(0)!);
+          if (amount != null && amount > 0) {
+            candidates['tax_amount']!.add(AmountCandidate(
+              amount: amount,
+              score: 70,
+              lineIndex: i,
+              source: 'tax_label',
+              fieldName: 'tax_amount',
+              boundingBox: textLines != null && i < textLines.length
+                  ? textLines[i].boundingBox
+                  : null,
+              confidence: textLines != null && i < textLines.length
+                  ? textLines[i].confidence
+                  : null,
+            ));
+          }
+        }
+      }
+    }
+
+    // 位置情報によるスコアボーナスを適用
+    _applyPositionBonuses(
+      candidates['total_amount']!,
+      candidates['subtotal_amount']!,
+      candidates['tax_amount']!,
+      lines.length,
+    );
+
+    return candidates;
+  }
+
+  // ----------------------------
+  // Unified Candidate Collection (Phase 3)
+  // ----------------------------
+
+  /// すべての候補を統合収集
+  Map<String, FieldCandidates> _collectAllCandidates(
+    List<String> lines,
+    String? language,
+    List<String> appliedPatterns, {
+    List<TextLine>? textLines,
+  }) {
+    // 1. テーブル候補を収集
+    final tableCandidates = _collectTableCandidates(
+      lines,
+      textLines,
+      appliedPatterns,
+    );
+    
+    // 2. 行ベース候補を収集
+    final lineBasedCandidates = _collectLineBasedCandidates(
+      lines,
+      language,
+      appliedPatterns,
+      textLines: textLines,
+    );
+    
+    // 3. 統合
+    final allCandidates = <String, List<AmountCandidate>>{
+      'total_amount': [],
+      'subtotal_amount': [],
+      'tax_amount': [],
+    };
+    
+    // テーブル候補を追加
+    for (final candidate in tableCandidates) {
+      allCandidates[candidate.fieldName]!.add(candidate);
+    }
+    
+    // 行ベース候補を追加
+    for (final fieldName in lineBasedCandidates.keys) {
+      allCandidates[fieldName]!.addAll(lineBasedCandidates[fieldName]!);
+    }
+    
+    // 4. 重複候補の処理（同じ金額の候補は統合またはスコア調整）
+    _mergeDuplicateCandidates(allCandidates);
+    
+    // 5. FieldCandidatesに変換
+    return {
+      'total_amount': FieldCandidates(
+        fieldName: 'total_amount',
+        candidates: allCandidates['total_amount']!,
+      ),
+      'subtotal_amount': FieldCandidates(
+        fieldName: 'subtotal_amount',
+        candidates: allCandidates['subtotal_amount']!,
+      ),
+      'tax_amount': FieldCandidates(
+        fieldName: 'tax_amount',
+        candidates: allCandidates['tax_amount']!,
+      ),
+    };
+  }
+
+  /// 重複候補の統合
+  void _mergeDuplicateCandidates(
+    Map<String, List<AmountCandidate>> candidates,
+  ) {
+    for (final fieldName in candidates.keys) {
+      final fieldCandidates = candidates[fieldName]!;
+      final merged = <double, AmountCandidate>{};
+      
+      for (final candidate in fieldCandidates) {
+        final key = candidate.amount;
+        if (merged.containsKey(key)) {
+          // 既存の候補と統合（スコアを高い方に）
+          final existing = merged[key]!;
+          if (candidate.score > existing.score) {
+            merged[key] = candidate;
+          }
+          // ソース情報を更新（複数ソースから検出されたことを記録）
+          // 注: sourceは変更できないため、スコアで反映
+        } else {
+          merged[key] = candidate;
+        }
+      }
+      
+      // スコアでソート（高い順）
+      final sorted = merged.values.toList();
+      sorted.sort((a, b) => b.score.compareTo(a.score));
+      
+      candidates[fieldName] = sorted;
+    }
+  }
+
+  // ----------------------------
   // Consistency Checking (Step 2)
   // ----------------------------
 
@@ -2627,6 +2677,76 @@ class ReceiptParser {
     }
   }
 
+  // ----------------------------
+  // Table Candidate Collection (Phase 1)
+  // ----------------------------
+
+  /// テーブルから候補を収集
+  List<AmountCandidate> _collectTableCandidates(
+    List<String> lines,
+    List<TextLine>? textLines,
+    List<String> appliedPatterns,
+  ) {
+    final candidates = <AmountCandidate>[];
+    
+    // テーブル検出（既存メソッドを使用）
+    final tableAmounts = _extractAmountsFromTable(
+      lines,
+      appliedPatterns,
+      textLines: textLines,
+    );
+    
+    if (tableAmounts.isEmpty) {
+      logger.d('📊 No table detected, skipping table candidate collection');
+      return candidates;
+    }
+    
+    logger.d('📊 Table detected, converting to candidates: $tableAmounts');
+    
+    // テーブルから抽出された値を候補に変換
+    // テーブル抽出は構造的に信頼度が高いため、スコアを高く設定
+    if (tableAmounts.containsKey('total_amount')) {
+      candidates.add(AmountCandidate(
+        amount: tableAmounts['total_amount']!,
+        score: 95,  // テーブル抽出は高信頼度
+        lineIndex: -1,  // テーブル行は複数行にまたがる可能性
+        source: 'table_extraction_total',
+        fieldName: 'total_amount',
+        boundingBox: null,  // テーブル全体の位置情報は複雑なため省略
+        confidence: 1.0,  // テーブル抽出は構造的に信頼度が高い
+      ));
+      logger.d('📊 Added table candidate: total_amount=${tableAmounts['total_amount']}');
+    }
+    
+    if (tableAmounts.containsKey('subtotal_amount')) {
+      candidates.add(AmountCandidate(
+        amount: tableAmounts['subtotal_amount']!,
+        score: 95,
+        lineIndex: -1,
+        source: 'table_extraction_subtotal',
+        fieldName: 'subtotal_amount',
+        boundingBox: null,
+        confidence: 1.0,
+      ));
+      logger.d('📊 Added table candidate: subtotal_amount=${tableAmounts['subtotal_amount']}');
+    }
+    
+    if (tableAmounts.containsKey('tax_amount')) {
+      candidates.add(AmountCandidate(
+        amount: tableAmounts['tax_amount']!,
+        score: 95,
+        lineIndex: -1,
+        source: 'table_extraction_tax',
+        fieldName: 'tax_amount',
+        boundingBox: null,
+        confidence: 1.0,
+      ));
+      logger.d('📊 Added table candidate: tax_amount=${tableAmounts['tax_amount']}');
+    }
+    
+    return candidates;
+  }
+
   /// 整合性スコアの計算
   double _calculateConsistencyScore({
     AmountCandidate? total,
@@ -2677,6 +2797,18 @@ class ReceiptParser {
               .reduce((a, b) => a + b) /
           candidatesWithConfidence.length;
       score += avgConfidence * 0.1; // 最大0.1点
+    }
+
+    // 5. テーブル抽出の信頼度ボーナス（新規）
+    int tableSourceCount = 0;
+    if (total?.source.startsWith('table_extraction') == true) tableSourceCount++;
+    if (subtotal?.source.startsWith('table_extraction') == true) tableSourceCount++;
+    if (tax?.source.startsWith('table_extraction') == true) tableSourceCount++;
+    
+    // テーブルから複数のフィールドが検出された場合、ボーナス
+    if (tableSourceCount >= 2) {
+      score += 0.05;  // テーブル抽出の整合性ボーナス
+      logger.d('📊 Table extraction bonus: $tableSourceCount fields from table (+0.05)');
     }
 
     return score.clamp(0.0, 1.0);
