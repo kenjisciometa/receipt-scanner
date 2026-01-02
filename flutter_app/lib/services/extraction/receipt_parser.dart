@@ -63,6 +63,11 @@ class ConsistencyResult {
   final List<String> warnings;
   final bool needsVerification;
   final Map<String, double>? correctedValues;
+  // New fields for item sum consistency
+  final double? itemsSum;
+  final int? itemsCount;
+  final bool? itemsSumMatchesSubtotal;
+  final bool? itemsSumMatchesTotal;
 
   ConsistencyResult({
     required this.selectedCandidates,
@@ -70,6 +75,31 @@ class ConsistencyResult {
     this.warnings = const [],
     this.needsVerification = false,
     this.correctedValues,
+    this.itemsSum,
+    this.itemsCount,
+    this.itemsSumMatchesSubtotal,
+    this.itemsSumMatchesTotal,
+  });
+}
+
+/// Helper class for item candidates during structured extraction
+class ItemCandidate {
+  final String name;
+  final int quantity;
+  final double totalPrice;
+  final int lineIndex;
+  final double yCenter;
+  final double xCenter;
+  final double confidence;
+  
+  ItemCandidate({
+    required this.name,
+    required this.quantity,
+    required this.totalPrice,
+    required this.lineIndex,
+    required this.yCenter,
+    required this.xCenter,
+    required this.confidence,
   });
 }
 
@@ -1070,19 +1100,23 @@ class ReceiptParser {
     String? language,
     List<String> appliedPatterns, {
     List<TextLine>? textLines,
+    List<ReceiptItem>? items,
   }) {
     logger.d('Starting unified amount extraction with consistency checking');
     
-    // 1. すべての候補を統合収集（テーブル + 行ベース）
+    // 1. すべての候補を統合収集（テーブル + 行ベース + アイテム合計）
     final allCandidates = _collectAllCandidates(
       lines,
       language,
       appliedPatterns,
       textLines: textLines,
+      items: items,
     );
     
-    // 2. 整合性チェックで最適解を選択
-    final consistencyResult = _selectBestCandidates(allCandidates);
+    // 2. 整合性チェックで最適解を選択（アイテム合計情報も渡す）
+    final itemsSum = _calculateItemsSum(items);
+    final itemsCount = items?.length;
+    final consistencyResult = _selectBestCandidates(allCandidates, itemsSum: itemsSum, itemsCount: itemsCount);
     
     // 3. 結果をマップに変換
     final amounts = <String, double>{};
@@ -1245,7 +1279,252 @@ class ReceiptParser {
   // Items
   // ----------------------------
 
-  List<ReceiptItem> _extractItems(String text, List<String> appliedPatterns) {
+  /// Extract items using structured textLines (with position information)
+  List<ReceiptItem> _extractItemsFromTextLines(
+    List<TextLine> textLines,
+    List<String> appliedPatterns, {
+    double? imageWidth,
+    double? imageHeight,
+  }) {
+    final items = <ReceiptItem>[];
+    
+    // Get image size from first line's bounding box context or use defaults
+    double imgWidth = imageWidth ?? 1000.0;
+    double imgHeight = imageHeight ?? 1000.0;
+    
+    // Try to infer image size from bounding boxes if not provided
+    if (imageWidth == null || imageHeight == null) {
+      double maxX = 0.0;
+      double maxY = 0.0;
+      for (final line in textLines) {
+        if (line.boundingBox != null && line.boundingBox!.length >= 4) {
+          final x = line.boundingBox![0];
+          final y = line.boundingBox![1];
+          final w = line.boundingBox![2];
+          final h = line.boundingBox![3];
+          maxX = math.max(maxX, x + w);
+          maxY = math.max(maxY, y + h);
+        }
+      }
+      if (maxX > 0 && maxY > 0) {
+        imgWidth = maxX;
+        imgHeight = maxY;
+      }
+    }
+    
+    logger.d('📦 Extracting items from ${textLines.length} textLines (image: ${imgWidth.toInt()}x${imgHeight.toInt()})');
+    
+    // Extract features for each line to identify items
+    final itemCandidates = <ItemCandidate>[];
+    
+    for (int i = 0; i < textLines.length; i++) {
+      final line = textLines[i];
+      final text = line.text.trim();
+      if (text.isEmpty) continue;
+      
+      // Calculate normalized position
+      double xCenter = 0.5;
+      double yCenter = 0.5;
+      if (line.boundingBox != null && line.boundingBox!.length >= 4) {
+        final x = line.boundingBox![0];
+        final y = line.boundingBox![1];
+        final w = line.boundingBox![2];
+        final h = line.boundingBox![3];
+        xCenter = (x + w / 2) / imgWidth;
+        yCenter = (y + h / 2) / imgHeight;
+      }
+      
+      // Check if this line is likely an item
+      final lowerText = text.toLowerCase();
+      
+      // Exclude obvious non-items
+      if (isFooterOrTotals(text) ||
+          lowerText.startsWith('date') ||
+          lowerText.startsWith('time') ||
+          lowerText.startsWith('receipt') ||
+          RegExp(r'^\d{1,2}[.\/-]\d{1,2}').hasMatch(text)) {
+        continue;
+      }
+      
+      // Check if line contains amount-like pattern
+      final amountPattern = RegExp(r'([€\$£¥₹]?)\s*([-]?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|[-]?\d+(?:[.,]\d{2}))');
+      final amountMatch = amountPattern.firstMatch(text);
+      
+      if (amountMatch != null) {
+        // This line likely contains a price
+        final priceStr = amountMatch.group(2);
+        if (priceStr == null) continue;
+        final price = _parseAmount(priceStr);
+        
+        if (price != null && price > 0) {
+          // Extract item name (text before the amount)
+          final amountStart = amountMatch.start;
+          final itemName = text.substring(0, amountStart).trim();
+          
+          if (itemName.isNotEmpty && 
+              !RegExp(r'\b(total|subtotal|vat|tax|payment)\b', caseSensitive: false).hasMatch(itemName)) {
+            
+            // Check for quantity markers
+            int quantity = 1;
+            final quantityPattern = RegExp(r'(\d+)\s*[×x]|[×x]\s*(\d+)|qty[:\s]*(\d+)|quantity[:\s]*(\d+)', caseSensitive: false);
+            final qtyMatch = quantityPattern.firstMatch(text);
+            if (qtyMatch != null) {
+              final qtyStr = qtyMatch.group(1) ?? qtyMatch.group(2) ?? qtyMatch.group(3) ?? qtyMatch.group(4);
+              if (qtyStr != null) {
+                quantity = int.tryParse(qtyStr) ?? 1;
+              }
+            }
+            
+            // Calculate confidence based on position and features
+            double confidence = 0.5;
+            
+            // Boost confidence if in middle section (typical item area)
+            if (yCenter >= 0.3 && yCenter <= 0.7) {
+              confidence += 0.2;
+            }
+            
+            // Boost confidence if price is on the right side
+            if (xCenter > 0.6) {
+              confidence += 0.2;
+            }
+            
+            // Boost confidence if has item-like pattern
+            if (RegExp(r'[a-zA-Z]{2,}.*?\s+[€\$£¥₹]?\s*\d').hasMatch(text)) {
+              confidence += 0.1;
+            }
+            
+            itemCandidates.add(ItemCandidate(
+              name: itemName,
+              quantity: quantity,
+              totalPrice: price,
+              lineIndex: i,
+              yCenter: yCenter,
+              xCenter: xCenter,
+              confidence: confidence,
+            ));
+          }
+        }
+      } else {
+        // No amount found, but might be item name only (price might be on next line or same Y)
+        // Check if this line looks like an item name
+        if (RegExp(r'^[a-zA-Z][a-zA-Z\s\-\.]{2,}$').hasMatch(text) &&
+            yCenter >= 0.3 && yCenter <= 0.7 &&
+            !isFooterOrTotals(text)) {
+          
+          // Look for price on nearby lines (same Y or next line)
+          double? nearbyPrice;
+          int? nearbyQuantity;
+          
+          // Check same Y coordinate (horizontal alignment)
+          for (int j = 0; j < textLines.length; j++) {
+            if (i == j) continue;
+            final otherLine = textLines[j];
+            if (otherLine.boundingBox != null && otherLine.boundingBox!.length >= 4) {
+              final otherY = (otherLine.boundingBox![1] + otherLine.boundingBox![3] / 2) / imgHeight;
+              final otherX = (otherLine.boundingBox![0] + otherLine.boundingBox![2] / 2) / imgWidth;
+              
+              // Same Y coordinate (within tolerance) and on the right
+              if ((otherY - yCenter).abs() < 0.02 && otherX > 0.6) {
+                final amountMatch = amountPattern.firstMatch(otherLine.text);
+                if (amountMatch != null) {
+                  final priceStr = amountMatch.group(2);
+                  if (priceStr != null) {
+                    nearbyPrice = _parseAmount(priceStr);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          
+          // If no horizontal match, check next line
+          if (nearbyPrice == null && i + 1 < textLines.length) {
+            final nextLine = textLines[i + 1];
+            final nextAmountMatch = amountPattern.firstMatch(nextLine.text);
+            if (nextAmountMatch != null) {
+              final priceStr = nextAmountMatch.group(2);
+              if (priceStr != null) {
+                nearbyPrice = _parseAmount(priceStr);
+              }
+            }
+          }
+          
+          if (nearbyPrice != null && nearbyPrice! > 0) {
+            itemCandidates.add(ItemCandidate(
+              name: text,
+              quantity: nearbyQuantity ?? 1,
+              totalPrice: nearbyPrice!,
+              lineIndex: i,
+              yCenter: yCenter,
+              xCenter: xCenter,
+              confidence: 0.4, // Lower confidence for separated name/price
+            ));
+          }
+        }
+      }
+    }
+    
+    // Sort candidates by Y position (top to bottom) and filter by confidence
+    itemCandidates.sort((a, b) => a.yCenter.compareTo(b.yCenter));
+    
+    // Filter and create items
+    for (final candidate in itemCandidates) {
+      if (candidate.confidence >= 0.5) {
+        final item = ReceiptItem.create(
+          name: candidate.name,
+          quantity: candidate.quantity,
+          totalPrice: candidate.totalPrice,
+          category: ItemCategory.detectCategory(candidate.name),
+        );
+        items.add(item);
+        appliedPatterns.add('item_structured_textlines');
+        logger.d('  ✓ Item extracted: "${candidate.name}" (qty: ${candidate.quantity}, price: ${candidate.totalPrice}, conf: ${candidate.confidence.toStringAsFixed(2)})');
+      }
+    }
+    
+    logger.d('📦 Structured item extraction completed: ${items.length} items found');
+    return items;
+  }
+  
+  /// Estimate image width from textLines bounding boxes
+  double? _estimateImageWidth(List<TextLine> textLines) {
+    double maxX = 0.0;
+    for (final line in textLines) {
+      if (line.boundingBox != null && line.boundingBox!.length >= 4) {
+        final x = line.boundingBox![0];
+        final w = line.boundingBox![2];
+        maxX = math.max(maxX, x + w);
+      }
+    }
+    return maxX > 0 ? maxX : null;
+  }
+  
+  /// Estimate image height from textLines bounding boxes
+  double? _estimateImageHeight(List<TextLine> textLines) {
+    double maxY = 0.0;
+    for (final line in textLines) {
+      if (line.boundingBox != null && line.boundingBox!.length >= 4) {
+        final y = line.boundingBox![1];
+        final h = line.boundingBox![3];
+        maxY = math.max(maxY, y + h);
+      }
+    }
+    return maxY > 0 ? maxY : null;
+  }
+  
+  /// Check if a line is a footer or totals line
+  bool isFooterOrTotals(String line) {
+    final lower = line.toLowerCase();
+    return lower.startsWith('subtotal') ||
+        lower.startsWith('total') ||
+        lower.startsWith('vat') ||
+        lower.startsWith('tax') ||
+        lower.startsWith('payment') ||
+        lower.startsWith('thank') ||
+        RegExp(r'^\-+$').hasMatch(lower);
+  }
+
+  List<ReceiptItem> _extractItems(String text, List<String> appliedPatterns, {List<TextLine>? textLines, double? imageWidth, double? imageHeight}) {
     final items = <ReceiptItem>[];
     final lines = text.split('\n').map(_normalizeLine).where((l) => l.isNotEmpty).toList();
 
@@ -1505,12 +1784,31 @@ class ReceiptParser {
         extractedData['time'] = time;
       }
 
-      // Use combined lines for amount extraction
+      // Extract items first (needed for items sum consistency check)
+      List<ReceiptItem> items;
+      if (textLines != null && textLines.isNotEmpty) {
+        final imageWidth = _estimateImageWidth(textLines);
+        final imageHeight = _estimateImageHeight(textLines);
+        items = _extractItemsFromTextLines(textLines, appliedPatterns, 
+            imageWidth: imageWidth, imageHeight: imageHeight);
+        if (items.length < 2) {
+          final textItems = _extractItems(ocrText, appliedPatterns);
+          if (textItems.length > items.length) {
+            items = textItems;
+            appliedPatterns.add('item_text_fallback');
+          }
+        }
+      } else {
+        items = _extractItems(ocrText, appliedPatterns);
+      }
+      
+      // Use combined lines for amount extraction (with items for consistency check)
       final amounts = _extractAmountsLineByLine(
         combinedLines, 
         detectedLanguage, 
         appliedPatterns,
         textLines: textLines,
+        items: items,
       );
       logger.d('Extracted amounts from blocks: $amounts');
       extractedData.addAll(amounts);
@@ -1558,8 +1856,8 @@ class ReceiptParser {
         extractedData['receipt_number'] = receiptNumber;
       }
 
-      // Items from text fallback (block-based item extraction can be added later)
-      final items = _extractItems(ocrText, appliedPatterns);
+      // Items extraction: prefer structured textLines if available
+      // (Note: Items are already extracted above for consistency check, so we just use them)
       if (items.isNotEmpty) {
         extractedData['items'] = items
             .map((item) => {
@@ -2395,6 +2693,7 @@ class ReceiptParser {
     String? language,
     List<String> appliedPatterns, {
     List<TextLine>? textLines,
+    List<ReceiptItem>? items,
   }) {
     // 1. テーブル候補を収集
     final tableCandidates = _collectTableCandidates(
@@ -2411,7 +2710,10 @@ class ReceiptParser {
       textLines: textLines,
     );
     
-    // 3. 統合
+    // 3. アイテム合計からの候補を収集
+    final itemsSumCandidates = _collectItemsSumCandidates(items, appliedPatterns);
+    
+    // 4. 統合
     final allCandidates = <String, List<AmountCandidate>>{
       'total_amount': [],
       'subtotal_amount': [],
@@ -2428,10 +2730,15 @@ class ReceiptParser {
       allCandidates[fieldName]!.addAll(lineBasedCandidates[fieldName]!);
     }
     
-    // 4. 重複候補の処理（同じ金額の候補は統合またはスコア調整）
+    // アイテム合計候補を追加
+    for (final candidate in itemsSumCandidates) {
+      allCandidates[candidate.fieldName]!.add(candidate);
+    }
+    
+    // 5. 重複候補の処理（同じ金額の候補は統合またはスコア調整）
     _mergeDuplicateCandidates(allCandidates);
     
-    // 5. FieldCandidatesに変換
+    // 6. FieldCandidatesに変換
     return {
       'total_amount': FieldCandidates(
         fieldName: 'total_amount',
@@ -2446,6 +2753,91 @@ class ReceiptParser {
         candidates: allCandidates['tax_amount']!,
       ),
     };
+  }
+  
+  /// Calculate sum of all items
+  double? _calculateItemsSum(List<ReceiptItem>? items) {
+    if (items == null || items.isEmpty) {
+      return null;
+    }
+    
+    double sum = 0.0;
+    for (final item in items) {
+      sum += item.totalPrice;
+    }
+    
+    return sum > 0 ? double.parse(sum.toStringAsFixed(2)) : null;
+  }
+  
+  /// Collect candidates from items sum
+  List<AmountCandidate> _collectItemsSumCandidates(
+    List<ReceiptItem>? items,
+    List<String> appliedPatterns,
+  ) {
+    final candidates = <AmountCandidate>[];
+    
+    if (items == null || items.isEmpty) {
+      return candidates;
+    }
+    
+    final itemsSum = _calculateItemsSum(items);
+    if (itemsSum == null || itemsSum <= 0) {
+      return candidates;
+    }
+    
+    // Calculate score based on items
+    final score = _calculateItemsSumScore(items);
+    
+    logger.d('💰 Items sum calculated: $itemsSum (${items.length} items, score: $score)');
+    
+    // Add as Subtotal candidate
+    candidates.add(AmountCandidate(
+      amount: itemsSum,
+      score: score,
+      lineIndex: -1, // Items sum doesn't have a specific line
+      source: 'items_sum_subtotal',
+      fieldName: 'subtotal_amount',
+      label: 'Items Sum',
+    ));
+    appliedPatterns.add('items_sum_subtotal_candidate');
+    
+    // Add as Total candidate (if no tax is detected, items sum might be the total)
+    // This will be evaluated in consistency check
+    candidates.add(AmountCandidate(
+      amount: itemsSum,
+      score: score - 10, // Slightly lower score for total (prefer explicit total labels)
+      lineIndex: -1,
+      source: 'items_sum_total',
+      fieldName: 'total_amount',
+      label: 'Items Sum (as Total)',
+    ));
+    appliedPatterns.add('items_sum_total_candidate');
+    
+    return candidates;
+  }
+  
+  /// Calculate confidence score for items sum
+  int _calculateItemsSumScore(List<ReceiptItem> items) {
+    if (items.isEmpty) return 0;
+    
+    // Base score
+    int score = 60;
+    
+    // Bonus for having multiple items
+    if (items.length >= 3) {
+      score += 10;
+    }
+    if (items.length >= 5) {
+      score += 10;
+    }
+    
+    // Bonus if all items have totalPrice
+    final allHavePrice = items.every((item) => item.totalPrice > 0);
+    if (allHavePrice) {
+      score += 10;
+    }
+    
+    return score.clamp(0, 100);
   }
 
   /// 重複候補の統合
@@ -2485,8 +2877,10 @@ class ReceiptParser {
 
   /// 整合性チェックと最適解の選択
   ConsistencyResult _selectBestCandidates(
-    Map<String, FieldCandidates> allCandidates,
-  ) {
+    Map<String, FieldCandidates> allCandidates, {
+    double? itemsSum,
+    int? itemsCount,
+  }) {
     // 各フィールドの上位候補を取得（最大3つ）
     final totalCandidates = allCandidates['total_amount']?.getTopN(3) ?? [];
     final subtotalCandidates = allCandidates['subtotal_amount']?.getTopN(3) ?? [];
@@ -2499,6 +2893,8 @@ class ReceiptParser {
         consistencyScore: 0.0,
         warnings: ['No candidates found'],
         needsVerification: true,
+        itemsSum: itemsSum,
+        itemsCount: itemsCount,
       );
     }
 
@@ -2532,6 +2928,7 @@ class ReceiptParser {
               total: total,
               subtotal: subtotal,
               tax: tax,
+              itemsSum: itemsSum,
             );
           } else {
             // 1つだけの場合は候補のスコアを正規化（0.0-1.0）
@@ -2569,14 +2966,84 @@ class ReceiptParser {
       warnings.add('Low consistency score: ${bestScore.toStringAsFixed(2)}');
     }
     
+    // アイテム合計との整合性チェック
+    bool? itemsSumMatchesSubtotal;
+    bool? itemsSumMatchesTotal;
+    if (itemsSum != null) {
+      if (bestSelection.containsKey('subtotal_amount')) {
+        final subtotal = bestSelection['subtotal_amount']!.amount;
+        final difference = (itemsSum - subtotal).abs();
+        itemsSumMatchesSubtotal = difference <= 0.01;
+        if (difference > 0.01) {
+          warnings.add('Items sum ($itemsSum) != Subtotal ($subtotal), diff: ${difference.toStringAsFixed(2)}');
+        }
+      }
+      
+      if (bestSelection.containsKey('total_amount')) {
+        final total = bestSelection['total_amount']!.amount;
+        final difference = (itemsSum - total).abs();
+        itemsSumMatchesTotal = difference <= 0.01;
+        if (difference > 0.01) {
+          // Check if itemsSum + tax matches total
+          if (bestSelection.containsKey('tax_amount')) {
+            final tax = bestSelection['tax_amount']!.amount;
+            final expectedTotal = itemsSum + tax;
+            final totalDiff = (total - expectedTotal).abs();
+            if (totalDiff <= 0.01) {
+              itemsSumMatchesTotal = true;
+            } else {
+              warnings.add('Items sum + Tax ($expectedTotal) != Total ($total), diff: ${totalDiff.toStringAsFixed(2)}');
+            }
+          } else {
+            warnings.add('Items sum ($itemsSum) != Total ($total), diff: ${difference.toStringAsFixed(2)}');
+          }
+        }
+      }
+    }
+    
     // ログ出力
     logger.d('🔍 Consistency check: ${bestSelection.length} fields selected, score: ${bestScore.toStringAsFixed(2)}');
+    if (itemsSum != null) {
+      logger.d('  Items sum: $itemsSum (${itemsSumMatchesSubtotal != null ? (itemsSumMatchesSubtotal! ? '✓ matches subtotal' : '✗ differs from subtotal') : 'N/A'})');
+    }
     for (final entry in bestSelection.entries) {
       logger.d('  Selected ${entry.key}: ${entry.value.amount} (score: ${entry.value.score}, line: ${entry.value.lineIndex})');
     }
 
     // 矛盾検知と自動修正
     Map<String, double>? correctedValues;
+    
+    // Auto-correction based on items sum
+    if (itemsSum != null && itemsSum > 0) {
+      if (bestSelection.containsKey('subtotal_amount')) {
+        final subtotal = bestSelection['subtotal_amount']!.amount;
+        final difference = (itemsSum - subtotal).abs();
+        
+        // 10セント以内の差の場合、アイテム合計でSubtotalを修正
+        if (difference <= 0.10 && difference > 0.01) {
+          correctedValues ??= {};
+          correctedValues['subtotal_amount'] = double.parse(itemsSum.toStringAsFixed(2));
+          warnings.add('Auto-corrected Subtotal: $subtotal → $itemsSum (based on items sum)');
+          logger.d('✅ Auto-corrected Subtotal based on items sum: $subtotal → $itemsSum');
+        }
+      }
+      
+      if (bestSelection.containsKey('tax_amount') && bestSelection.containsKey('total_amount')) {
+        final tax = bestSelection['tax_amount']!.amount;
+        final total = bestSelection['total_amount']!.amount;
+        final expectedTotal = itemsSum + tax;
+        final difference = (total - expectedTotal).abs();
+        
+        // 10セント以内の差の場合、アイテム合計 + Tax でTotalを修正
+        if (difference <= 0.10 && difference > 0.01) {
+          correctedValues ??= {};
+          correctedValues['total_amount'] = double.parse(expectedTotal.toStringAsFixed(2));
+          warnings.add('Auto-corrected Total: $total → $expectedTotal (based on items sum + tax)');
+          logger.d('✅ Auto-corrected Total based on items sum + tax: $total → $expectedTotal');
+        }
+      }
+    }
+    
     if (bestSelection.containsKey('total_amount') &&
         bestSelection.containsKey('subtotal_amount') &&
         bestSelection.containsKey('tax_amount')) {
@@ -2611,6 +3078,10 @@ class ReceiptParser {
       warnings: warnings,
       needsVerification: bestScore < 0.6 || (correctedValues == null && warnings.isNotEmpty),
       correctedValues: correctedValues,
+      itemsSum: itemsSum,
+      itemsCount: itemsCount,
+      itemsSumMatchesSubtotal: itemsSumMatchesSubtotal,
+      itemsSumMatchesTotal: itemsSumMatchesTotal,
     );
   }
 
@@ -2752,6 +3223,7 @@ class ReceiptParser {
     AmountCandidate? total,
     AmountCandidate? subtotal,
     AmountCandidate? tax,
+    double? itemsSum,
   }) {
     double score = 0.0;
 
@@ -2809,6 +3281,50 @@ class ReceiptParser {
     if (tableSourceCount >= 2) {
       score += 0.05;  // テーブル抽出の整合性ボーナス
       logger.d('📊 Table extraction bonus: $tableSourceCount fields from table (+0.05)');
+    }
+    
+    // 6. アイテム合計との整合性チェック（新規）
+    if (itemsSum != null && itemsSum > 0) {
+      // Items sum と Subtotal の整合性
+      if (subtotal != null) {
+        final difference = (itemsSum - subtotal.amount).abs();
+        if (difference <= 0.01) {
+          // 完全一致または1セント以内
+          score += 0.15;
+          logger.d('💰 Items sum matches Subtotal: $itemsSum == ${subtotal.amount} (+0.15)');
+        } else if (difference <= 0.10) {
+          // 10セント以内
+          score += 0.10;
+          logger.d('💰 Items sum close to Subtotal: $itemsSum vs ${subtotal.amount}, diff: ${difference.toStringAsFixed(2)} (+0.10)');
+        }
+      }
+      
+      // Items sum + Tax と Total の整合性
+      if (tax != null && total != null) {
+        final expectedTotal = itemsSum + tax.amount;
+        final difference = (total.amount - expectedTotal).abs();
+        if (difference <= 0.01) {
+          // 完全一致または1セント以内
+          score += 0.15;
+          logger.d('💰 Items sum + Tax matches Total: $itemsSum + ${tax.amount} == ${total.amount} (+0.15)');
+        } else if (difference <= 0.10) {
+          // 10セント以内
+          score += 0.10;
+          logger.d('💰 Items sum + Tax close to Total: $expectedTotal vs ${total.amount}, diff: ${difference.toStringAsFixed(2)} (+0.10)');
+        }
+      }
+      
+      // Items sum と Total の整合性（Taxが検出されていない場合）
+      if (tax == null && total != null) {
+        final difference = (itemsSum - total.amount).abs();
+        if (difference <= 0.01) {
+          score += 0.10;
+          logger.d('💰 Items sum matches Total (no tax): $itemsSum == ${total.amount} (+0.10)');
+        } else if (difference <= 0.10) {
+          score += 0.05;
+          logger.d('💰 Items sum close to Total (no tax): $itemsSum vs ${total.amount}, diff: ${difference.toStringAsFixed(2)} (+0.05)');
+        }
+      }
     }
 
     return score.clamp(0.0, 1.0);

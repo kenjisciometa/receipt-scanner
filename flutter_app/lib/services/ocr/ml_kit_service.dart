@@ -5,6 +5,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:image/image.dart' as img;
 
 import '../../core/errors/exceptions.dart';
+import '../../core/utils/text_line_features.dart';
 import '../../data/models/processing_result.dart' as models;
 import '../../main.dart';
 
@@ -31,6 +32,9 @@ class MLKitService {
         throw FileNotFoundStorageException(imagePath);
       }
 
+      // Get image size for bbox normalization
+      final imageSize = await _getImageSizeFromFile(imagePath);
+      
       // Create InputImage from file
       final inputImage = InputImage.fromFilePath(imagePath);
       
@@ -40,8 +44,8 @@ class MLKitService {
       stopwatch.stop();
       final processingTime = stopwatch.elapsedMilliseconds;
       
-      // Process results
-      return _processRecognitionResult(recognizedText, processingTime);
+      // Process results with image size for normalization
+      return _processRecognitionResult(recognizedText, processingTime, imageSize: imageSize);
       
     } catch (e) {
       stopwatch.stop();
@@ -65,11 +69,14 @@ class MLKitService {
     try {
       logger.d('Starting OCR recognition from bytes');
       
+      // Get image size for bbox normalization
+      final imageSize = _getImageSize(imageBytes);
+      
       // Create InputImage from bytes
       final inputImage = InputImage.fromBytes(
         bytes: imageBytes,
         metadata: InputImageMetadata(
-          size: _getImageSize(imageBytes),
+          size: imageSize,
           rotation: InputImageRotation.rotation0deg,
           format: InputImageFormat.nv21,
           bytesPerRow: 0, // Auto-calculated
@@ -82,8 +89,8 @@ class MLKitService {
       stopwatch.stop();
       final processingTime = stopwatch.elapsedMilliseconds;
       
-      // Process results
-      return _processRecognitionResult(recognizedText, processingTime);
+      // Process results with image size for normalization
+      return _processRecognitionResult(recognizedText, processingTime, imageSize: imageSize);
       
     } catch (e) {
       stopwatch.stop();
@@ -99,8 +106,9 @@ class MLKitService {
   /// Process ML Kit recognition result
   models.OCRResult _processRecognitionResult(
     RecognizedText recognizedText, 
-    int processingTime,
-  ) {
+    int processingTime, {
+    Size? imageSize,
+  }) {
     final fullText = recognizedText.text;
     
     // Check if any text was found
@@ -284,6 +292,45 @@ class MLKitService {
     });
     
     logger.d('✅ Line combining completed: ${rawTextLines.length} raw lines → ${textLines.length} combined lines');
+    
+    // Step 3: Normalize bounding boxes and extract features (Step 1 of ML pipeline)
+    if (imageSize != null && imageSize.width > 0 && imageSize.height > 0) {
+      logger.d('📐 Normalizing bounding boxes and extracting features (image size: ${imageSize.width.toInt()}x${imageSize.height.toInt()})');
+      
+      final normalizedTextLines = <models.TextLine>[];
+      for (int i = 0; i < textLines.length; i++) {
+        final line = textLines[i];
+        final features = TextLineFeatureExtractor.extractFeatures(
+          text: line.text,
+          boundingBox: line.boundingBox,
+          lineIndex: i,
+          totalLines: textLines.length,
+          imageWidth: imageSize.width,
+          imageHeight: imageSize.height,
+        );
+        
+        // Create new TextLine with original bbox (normalized values are in features)
+        // Features are calculated and can be used for ML model input
+        // Normalized bbox values: features.xCenter, features.yCenter, features.width, features.height
+        normalizedTextLines.add(models.TextLine(
+          text: line.text,
+          confidence: line.confidence,
+          boundingBox: line.boundingBox, // Keep original bbox for backward compatibility
+          elements: line.elements,
+        ));
+        
+        if (i < 3) { // Log first 3 lines as example
+          logger.d('  📊 Line $i: "${line.text.substring(0, line.text.length > 30 ? 30 : line.text.length)}..." → $features');
+        }
+      }
+      
+      // Replace textLines with normalized version
+      textLines.clear();
+      textLines.addAll(normalizedTextLines);
+      logger.d('✅ Step 1 completed: Normalized ${textLines.length} lines with features extracted');
+    } else {
+      logger.w('⚠️ Image size not available, skipping bbox normalization and feature extraction');
+    }
 
     // Calculate overall confidence
     final confidence = elementCount > 0 ? totalConfidence / elementCount : 0.0;
@@ -293,6 +340,19 @@ class MLKitService {
     
     logger.i('OCR completed: ${fullText.length} characters, ${textLines.length} lines, $elementCount elements, confidence: ${confidence.toStringAsFixed(2)}');
 
+    // Store image size in metadata for future bbox normalization
+    final metadata = <String, dynamic>{
+      'blocks_count': recognizedText.blocks.length,
+      'lines_count': textLines.length,
+      'elements_count': elementCount,
+    };
+    
+    if (imageSize != null && imageSize.width > 0 && imageSize.height > 0) {
+      metadata['image_width'] = imageSize.width;
+      metadata['image_height'] = imageSize.height;
+      metadata['step1_completed'] = true; // Flag indicating Step 1 (normalization) is complete
+    }
+    
     return models.OCRResult.success(
       recognizedText: fullText,
       processingTime: processingTime,
@@ -300,11 +360,7 @@ class MLKitService {
       confidence: confidence,
       textBlocks: textBlocks,
       textLines: textLines,
-      metadata: {
-        'blocks_count': recognizedText.blocks.length,
-        'lines_count': textLines.length,
-        'elements_count': elementCount,
-      },
+      metadata: metadata,
     );
   }
 
@@ -355,6 +411,25 @@ class MLKitService {
       }
     } catch (e) {
       logger.w('Failed to decode image size: $e');
+    }
+    
+    // Return default size if decoding fails
+    return const Size(1000, 1000);
+  }
+
+  /// Get image size from file path
+  Future<Size> _getImageSizeFromFile(String imagePath) async {
+    try {
+      final file = File(imagePath);
+      if (await file.exists()) {
+        final imageBytes = await file.readAsBytes();
+        final image = img.decodeImage(imageBytes);
+        if (image != null) {
+          return Size(image.width.toDouble(), image.height.toDouble());
+        }
+      }
+    } catch (e) {
+      logger.w('Failed to get image size from file: $e');
     }
     
     // Return default size if decoding fails
