@@ -633,6 +633,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         'description': 'Receipt with Tax Breakdown table',
       },
       {
+        'name': 'Test Receipt v3 (Multiple Tax Rates)',
+        'path': 'assets/images/test_receipt_v3.png',
+        'description': 'Receipt with multiple tax rates (14% and 24%)',
+      },
+      {
         'name': 'Test Receipt (Finnish)',
         'path': 'assets/images/test_receipt_fi.png',
         'description': 'Finnish receipt format (Suomi)',

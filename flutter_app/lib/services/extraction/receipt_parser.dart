@@ -691,7 +691,11 @@ class ReceiptParser {
       }
     }
     
-    // Step 2: Find table structure - look for rows with 3+ amounts
+    // Step 2: Find table structure - look for header row and all data rows
+    TextLine? headerLine;
+    int headerIndex = -1;
+    final dataRows = <TextLine>[];
+    
     for (int i = 0; i < textLines.length; i++) {
       final line = textLines[i];
       final yCoord = line.boundingBox?[1] ?? 0.0;
@@ -717,40 +721,80 @@ class ReceiptParser {
       }
       combinedText = combinedText.trim();
       
-      // If we found 3 or more amounts in the same Y coordinate, it might be a table data row
-      if (amountCount >= 3) {
-        logger.d('📊 Potential table data row detected at line $i (Y: ${yCoord.toStringAsFixed(1)}): $amountCount amounts found in "${combinedText}"');
+      // Check if this is a header row (few amounts or percentage only)
+      final headerAmountMatches = amountPattern.allMatches(combinedText);
+      final headerHasPercent = percentPattern.hasMatch(combinedText);
+      final headerAmountCount = headerAmountMatches.length;
+      
+      if ((headerAmountCount <= 1 || headerHasPercent) && headerLine == null) {
+        // Potential header row
+        headerLine = _combineTextLines(sameYLines);
+        headerIndex = i;
+        logger.d('📊 Found table header at line $i: "${combinedText}"');
+      } else if (headerLine != null && amountCount >= 3 && i > headerIndex) {
+        // Potential data row (after header, with 3+ amounts)
+        final combinedDataLine = _combineTextLines(sameYLines);
+        dataRows.add(combinedDataLine);
+        logger.d('📊 Found table data row at line $i (Y: ${yCoord.toStringAsFixed(1)}): $amountCount amounts in "${combinedText}"');
+      }
+    }
+    
+    // Step 3: Process all data rows if we found a header
+    if (headerLine != null && dataRows.isNotEmpty) {
+      logger.d('📊 Processing ${dataRows.length} data row(s) from table');
+      
+      double totalTax = 0.0;
+      double totalSubtotal = 0.0;
+      double? finalTotal;
+      
+      for (int rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+        final dataRow = dataRows[rowIndex];
+        final extracted = _extractTableValuesFromBoundingBox(
+          headerLine!,
+          dataRow,
+          appliedPatterns,
+          amountPattern,
+          percentPattern,
+        );
         
-        // Step 3: Look for header row (previous line with few amounts)
-        if (i > 0) {
-          final candidateHeader = textLines[i - 1];
-          final headerAmountMatches = amountPattern.allMatches(candidateHeader.text);
-          final headerHasPercent = percentPattern.hasMatch(candidateHeader.text);
-          final headerAmountCount = headerAmountMatches.length;
-          
-          // Header row criteria: few amounts (0-1) or percentage only
-          if (headerAmountCount <= 1 || headerHasPercent) {
-            logger.d('📊 Found table: header="${candidateHeader.text}", data="${combinedText}"');
-            
-            // Step 4: Extract values from data row using column positions
-            // Create a combined TextLine for the data row
-            final combinedDataLine = _combineTextLines(sameYLines);
-            final extracted = _extractTableValuesFromBoundingBox(
-              candidateHeader,
-              combinedDataLine,
-              appliedPatterns,
-              amountPattern,
-              percentPattern,
-            );
-            
-            if (extracted.isNotEmpty) {
-              amounts.addAll(extracted);
-              appliedPatterns.add('table_format_structure_based');
-              logger.d('📊 Table extraction completed: $amounts');
-              return amounts; // Return early if table found
-            }
+        if (extracted.isNotEmpty) {
+          // Accumulate values from multiple rows
+          if (extracted.containsKey('tax_amount')) {
+            totalTax += extracted['tax_amount']!;
           }
+          if (extracted.containsKey('subtotal_amount')) {
+            totalSubtotal += extracted['subtotal_amount']!;
+          }
+          // For multiple rows, each row's total is that row's subtotal + tax
+          // The final total should be the sum of all rows' subtotals + taxes
+          // So we don't use individual row totals, but calculate from accumulated values
+          
+          logger.d('📊 Row ${rowIndex + 1}: tax=${extracted['tax_amount']}, subtotal=${extracted['subtotal_amount']}, row_total=${extracted['total_amount']}');
         }
+      }
+      
+      // Set accumulated values
+      if (totalTax > 0) {
+        amounts['tax_amount'] = double.parse(totalTax.toStringAsFixed(2));
+      }
+      if (totalSubtotal > 0) {
+        amounts['subtotal_amount'] = double.parse(totalSubtotal.toStringAsFixed(2));
+      }
+      
+      // For multiple tax rate rows, calculate final total from accumulated subtotal + tax
+      // This ensures correctness: Total = Sum of all Subtotals + Sum of all Taxes
+      if (totalSubtotal > 0 && totalTax > 0) {
+        amounts['total_amount'] = double.parse((totalSubtotal + totalTax).toStringAsFixed(2));
+        logger.d('📊 Calculated final total from accumulated values: ${amounts['subtotal_amount']} + ${amounts['tax_amount']} = ${amounts['total_amount']}');
+      } else if (finalTotal != null && dataRows.length == 1) {
+        // For single row, use the row's total directly
+        amounts['total_amount'] = finalTotal;
+      }
+      
+      if (amounts.isNotEmpty) {
+        appliedPatterns.add('table_format_structure_based_multiple_rates');
+        logger.d('📊 Table extraction completed (multiple rates): $amounts');
+        return amounts;
       }
     }
     
@@ -899,6 +943,7 @@ class ReceiptParser {
   }
   
   /// Fallback: Extract amounts from table using text-based structure detection
+  /// Now supports multiple tax rate rows
   Map<String, double> _extractAmountsFromTableTextBased(
     List<String> lines,
     List<String> appliedPatterns,
@@ -907,48 +952,112 @@ class ReceiptParser {
   ) {
     final amounts = <String, double>{};
     
-    for (int i = 0; i < lines.length - 1; i++) {
-      final headerLine = lines[i];
-      final dataLine = lines[i + 1];
-      
-      // Check if header line has few amounts (0-1) or percentage only
-      final headerAmountMatches = amountPattern.allMatches(headerLine);
-      final headerHasPercent = percentPattern.hasMatch(headerLine);
+    // Step 1: Find header row
+    int? headerIndex;
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final headerAmountMatches = amountPattern.allMatches(line);
+      final headerHasPercent = percentPattern.hasMatch(line);
       final headerAmountCount = headerAmountMatches.length;
       
-      // Check if data line has multiple amounts
-      final dataAmountMatches = amountPattern.allMatches(dataLine);
+      // Header row criteria: few amounts (0-1) or percentage only
+      if ((headerAmountCount <= 1 || headerHasPercent) && headerIndex == null) {
+        headerIndex = i;
+        logger.d('📊 Found table header (text-based) at line $i: "$line"');
+        break;
+      }
+    }
+    
+    if (headerIndex == null) {
+      return amounts;
+    }
+    
+    // Step 2: Find all data rows after header
+    final dataRows = <String>[];
+    for (int i = headerIndex + 1; i < lines.length; i++) {
+      final line = lines[i];
+      final dataAmountMatches = amountPattern.allMatches(line);
       final dataAmountCount = dataAmountMatches.length;
       
-      // Structure-based detection: header (few amounts) + data (multiple amounts)
-      if ((headerAmountCount <= 1 || headerHasPercent) && dataAmountCount >= 2) {
-        logger.d('📊 Found potential table structure (text-based): header="${headerLine}", data="${dataLine}"');
-        
-        // Extract amounts from data line
-        final amountValues = dataAmountMatches
-            .map((m) => m.group(0)!.trim())
-            .where((v) => !v.contains('%'))
-            .map((v) => _parseAmount(v))
-            .where((a) => a != null && a! > 0)
-            .cast<double>()
-            .toList();
-        
-        logger.d('📊 Extracted ${amountValues.length} amounts: $amountValues');
-        
-        if (amountValues.length >= 2) {
-          if (amountValues.length >= 3) {
-            amounts['tax_amount'] = amountValues[0];
-            amounts['subtotal_amount'] = amountValues[1];
-            amounts['total_amount'] = amountValues[2];
-          } else {
-            amounts['subtotal_amount'] = amountValues[0];
-            amounts['total_amount'] = amountValues[1];
-          }
-          appliedPatterns.add('table_format_text_based');
-          logger.d('📊 Table extraction (text-based): $amounts');
-          return amounts;
+      // Data row criteria: 3+ amounts (Tax rate, Tax, Subtotal, Total)
+      if (dataAmountCount >= 3) {
+        dataRows.add(line);
+        logger.d('📊 Found table data row (text-based) at line $i: "$line"');
+      } else if (dataAmountCount >= 2 && dataRows.isNotEmpty) {
+        // Might be continuation or summary row, check if it has percentage
+        if (percentPattern.hasMatch(line)) {
+          dataRows.add(line);
+          logger.d('📊 Found additional table data row at line $i: "$line"');
+        } else {
+          // Likely not a table row anymore, stop
+          break;
         }
+      } else if (dataRows.isNotEmpty) {
+        // No more table rows
+        break;
       }
+    }
+    
+    if (dataRows.isEmpty) {
+      return amounts;
+    }
+    
+    logger.d('📊 Processing ${dataRows.length} data row(s) from table (text-based)');
+    
+    // Step 3: Process all data rows and accumulate values
+    double totalTax = 0.0;
+    double totalSubtotal = 0.0;
+    
+    for (int rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+      final dataLine = dataRows[rowIndex];
+      final dataAmountMatches = amountPattern.allMatches(dataLine);
+      
+      // Extract amounts from data line
+      final amountValues = dataAmountMatches
+          .map((m) => m.group(0)!.trim())
+          .where((v) => !v.contains('%'))
+          .map((v) => _parseAmount(v))
+          .where((a) => a != null && a! > 0)
+          .cast<double>()
+          .toList();
+      
+      logger.d('📊 Row ${rowIndex + 1}: Extracted ${amountValues.length} amounts: $amountValues');
+      
+      if (amountValues.length >= 3) {
+        // Usually: Tax, Subtotal, Total (row-specific)
+        totalTax += amountValues[0];
+        totalSubtotal += amountValues[1];
+        // Note: amountValues[2] is this row's total (subtotal + tax for this row)
+        // For multiple rows, we calculate final total from accumulated values
+        logger.d('📊 Row ${rowIndex + 1}: tax=${amountValues[0]}, subtotal=${amountValues[1]}, row_total=${amountValues[2]}');
+      } else if (amountValues.length == 2) {
+        // Assume: Subtotal, Total (row-specific)
+        totalSubtotal += amountValues[0];
+        logger.d('📊 Row ${rowIndex + 1}: subtotal=${amountValues[0]}, row_total=${amountValues[1]}');
+      }
+    }
+    
+    // Set accumulated values
+    if (totalTax > 0) {
+      amounts['tax_amount'] = double.parse(totalTax.toStringAsFixed(2));
+    }
+    if (totalSubtotal > 0) {
+      amounts['subtotal_amount'] = double.parse(totalSubtotal.toStringAsFixed(2));
+    }
+    
+    // For multiple tax rate rows, calculate final total from accumulated subtotal + tax
+    // This ensures correctness: Total = Sum of all Subtotals + Sum of all Taxes
+    if (totalSubtotal > 0 && totalTax > 0) {
+      amounts['total_amount'] = double.parse((totalSubtotal + totalTax).toStringAsFixed(2));
+      logger.d('📊 Calculated final total from accumulated values: $totalSubtotal + $totalTax = ${amounts['total_amount']}');
+    } else if (totalSubtotal > 0) {
+      // If no tax found, use subtotal as total (shouldn't happen in tax breakdown table)
+      amounts['total_amount'] = double.parse(totalSubtotal.toStringAsFixed(2));
+    }
+    
+    if (amounts.isNotEmpty) {
+      appliedPatterns.add('table_format_text_based_multiple_rates');
+      logger.d('📊 Table extraction (text-based, multiple rates): $amounts');
     }
     
     return amounts;
