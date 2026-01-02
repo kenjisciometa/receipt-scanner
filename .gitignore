@@ -1,0 +1,33 @@
+# Large SQL files
+complete_schema_and_data_*.sql
+*.sql
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+**/build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+flutter_log.txt
+
+# Local configuration
+local.properties
+
