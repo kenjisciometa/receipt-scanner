@@ -125,6 +125,25 @@ class TaxBreakdownCandidate {
   });
 }
 
+/// Result class for table extraction to improve type safety
+class TableExtractionResult {
+  final Map<String, double> amounts;
+  final List<Map<String, double>>? taxBreakdowns;
+  
+  TableExtractionResult({
+    required this.amounts,
+    this.taxBreakdowns,
+  });
+  
+  Map<String, dynamic> toMap() {
+    final result = <String, dynamic>{'amounts': amounts};
+    if (taxBreakdowns != null) {
+      result['_tax_breakdowns'] = taxBreakdowns;
+    }
+    return result;
+  }
+}
+
 /// Main service for parsing receipt data from OCR text
 class ReceiptParser {
   /// Parse receipt data from OCR text and (optional) structured OCR blocks
@@ -687,12 +706,11 @@ class ReceiptParser {
   /// 
   /// This method detects tables based on structure (multiple amounts in same row)
   /// rather than specific keywords, making it language-independent.
-  Map<String, dynamic> _extractAmountsFromTable(
+  TableExtractionResult _extractAmountsFromTable(
     List<String> lines,
     List<String> appliedPatterns, {
     List<TextLine>? textLines,
   }) {
-    final amounts = <String, dynamic>{};
     logger.d('📊 Starting structure-based table detection (language-independent)');
     
     // Amount pattern (language-independent - works with any currency)
@@ -883,8 +901,130 @@ class ReceiptParser {
     return true; // サマリーテーブルの行
   }
   
+  /// Extract tax amount from a line using hybrid approach (colon delimiter, BBOX, fallback)
+  /// This is a common method used by both _collectLineBasedCandidates and _collectTaxBreakdownCandidates
+  double? _extractTaxAmountFromLine(
+    String line,
+    double percent,
+    List<RegExpMatch> allAmountMatches,
+    List<TextLine>? textLines,
+    int lineIndex,
+    RegExp amountCapture,
+  ) {
+    double? matchedAmount;
+    
+    // 優先順位1: `:`マークを境界として使用
+    final colonIndex = line.indexOf(':');
+    if (colonIndex != -1) {
+      logger.d('🔍 Using colon (:) as boundary for tax amount extraction');
+      for (final amountMatch in allAmountMatches) {
+        final matchStart = amountMatch.start;
+        if (matchStart > colonIndex) {
+          // `:`の後の金額
+          final amountStr = amountMatch.group(0)!;
+          final amount = _parseAmount(amountStr);
+          if (amount != null && amount > 0) {
+            // パーセンテージの値と一致しないことを確認
+            if ((amount - percent).abs() > 0.1) {
+              matchedAmount = amount;
+              logger.d('✅ Found tax amount after colon: $matchedAmount (percent: $percent%)');
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    // 優先順位2: BBOX情報を活用（`: `マークがない場合）
+    if (matchedAmount == null && textLines != null && lineIndex < textLines.length) {
+      final textLine = textLines[lineIndex];
+      final elements = textLine.elements;
+      
+      if (elements != null && elements.isNotEmpty) {
+        logger.d('🔍 Using BBOX information for tax amount extraction');
+        // Taxラベルを含むelementを特定（パーセンテージを含む）
+        final percentPattern = RegExp(r'(\d+(?:[.,]\d+)?)\s*%');
+        int? taxLabelElementIndex;
+        for (int j = 0; j < elements.length; j++) {
+          final elementText = elements[j].text.toLowerCase();
+          if (percentPattern.hasMatch(elements[j].text)) {
+            final elementPercentMatch = percentPattern.firstMatch(elements[j].text);
+            if (elementPercentMatch != null) {
+              final elementPercentStr = elementPercentMatch.group(1)!.replaceAll(',', '.');
+              final elementPercent = double.tryParse(elementPercentStr);
+              if (elementPercent != null && (elementPercent - percent).abs() < 0.01) {
+                taxLabelElementIndex = j;
+                logger.d('✅ Found tax label element at index $j with percent $percent%');
+                break;
+              }
+            }
+          }
+        }
+        
+        if (taxLabelElementIndex != null) {
+          final taxLabelBbox = elements[taxLabelElementIndex].boundingBox;
+          if (taxLabelBbox != null && taxLabelBbox.length >= 4) {
+            final taxLabelRightX = taxLabelBbox[0] + taxLabelBbox[2];
+            
+            // Taxラベルの右側にある金額を探す
+            for (int j = taxLabelElementIndex + 1; j < elements.length; j++) {
+              final elementBbox = elements[j].boundingBox;
+              if (elementBbox != null && elementBbox.length >= 4) {
+                final elementLeftX = elementBbox[0];
+                
+                // Taxラベルの右側にある要素
+                if (elementLeftX > taxLabelRightX) {
+                  final amountMatch = amountCapture.firstMatch(elements[j].text);
+                  if (amountMatch != null) {
+                    final amountStr = amountMatch.group(0)!;
+                    final amount = _parseAmount(amountStr);
+                    if (amount != null && amount > 0) {
+                      // パーセンテージの値と一致しないことを確認
+                      if ((amount - percent).abs() > 0.1) {
+                        matchedAmount = amount;
+                        logger.d('✅ Found tax amount using BBOX: $matchedAmount (percent: $percent%, element index: $j)');
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // 優先順位3: 既存のロジック（パーセンテージの値を除外）
+    if (matchedAmount == null) {
+      logger.d('🔍 Using fallback logic (excluding percentage value)');
+      for (final amountMatch in allAmountMatches) {
+        final amountStr = amountMatch.group(0)!;
+        final cleanedAmountStr = amountStr.replaceAll(RegExp(r'[€$£¥₹\s-]'), '');
+        final amountValue = double.tryParse(cleanedAmountStr.replaceAll(',', '.'));
+        
+        // パーセンテージの値と一致する場合はスキップ
+        if (amountValue != null && (amountValue - percent).abs() < 0.01) {
+          continue;
+        }
+        
+        final amount = _parseAmount(amountStr);
+        if (amount != null && amount > 0) {
+          // パーセンテージの値と一致しないことを確認（より厳密なチェック）
+          if ((amount - percent).abs() > 0.1) {
+            matchedAmount = amount;
+            logger.d('✅ Found tax amount using fallback: $matchedAmount (percent: $percent%)');
+            break;
+          }
+        }
+      }
+    }
+    
+    return matchedAmount;
+  }
+
   /// Extract amounts from table using boundingBox information (structure-based, language-independent)
-  Map<String, dynamic> _extractAmountsFromTableWithBoundingBox(
+  TableExtractionResult _extractAmountsFromTableWithBoundingBox(
     List<TextLine> textLines,
     List<String> appliedPatterns,
     RegExp amountPattern,
@@ -1049,12 +1189,21 @@ class ReceiptParser {
       if (amounts.isNotEmpty) {
         appliedPatterns.add('table_format_structure_based_multiple_rates');
         logger.d('📊 Table extraction completed (multiple rates): $amounts');
-        return amounts;
+        final resultAmounts = <String, double>{};
+        for (final entry in amounts.entries) {
+          if (entry.key != '_tax_breakdowns' && entry.value is double) {
+            resultAmounts[entry.key] = entry.value as double;
+          }
+        }
+        return TableExtractionResult(
+          amounts: resultAmounts,
+          taxBreakdowns: taxBreakdowns.isNotEmpty ? taxBreakdowns : null,
+        );
       }
     }
     
     logger.d('📊 No table structure detected');
-    return amounts;
+    return TableExtractionResult(amounts: {});
   }
   
   /// Combine multiple TextLines on the same Y coordinate into a single TextLine
@@ -1245,44 +1394,14 @@ class ReceiptParser {
       }
     }
     
-    // Fallback: if column types not identified, use position-based assignment
-    // But also check if we have tax rate to determine which value is tax amount
+    // Fallback: if column types not identified, try to infer from context
+    // Only use fallback if we have matched values but couldn't identify column types
+    // This is a last resort and should be avoided when possible
     if (amounts.isEmpty && matchedValues.isNotEmpty) {
-      final sortedValues = matchedValues.entries.toList()
-        ..sort((a, b) => a.key.compareTo(b.key));
-      
-      final amountValues = sortedValues
-          .where((e) => !e.value.text.contains('%'))
-          .map((e) => _parseAmount(e.value.text))
-          .where((a) => a != null && a! > 0)
-          .cast<double>()
-          .toList();
-      
-      if (amountValues.length >= 3) {
-        // If we have tax rate, the first amount is likely tax amount
-        if (taxRate != null) {
-          amounts['tax_amount'] = amountValues[0];
-          amounts['subtotal_amount'] = amountValues[1];
-          amounts['total_amount'] = amountValues[2];
-          logger.d('📊 Fallback (with tax rate): tax=${amountValues[0]}, subtotal=${amountValues[1]}, total=${amountValues[2]}');
-        } else {
-          amounts['tax_amount'] = amountValues[0];
-          amounts['subtotal_amount'] = amountValues[1];
-          amounts['total_amount'] = amountValues[2];
-          logger.d('📊 Fallback: tax=${amountValues[0]}, subtotal=${amountValues[1]}, total=${amountValues[2]}');
-        }
-      } else if (amountValues.length == 2) {
-        // If we have tax rate, the first amount might be tax amount
-        if (taxRate != null) {
-          amounts['tax_amount'] = amountValues[0];
-          amounts['subtotal_amount'] = amountValues[1];
-          logger.d('📊 Fallback (with tax rate): tax=${amountValues[0]}, subtotal=${amountValues[1]}');
-        } else {
-          amounts['subtotal_amount'] = amountValues[0];
-          amounts['total_amount'] = amountValues[1];
-          logger.d('📊 Fallback: subtotal=${amountValues[0]}, total=${amountValues[1]}');
-        }
-      }
+      logger.d('📊 Warning: Using fallback assignment - column types not identified. This may be inaccurate.');
+      // Without column name information, we cannot reliably assign values
+      // Log a warning and skip fallback assignment to avoid incorrect extraction
+      logger.w('📊 Skipping fallback assignment to avoid incorrect extraction. Column names should be identified for accurate extraction.');
     }
     
     result['amounts'] = amounts;
@@ -1301,7 +1420,7 @@ class ReceiptParser {
   
   /// Fallback: Extract amounts from table using text-based structure detection
   /// Now supports multiple tax rate rows
-  Map<String, double> _extractAmountsFromTableTextBased(
+  TableExtractionResult _extractAmountsFromTableTextBased(
     List<String> lines,
     List<String> appliedPatterns,
     RegExp amountPattern,
@@ -1339,7 +1458,7 @@ class ReceiptParser {
     }
     
     if (headerIndex == null) {
-      return amounts;
+      return TableExtractionResult(amounts: {});
     }
     
     // Step 2: Find all data rows after header
@@ -1379,7 +1498,7 @@ class ReceiptParser {
     }
     
     if (dataRows.isEmpty) {
-      return amounts;
+      return TableExtractionResult(amounts: {});
     }
     
     logger.d('📊 Processing ${dataRows.length} data row(s) from table (text-based)');
@@ -1387,6 +1506,7 @@ class ReceiptParser {
     // Step 3: Process all data rows and accumulate values
     double totalTax = 0.0;
     double totalSubtotal = 0.0;
+    double? finalTotal;
     
     for (int rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
       final dataLine = dataRows[rowIndex];
@@ -1404,43 +1524,41 @@ class ReceiptParser {
       logger.d('📊 Row ${rowIndex + 1}: Extracted ${amountValues.length} amounts: $amountValues');
       
       if (amountValues.length >= 3) {
-        // Usually: Tax, Subtotal, Total (row-specific)
+        // For multiple rows, accumulate tax and subtotal, use last row's total
         totalTax += amountValues[0];
         totalSubtotal += amountValues[1];
-        // Note: amountValues[2] is this row's total (subtotal + tax for this row)
-        // For multiple rows, we calculate final total from accumulated values
+        finalTotal = amountValues[2]; // Use last row's total
         logger.d('📊 Row ${rowIndex + 1}: tax=${amountValues[0]}, subtotal=${amountValues[1]}, row_total=${amountValues[2]}');
       } else if (amountValues.length == 2) {
-        // Assume: Subtotal, Total (row-specific)
+        // Might be Subtotal and Total only
         totalSubtotal += amountValues[0];
+        finalTotal = amountValues[1];
         logger.d('📊 Row ${rowIndex + 1}: subtotal=${amountValues[0]}, row_total=${amountValues[1]}');
       }
     }
     
-    // Set accumulated values
+    final resultAmounts = <String, double>{};
     if (totalTax > 0) {
-      amounts['tax_amount'] = double.parse(totalTax.toStringAsFixed(2));
+      resultAmounts['tax_amount'] = double.parse(totalTax.toStringAsFixed(2));
     }
     if (totalSubtotal > 0) {
-      amounts['subtotal_amount'] = double.parse(totalSubtotal.toStringAsFixed(2));
+      resultAmounts['subtotal_amount'] = double.parse(totalSubtotal.toStringAsFixed(2));
+    }
+    if (finalTotal != null) {
+      resultAmounts['total_amount'] = finalTotal;
+    } else if (totalSubtotal > 0 && totalTax > 0) {
+      // Calculate total from accumulated values
+      resultAmounts['total_amount'] = double.parse((totalSubtotal + totalTax).toStringAsFixed(2));
+      logger.d('📊 Calculated final total from accumulated values: $totalSubtotal + $totalTax = ${resultAmounts['total_amount']}');
     }
     
-    // For multiple tax rate rows, calculate final total from accumulated subtotal + tax
-    // This ensures correctness: Total = Sum of all Subtotals + Sum of all Taxes
-    if (totalSubtotal > 0 && totalTax > 0) {
-      amounts['total_amount'] = double.parse((totalSubtotal + totalTax).toStringAsFixed(2));
-      logger.d('📊 Calculated final total from accumulated values: $totalSubtotal + $totalTax = ${amounts['total_amount']}');
-    } else if (totalSubtotal > 0) {
-      // If no tax found, use subtotal as total (shouldn't happen in tax breakdown table)
-      amounts['total_amount'] = double.parse(totalSubtotal.toStringAsFixed(2));
-    }
-    
-    if (amounts.isNotEmpty) {
+    if (resultAmounts.isNotEmpty) {
       appliedPatterns.add('table_format_text_based_multiple_rates');
-      logger.d('📊 Table extraction (text-based, multiple rates): $amounts');
+      logger.d('📊 Table extraction (text-based, multiple rates): $resultAmounts');
+      return TableExtractionResult(amounts: resultAmounts);
     }
     
-    return amounts;
+    return TableExtractionResult(amounts: {});
   }
 
   /// Extract amounts line by line (adds VAT-specific support + better selection)
@@ -1490,14 +1608,14 @@ class ReceiptParser {
     
     // 4. テーブル抽出から_tax_breakdownsを取得（_collectAllCandidatesでは失われているため）
     if (textLines != null && textLines.isNotEmpty) {
-      final tableAmounts = _extractAmountsFromTable(
+      final tableResult = _extractAmountsFromTable(
         lines,
         appliedPatterns,
         textLines: textLines,
       );
-      if (tableAmounts.containsKey('_tax_breakdowns')) {
-        amounts['_tax_breakdowns'] = tableAmounts['_tax_breakdowns'];
-        logger.d('📊 Added _tax_breakdowns from table extraction: ${amounts['_tax_breakdowns']}');
+      if (tableResult.taxBreakdowns != null && tableResult.taxBreakdowns!.isNotEmpty) {
+        amounts['_tax_breakdowns'] = tableResult.taxBreakdowns;
+        logger.d('📊 Added _tax_breakdowns from table extraction: ${tableResult.taxBreakdowns}');
       }
     }
     
@@ -1904,17 +2022,6 @@ class ReceiptParser {
       r'^(.+?)\s{1,}[€$£¥₹]?\s*([-]?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|[-]?\d+(?:[.,]\d{2}))\s*$',
       caseSensitive: false,
     );
-
-    bool isFooterOrTotals(String line) {
-      final lower = line.toLowerCase();
-      return lower.startsWith('subtotal') ||
-          lower.startsWith('total') ||
-          lower.startsWith('vat') ||
-          lower.startsWith('tax') ||
-          lower.startsWith('payment') ||
-          lower.startsWith('thank') ||
-          RegExp(r'^\-+$').hasMatch(lower);
-    }
 
     for (final line in lines) {
       final lower = line.toLowerCase();
@@ -3159,114 +3266,15 @@ class ReceiptParser {
             if (percent == null || percent <= 0 || percent > 100) continue;
             
             // このパーセンテージに対応する金額を探す（ハイブリッド方式）
-            double? matchedAmount;
-            
-            // 優先順位1: `:`マークを境界として使用
-            final colonIndex = line.indexOf(':');
-            if (colonIndex != -1) {
-              logger.d('🔍 Using colon (:) as boundary for tax amount extraction');
-              for (final amountMatch in allAmountMatches) {
-                final matchStart = amountMatch.start;
-                if (matchStart > colonIndex) {
-                  // `:`の後の金額
-                  final amountStr = amountMatch.group(0)!;
-                  final amount = _parseAmount(amountStr);
-                  if (amount != null && amount > 0) {
-                    // パーセンテージの値と一致しないことを確認
-                    if ((amount - percent).abs() > 0.1) {
-                      matchedAmount = amount;
-                      logger.d('✅ Found tax amount after colon: $matchedAmount (percent: $percent%)');
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-            
-            // 優先順位2: BBOX情報を活用（`: `マークがない場合）
-            if (matchedAmount == null && textLines != null && i < textLines.length) {
-              final textLine = textLines[i];
-              final elements = textLine.elements;
-              
-              if (elements != null && elements.isNotEmpty) {
-                logger.d('🔍 Using BBOX information for tax amount extraction');
-                // Taxラベルを含むelementを特定
-                int? taxLabelElementIndex;
-                for (int j = 0; j < elements.length; j++) {
-                  final elementText = elements[j].text.toLowerCase();
-                  if (taxLabel.hasMatch(elementText) && percentPattern.hasMatch(elements[j].text)) {
-                    // このelementにパーセンテージが含まれているか確認
-                    final elementPercentMatch = percentPattern.firstMatch(elements[j].text);
-                    if (elementPercentMatch != null) {
-                      final elementPercentStr = elementPercentMatch.group(1)!.replaceAll(',', '.');
-                      final elementPercent = double.tryParse(elementPercentStr);
-                      if (elementPercent != null && (elementPercent - percent).abs() < 0.01) {
-                        taxLabelElementIndex = j;
-                        logger.d('✅ Found tax label element at index $j with percent $percent%');
-                        break;
-                      }
-                    }
-                  }
-                }
-                
-                if (taxLabelElementIndex != null) {
-                  final taxLabelBbox = elements[taxLabelElementIndex].boundingBox;
-                  if (taxLabelBbox != null && taxLabelBbox.length >= 4) {
-                    final taxLabelRightX = taxLabelBbox[0] + taxLabelBbox[2];
-                    
-                    // Taxラベルの右側にある金額を探す
-                    for (int j = taxLabelElementIndex + 1; j < elements.length; j++) {
-                      final elementBbox = elements[j].boundingBox;
-                      if (elementBbox != null && elementBbox.length >= 4) {
-                        final elementLeftX = elementBbox[0];
-                        
-                        // Taxラベルの右側にある要素
-                        if (elementLeftX > taxLabelRightX) {
-                          final amountMatch = amountCapture.firstMatch(elements[j].text);
-                          if (amountMatch != null) {
-                            final amountStr = amountMatch.group(0)!;
-                            final amount = _parseAmount(amountStr);
-                            if (amount != null && amount > 0) {
-                              // パーセンテージの値と一致しないことを確認
-                              if ((amount - percent).abs() > 0.1) {
-                                matchedAmount = amount;
-                                logger.d('✅ Found tax amount using BBOX: $matchedAmount (percent: $percent%, element index: $j)');
-                                break;
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            
-            // 優先順位3: 既存のロジック（パーセンテージの値を除外）
-            if (matchedAmount == null) {
-              logger.d('🔍 Using fallback logic (excluding percentage value)');
-              for (final amountMatch in allAmountMatches) {
-                final amountStr = amountMatch.group(0)!;
-                final cleanedAmountStr = amountStr.replaceAll(RegExp(r'[€$£¥₹\s-]'), '');
-                final amountValue = double.tryParse(cleanedAmountStr.replaceAll(',', '.'));
-                
-                // パーセンテージの値と一致する場合はスキップ
-                if (amountValue != null && (amountValue - percent).abs() < 0.01) {
-                  continue;
-                }
-                
-                final amount = _parseAmount(amountStr);
-                if (amount != null && amount > 0) {
-                  // パーセンテージの値と一致しないことを確認（より厳密なチェック）
-                  if ((amount - percent).abs() > 0.1) {
-                    matchedAmount = amount;
-                    logger.d('✅ Found tax amount using fallback: $matchedAmount (percent: $percent%)');
-                    break;
-                  }
-                }
-              }
-            }
+            // 共通メソッドを使用してコードの重複を削減
+            final matchedAmount = _extractTaxAmountFromLine(
+              line,
+              percent,
+              allAmountMatches,
+              textLines,
+              i,
+              amountCapture,
+            );
             
             // TaxBreakdown候補の収集は_collectTaxBreakdownCandidatesで行うため、ここでは削除
             // （重複を避けるため、_collectLineBasedCandidates内でのtaxBreakdownCandidates作成は削除）
@@ -3322,122 +3330,22 @@ class ReceiptParser {
           }
           
           // 金額を抽出（ハイブリッド方式: `:`マーク > BBOX情報 > 既存ロジック）
+          // 共通メソッドを使用してコードの重複を削減
           double? directAmount;
-          if (allAmountMatches.isNotEmpty) {
-            // 優先順位1: `:`マークを境界として使用
-            final colonIndex = line.indexOf(':');
-            if (colonIndex != -1) {
-              logger.d('🔍 Using colon (:) as boundary for tax amount extraction (single tax line)');
-              for (final match in allAmountMatches) {
-                final matchStart = match.start;
-                if (matchStart > colonIndex) {
-                  // `:`の後の金額
-                  final amountStr = match.group(0)!;
-                  final amount = _parseAmount(amountStr);
-                  if (amount != null && amount > 0) {
-                    // パーセンテージの値と一致しないことを確認
-                    if (percent == null || (amount - percent).abs() > 0.1) {
-                      directAmount = amount;
-                      logger.d('✅ Found tax amount after colon: $directAmount (percent: $percent%)');
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-            
-            // 優先順位2: BBOX情報を活用（`: `マークがない場合）
-            if (directAmount == null && textLines != null && i < textLines.length) {
-              final textLine = textLines[i];
-              final elements = textLine.elements;
-              
-              if (elements != null && elements.isNotEmpty) {
-                logger.d('🔍 Using BBOX information for tax amount extraction (single tax line)');
-                // Taxラベルを含むelementを特定
-                int? taxLabelElementIndex;
-                for (int j = 0; j < elements.length; j++) {
-                  if (taxLabel.hasMatch(elements[j].text.toLowerCase())) {
-                    taxLabelElementIndex = j;
-                    logger.d('✅ Found tax label element at index $j');
-                    break;
-                  }
-                }
-                
-                if (taxLabelElementIndex != null) {
-                  final taxLabelBbox = elements[taxLabelElementIndex].boundingBox;
-                  if (taxLabelBbox != null && taxLabelBbox.length >= 4) {
-                    final taxLabelRightX = taxLabelBbox[0] + taxLabelBbox[2];
-                    
-                    // Taxラベルの右側にある金額を探す
-                    for (int j = taxLabelElementIndex + 1; j < elements.length; j++) {
-                      final elementBbox = elements[j].boundingBox;
-                      if (elementBbox != null && elementBbox.length >= 4) {
-                        final elementLeftX = elementBbox[0];
-                        
-                        // Taxラベルの右側にある要素
-                        if (elementLeftX > taxLabelRightX) {
-                          final amountMatch = amountCapture.firstMatch(elements[j].text);
-                          if (amountMatch != null) {
-                            final amountStr = amountMatch.group(0)!;
-                            final amount = _parseAmount(amountStr);
-                            if (amount != null && amount > 0) {
-                              // パーセンテージの値と一致しないことを確認
-                              if (percent == null || (amount - percent).abs() > 0.1) {
-                                directAmount = amount;
-                                logger.d('✅ Found tax amount using BBOX: $directAmount (percent: $percent%, element index: $j)');
-                                break;
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            
-            // 優先順位3: 既存のロジック（パーセンテージの値を除外）
-            if (directAmount == null) {
-              logger.d('🔍 Using fallback logic (excluding percentage value) (single tax line)');
-              for (final match in allAmountMatches.reversed) {
-                final amountStr = match.group(0)!;
-                
-                // パーセンテージの数字を除外
-                if (percentMatch != null) {
-                  final percentValueStr = percentMatch.group(1)!.replaceAll(',', '.');
-                  final percentValue = double.tryParse(percentValueStr);
-                  
-                  final cleanedAmountStr = amountStr.replaceAll(RegExp(r'[€$£¥₹\s-]'), '');
-                  final amountValue = double.tryParse(cleanedAmountStr.replaceAll(',', '.'));
-                  
-                  if (amountValue != null && percentValue != null && 
-                      (amountValue - percentValue).abs() < 0.01) {
-                    continue;
-                  }
-                  
-                  if (cleanedAmountStr == percentValueStr) {
-                    continue;
-                  }
-                }
-                
-                final amount = _parseAmount(amountStr);
-                if (amount != null && amount > 0) {
-                  if (percentMatch != null) {
-                    final percentValue = double.tryParse(percentMatch.group(1)!.replaceAll(',', '.'));
-                    if (percentValue != null && (amount - percentValue).abs() > 0.1) {
-                      directAmount = amount;
-                      logger.d('✅ Found tax amount using fallback: $directAmount (percent: $percentValue%)');
-                      break;
-                    }
-                  } else {
-                    directAmount = amount;
-                    logger.d('✅ Found tax amount using fallback: $directAmount');
-                    break;
-                  }
-                }
-              }
-            }
+          if (allAmountMatches.isNotEmpty && percent != null) {
+            directAmount = _extractTaxAmountFromLine(
+              line,
+              percent,
+              allAmountMatches,
+              textLines,
+              i,
+              amountCapture,
+            );
+          } else if (allAmountMatches.isNotEmpty) {
+            // パーセンテージがない場合、最後の金額を使用
+            final lastMatch = allAmountMatches.last;
+            final amountStr = lastMatch.group(0)!;
+            directAmount = _parseAmount(amountStr);
           }
           
           // 優先順位: 金額 > パーセンテージ
@@ -3573,114 +3481,15 @@ class ReceiptParser {
             final percent = double.tryParse(percentStr);
             if (percent == null || percent <= 0 || percent > 100) continue;
             
-            double? matchedAmount;
-            
-            // 優先順位1: `:`マークを境界として使用
-            final colonIndex = line.indexOf(':');
-            if (colonIndex != -1) {
-              logger.d('🔍 Using colon (:) as boundary for tax breakdown extraction (line $i)');
-              for (final amountMatch in allAmountMatches) {
-                final matchStart = amountMatch.start;
-                if (matchStart > colonIndex) {
-                  // `:`の後の金額
-                  final amountStr = amountMatch.group(0)!;
-                  final amount = _parseAmount(amountStr);
-                  if (amount != null && amount > 0) {
-                    // パーセンテージの値と一致しないことを確認
-                    if ((amount - percent).abs() > 0.1) {
-                      matchedAmount = amount;
-                      logger.d('✅ Found tax breakdown amount after colon: $matchedAmount (percent: $percent%)');
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-            
-            // 優先順位2: BBOX情報を活用（`: `マークがない場合）
-            if (matchedAmount == null && textLines != null && i < textLines.length) {
-              final textLine = textLines[i];
-              final elements = textLine.elements;
-              
-              if (elements != null && elements.isNotEmpty) {
-                logger.d('🔍 Using BBOX information for tax breakdown extraction (line $i)');
-                // Taxラベルを含むelementを特定
-                int? taxLabelElementIndex;
-                for (int j = 0; j < elements.length; j++) {
-                  final elementText = elements[j].text.toLowerCase();
-                  if (taxLabel.hasMatch(elementText) && percentPattern.hasMatch(elements[j].text)) {
-                    // このelementにパーセンテージが含まれているか確認
-                    final elementPercentMatch = percentPattern.firstMatch(elements[j].text);
-                    if (elementPercentMatch != null) {
-                      final elementPercentStr = elementPercentMatch.group(1)!.replaceAll(',', '.');
-                      final elementPercent = double.tryParse(elementPercentStr);
-                      if (elementPercent != null && (elementPercent - percent).abs() < 0.01) {
-                        taxLabelElementIndex = j;
-                        logger.d('✅ Found tax label element at index $j with percent $percent%');
-                        break;
-                      }
-                    }
-                  }
-                }
-                
-                if (taxLabelElementIndex != null) {
-                  final taxLabelBbox = elements[taxLabelElementIndex].boundingBox;
-                  if (taxLabelBbox != null && taxLabelBbox.length >= 4) {
-                    final taxLabelRightX = taxLabelBbox[0] + taxLabelBbox[2];
-                    
-                    // Taxラベルの右側にある金額を探す
-                    for (int j = taxLabelElementIndex + 1; j < elements.length; j++) {
-                      final elementBbox = elements[j].boundingBox;
-                      if (elementBbox != null && elementBbox.length >= 4) {
-                        final elementLeftX = elementBbox[0];
-                        
-                        // Taxラベルの右側にある要素
-                        if (elementLeftX > taxLabelRightX) {
-                          final amountMatch = amountCapture.firstMatch(elements[j].text);
-                          if (amountMatch != null) {
-                            final amountStr = amountMatch.group(0)!;
-                            final amount = _parseAmount(amountStr);
-                            if (amount != null && amount > 0) {
-                              // パーセンテージの値と一致しないことを確認
-                              if ((amount - percent).abs() > 0.1) {
-                                matchedAmount = amount;
-                                logger.d('✅ Found tax breakdown amount using BBOX: $matchedAmount (percent: $percent%, element index: $j)');
-                                break;
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            
-            // 優先順位3: 既存のロジック（パーセンテージの値を除外）
-            if (matchedAmount == null) {
-              logger.d('🔍 Using fallback logic for tax breakdown (excluding percentage value) (line $i)');
-              for (final amountMatch in allAmountMatches) {
-                final amountStr = amountMatch.group(0)!;
-                final cleanedAmountStr = amountStr.replaceAll(RegExp(r'[€$£¥₹\s-]'), '');
-                final amountValue = double.tryParse(cleanedAmountStr.replaceAll(',', '.'));
-                
-                // パーセンテージの値と一致する場合はスキップ
-                if (amountValue != null && (amountValue - percent).abs() < 0.01) {
-                  continue;
-                }
-                
-                final amount = _parseAmount(amountStr);
-                if (amount != null && amount > 0) {
-                  // パーセンテージの値と一致しないことを確認（より厳密なチェック）
-                  if ((amount - percent).abs() > 0.1) {
-                    matchedAmount = amount;
-                    logger.d('✅ Found tax breakdown amount using fallback: $matchedAmount (percent: $percent%)');
-                    break;
-                  }
-                }
-              }
-            }
+            // 共通メソッドを使用してコードの重複を削減
+            final matchedAmount = _extractTaxAmountFromLine(
+              line,
+              percent,
+              allAmountMatches,
+              textLines,
+              i,
+              amountCapture,
+            );
             
             if (matchedAmount != null) {
               taxBreakdownCandidates.add(TaxBreakdownCandidate(
@@ -4289,24 +4098,24 @@ class ReceiptParser {
     final candidates = <AmountCandidate>[];
     
     // テーブル検出（既存メソッドを使用）
-    final tableAmounts = _extractAmountsFromTable(
+    final tableResult = _extractAmountsFromTable(
       lines,
       appliedPatterns,
       textLines: textLines,
     );
     
-    if (tableAmounts.isEmpty) {
+    if (tableResult.amounts.isEmpty) {
       logger.d('📊 No table detected, skipping table candidate collection');
       return candidates;
     }
     
-    logger.d('📊 Table detected, converting to candidates: $tableAmounts');
+    logger.d('📊 Table detected, converting to candidates: ${tableResult.amounts}');
     
     // テーブルから抽出された値を候補に変換
     // テーブル抽出は構造的に信頼度が高いため、スコアを高く設定
-    if (tableAmounts.containsKey('total_amount') && tableAmounts['total_amount'] is double) {
+    if (tableResult.amounts.containsKey('total_amount')) {
       candidates.add(AmountCandidate(
-        amount: tableAmounts['total_amount'] as double,
+        amount: tableResult.amounts['total_amount']!,
         score: 95,  // テーブル抽出は高信頼度
         lineIndex: -1,  // テーブル行は複数行にまたがる可能性
         source: 'table_extraction_total',
@@ -4314,12 +4123,12 @@ class ReceiptParser {
         boundingBox: null,  // テーブル全体の位置情報は複雑なため省略
         confidence: 1.0,  // テーブル抽出は構造的に信頼度が高い
       ));
-      logger.d('📊 Added table candidate: total_amount=${tableAmounts['total_amount']}');
+      logger.d('📊 Added table candidate: total_amount=${tableResult.amounts['total_amount']}');
     }
     
-    if (tableAmounts.containsKey('subtotal_amount') && tableAmounts['subtotal_amount'] is double) {
+    if (tableResult.amounts.containsKey('subtotal_amount')) {
       candidates.add(AmountCandidate(
-        amount: tableAmounts['subtotal_amount'] as double,
+        amount: tableResult.amounts['subtotal_amount']!,
         score: 95,
         lineIndex: -1,
         source: 'table_extraction_subtotal',
@@ -4327,12 +4136,12 @@ class ReceiptParser {
         boundingBox: null,
         confidence: 1.0,
       ));
-      logger.d('📊 Added table candidate: subtotal_amount=${tableAmounts['subtotal_amount']}');
+      logger.d('📊 Added table candidate: subtotal_amount=${tableResult.amounts['subtotal_amount']}');
     }
     
-    if (tableAmounts.containsKey('tax_amount') && tableAmounts['tax_amount'] is double) {
+    if (tableResult.amounts.containsKey('tax_amount')) {
       candidates.add(AmountCandidate(
-        amount: tableAmounts['tax_amount'] as double,
+        amount: tableResult.amounts['tax_amount']!,
         score: 95,
         lineIndex: -1,
         source: 'table_extraction_tax',
@@ -4340,7 +4149,7 @@ class ReceiptParser {
         boundingBox: null,
         confidence: 1.0,
       ));
-      logger.d('📊 Added table candidate: tax_amount=${tableAmounts['tax_amount']}');
+      logger.d('📊 Added table candidate: tax_amount=${tableResult.amounts['tax_amount']}');
     }
     
     return candidates;
