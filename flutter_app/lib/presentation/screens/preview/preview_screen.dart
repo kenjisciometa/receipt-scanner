@@ -10,6 +10,7 @@ import '../../../data/models/processing_result.dart';
 import '../../../services/image_processing/image_preprocessor.dart';
 import '../../../services/ocr/ml_kit_service.dart';
 import '../../../services/extraction/receipt_parser.dart';
+import '../../../services/training_data/training_data_collector.dart';
 import '../../../main.dart';
 
 /// Preview screen for captured receipt images with processing results
@@ -32,11 +33,22 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   ExtractionResult? _extractionResult;
   Receipt? _extractedReceipt;
   String? _errorMessage;
+  bool _isEditing = false;
   
   // Services
   late final ImagePreprocessor _imagePreprocessor;
   late final MLKitService _mlKitService;
   late final ReceiptParser _receiptParser;
+  late final TrainingDataCollector _trainingDataCollector;
+  
+  // Text editing controllers for verified data
+  late final TextEditingController _merchantNameController;
+  late final TextEditingController _receiptNumberController;
+  late final TextEditingController _dateController;
+  late final TextEditingController _subtotalController;
+  late final TextEditingController _taxController;
+  late final TextEditingController _totalController;
+  late final TextEditingController _paymentMethodController;
 
   @override
   void initState() {
@@ -44,12 +56,30 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     _imagePreprocessor = ImagePreprocessor();
     _mlKitService = MLKitService();
     _receiptParser = ReceiptParser();
+    _trainingDataCollector = TrainingDataCollector();
+    
+    // Initialize text controllers
+    _merchantNameController = TextEditingController();
+    _receiptNumberController = TextEditingController();
+    _dateController = TextEditingController();
+    _subtotalController = TextEditingController();
+    _taxController = TextEditingController();
+    _totalController = TextEditingController();
+    _paymentMethodController = TextEditingController();
+    
     _startProcessing();
   }
 
   @override
   void dispose() {
     _mlKitService.dispose();
+    _merchantNameController.dispose();
+    _receiptNumberController.dispose();
+    _dateController.dispose();
+    _subtotalController.dispose();
+    _taxController.dispose();
+    _totalController.dispose();
+    _paymentMethodController.dispose();
     super.dispose();
   }
 
@@ -148,7 +178,29 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           _extractedReceipt = receipt;
         });
         
+        // Initialize text controllers with extracted data
+        _initializeTextControllers(receipt);
+        
         logger.i('Receipt processing completed successfully');
+        
+        // Step 5: Save training data (Step 3 of ML pipeline)
+        // Only save if confidence is high enough
+        if (extractionResult.confidence >= 0.7 && ocrResult.textLines.isNotEmpty) {
+          final receiptId = _generateReceiptId();
+          final savedPath = await _trainingDataCollector.saveTrainingData(
+            receiptId: receiptId,
+            ocrResult: ocrResult,
+            extractionResult: extractionResult,
+            imagePath: widget.imagePath,
+            additionalMetadata: {
+              'is_test_image': widget.imagePath.contains('test_receipt'),
+            },
+          );
+          
+          if (savedPath != null) {
+            logger.i('📚 Training data saved: $savedPath');
+          }
+        }
       }
 
     } catch (e) {
@@ -161,6 +213,13 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         _isProcessing = false;
       });
     }
+  }
+
+  /// Generate unique receipt ID for training data
+  String _generateReceiptId() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final imageName = widget.imagePath.split('/').last.replaceAll('.png', '').replaceAll('.jpg', '');
+    return '${imageName}_$timestamp';
   }
 
   /// Build Receipt object from extraction results
@@ -207,15 +266,29 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           onPressed: () => context.pop(),
         ),
         actions: [
-          if (_extractedReceipt != null)
+          if (_extractedReceipt != null && !_isEditing)
             IconButton(
               icon: const Icon(Icons.edit),
-              onPressed: _navigateToEdit,
+              onPressed: _toggleEditMode,
+              tooltip: 'Edit data',
             ),
-          if (_extractedReceipt != null)
+          if (_extractedReceipt != null && _isEditing)
+            IconButton(
+              icon: const Icon(Icons.check),
+              onPressed: _saveAsVerified,
+              tooltip: 'Save as verified training data',
+            ),
+          if (_extractedReceipt != null && _isEditing)
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: _cancelEdit,
+              tooltip: 'Cancel editing',
+            ),
+          if (_extractedReceipt != null && !_isEditing)
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: _saveReceipt,
+              tooltip: 'Save receipt',
             ),
         ],
       ),
@@ -503,50 +576,88 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Confidence indicator
-          _buildConfidenceIndicator(),
+          // Confidence indicator (hide in edit mode)
+          if (!_isEditing) ...[
+            _buildConfidenceIndicator(),
+            const SizedBox(height: AppConstants.defaultPadding),
+          ],
           
-          const SizedBox(height: AppConstants.defaultPadding),
+          // Edit mode notice
+          if (_isEditing) ...[
+            Container(
+              padding: const EdgeInsets.all(AppConstants.defaultPadding),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
+                border: Border.all(color: Colors.blue, width: 1),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.edit, color: Colors.blue),
+                  const SizedBox(width: AppConstants.smallPadding),
+                  Expanded(
+                    child: Text(
+                      'Edit mode: Correct the data and tap the checkmark to save as verified training data.',
+                      style: TextStyle(
+                        color: Colors.blue.shade700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppConstants.defaultPadding),
+          ],
           
           // Merchant info
-          if (receipt.merchantName != null) ...[
-            _buildSectionTitle('Merchant'),
-            _buildDataCard([
-              _buildDataRow('Store Name', receipt.merchantName!),
-              if (receipt.receiptNumber != null)
-                _buildDataRow('Receipt #', receipt.receiptNumber!),
-            ]),
-          ],
+          _buildSectionTitle('Merchant'),
+          _buildDataCard([
+            _isEditing
+                ? _buildEditableDataRow('Store Name', _merchantNameController)
+                : _buildDataRow('Store Name', receipt.merchantName ?? 'N/A'),
+            if (!_isEditing && receipt.receiptNumber != null)
+              _buildDataRow('Receipt #', receipt.receiptNumber!),
+            if (_isEditing)
+              _buildEditableDataRow('Receipt #', _receiptNumberController),
+          ]),
           
           // Date and payment info
-          if (receipt.purchaseDate != null || receipt.paymentMethod != null) ...[
-            _buildSectionTitle('Transaction Details'),
-            _buildDataCard([
-              if (receipt.purchaseDate != null)
-                _buildDataRow('Date', _formatDate(receipt.purchaseDate!)),
-              if (receipt.paymentMethod != null)
-                _buildDataRow('Payment Method', receipt.paymentMethod!.displayName),
-            ]),
-          ],
+          _buildSectionTitle('Transaction Details'),
+          _buildDataCard([
+            if (_isEditing)
+              _buildEditableDataRow('Date', _dateController, hint: 'YYYY-MM-DD')
+            else if (receipt.purchaseDate != null)
+              _buildDataRow('Date', _formatDate(receipt.purchaseDate!)),
+            if (_isEditing)
+              _buildEditableDataRow('Payment Method', _paymentMethodController)
+            else if (receipt.paymentMethod != null)
+              _buildDataRow('Payment Method', receipt.paymentMethod!.displayName),
+          ]),
           
           // Amount breakdown
-          if (receipt.totalAmount != null) ...[
-            _buildSectionTitle('Amount Breakdown'),
-            _buildDataCard([
-              if (receipt.subtotalAmount != null)
-                _buildDataRow('Subtotal', _formatAmount(receipt.subtotalAmount!, receipt.currency)),
-              if (receipt.taxAmount != null)
-                _buildDataRow('Tax', _formatAmount(receipt.taxAmount!, receipt.currency)),
+          _buildSectionTitle('Amount Breakdown'),
+          _buildDataCard([
+            if (_isEditing)
+              _buildEditableDataRow('Subtotal', _subtotalController, hint: '0.00', isAmount: true)
+            else if (receipt.subtotalAmount != null)
+              _buildDataRow('Subtotal', _formatAmount(receipt.subtotalAmount!, receipt.currency)),
+            if (_isEditing)
+              _buildEditableDataRow('Tax', _taxController, hint: '0.00', isAmount: true)
+            else if (receipt.taxAmount != null)
+              _buildDataRow('Tax', _formatAmount(receipt.taxAmount!, receipt.currency)),
+            if (_isEditing)
+              _buildEditableDataRow('Total', _totalController, hint: '0.00', isAmount: true, isHighlighted: true)
+            else if (receipt.totalAmount != null)
               _buildDataRow(
                 'Total', 
                 _formatAmount(receipt.totalAmount!, receipt.currency),
                 isHighlighted: true,
               ),
-            ]),
-          ],
+          ]),
           
-          // Warnings if any
-          if (_extractionResult?.warnings.isNotEmpty == true) ...[
+          // Warnings if any (hide in edit mode)
+          if (!_isEditing && _extractionResult?.warnings.isNotEmpty == true) ...[
             const SizedBox(height: AppConstants.defaultPadding),
             _buildWarningsSection(),
           ],
@@ -674,6 +785,65 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     );
   }
 
+  Widget _buildEditableDataRow(
+    String label,
+    TextEditingController controller, {
+    String? hint,
+    bool isAmount = false,
+    bool isHighlighted = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: TextField(
+              controller: controller,
+              decoration: InputDecoration(
+                hintText: hint,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide(color: Colors.blue, width: 2),
+                ),
+              ),
+              style: TextStyle(
+                color: isHighlighted ? Colors.black : Colors.black87,
+                fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                fontSize: isHighlighted ? 16 : 14,
+              ),
+              keyboardType: isAmount ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildWarningsSection() {
     final warnings = _extractionResult!.warnings;
     
@@ -719,6 +889,138 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
 
   String _formatAmount(double amount, Currency currency) {
     return '${currency.symbol}${amount.toStringAsFixed(2)}';
+  }
+
+  /// Initialize text controllers with receipt data
+  void _initializeTextControllers(Receipt receipt) {
+    _merchantNameController.text = receipt.merchantName ?? '';
+    _receiptNumberController.text = receipt.receiptNumber ?? '';
+    _dateController.text = receipt.purchaseDate != null 
+        ? _formatDate(receipt.purchaseDate!) 
+        : '';
+    _subtotalController.text = receipt.subtotalAmount != null
+        ? receipt.subtotalAmount!.toStringAsFixed(2)
+        : '';
+    _taxController.text = receipt.taxAmount != null
+        ? receipt.taxAmount!.toStringAsFixed(2)
+        : '';
+    _totalController.text = receipt.totalAmount != null
+        ? receipt.totalAmount!.toStringAsFixed(2)
+        : '';
+    _paymentMethodController.text = receipt.paymentMethod?.displayName ?? '';
+  }
+
+  /// Toggle edit mode
+  void _toggleEditMode() {
+    setState(() {
+      _isEditing = true;
+    });
+  }
+
+  /// Cancel editing and revert to original data
+  void _cancelEdit() {
+    if (_extractedReceipt != null) {
+      _initializeTextControllers(_extractedReceipt!);
+    }
+    setState(() {
+      _isEditing = false;
+    });
+  }
+
+  /// Save corrected data as verified training data
+  Future<void> _saveAsVerified() async {
+    if (_ocrResult == null || _extractedReceipt == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No data to save'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Parse edited values
+      final correctedData = <String, dynamic>{
+        'merchant_name': _merchantNameController.text.trim().isEmpty 
+            ? null 
+            : _merchantNameController.text.trim(),
+        'receipt_number': _receiptNumberController.text.trim().isEmpty
+            ? null
+            : _receiptNumberController.text.trim(),
+        'date': _dateController.text.trim().isEmpty
+            ? null
+            : _dateController.text.trim(),
+        'subtotal_amount': _subtotalController.text.trim().isEmpty
+            ? null
+            : double.tryParse(_subtotalController.text.trim()),
+        'tax_amount': _taxController.text.trim().isEmpty
+            ? null
+            : double.tryParse(_taxController.text.trim()),
+        'total_amount': _totalController.text.trim().isEmpty
+            ? null
+            : double.tryParse(_totalController.text.trim()),
+        'payment_method': _paymentMethodController.text.trim().isEmpty
+            ? null
+            : _paymentMethodController.text.trim(),
+        'currency': _extractedReceipt!.currency.code,
+      };
+
+      // Validate required fields
+      if (correctedData['total_amount'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Total amount is required'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Save as verified training data
+      final receiptId = _generateReceiptId();
+      final savedPath = await _trainingDataCollector.saveVerifiedTrainingData(
+        receiptId: receiptId,
+        ocrResult: _ocrResult!,
+        correctedData: correctedData,
+        imagePath: widget.imagePath,
+        additionalMetadata: {
+          'is_test_image': widget.imagePath.contains('test_receipt'),
+          'original_confidence': _extractionResult?.confidence,
+        },
+      );
+
+      if (savedPath != null) {
+        setState(() {
+          _isEditing = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Verified training data saved successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        
+        logger.i('✅ Verified training data saved: $savedPath');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to save verified data'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      logger.e('Failed to save verified training data: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _navigateToEdit() {
