@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../data/models/receipt.dart';
+import '../../../data/models/tax_breakdown.dart';
 import '../../../data/models/processing_result.dart';
 import '../../../services/image_processing/image_preprocessor.dart';
 import '../../../services/ocr/ml_kit_service.dart';
@@ -99,7 +100,9 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       String imagePath = widget.imagePath;
       
       // Only apply preprocessing to camera-captured images, not test images
-      final isTestImage = widget.imagePath.contains('test_receipt');
+      final isTestImage = widget.imagePath.contains('test_receipt') || 
+                          widget.imagePath.contains('test_invoice_') ||
+                          widget.imagePath.contains('test_receipt_');
       logger.d('Image path: ${widget.imagePath}, isTestImage: $isTestImage');
       
       if (!isTestImage) {
@@ -226,6 +229,18 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   Receipt _buildReceiptFromExtraction(ExtractionResult extractionResult) {
     final data = extractionResult.extractedData;
     
+    // Extract TaxBreakdown from data
+    List<TaxBreakdown>? taxBreakdown;
+    if (data['tax_breakdown'] != null) {
+      final taxBreakdownList = data['tax_breakdown'] as List;
+      taxBreakdown = taxBreakdownList.map((item) {
+        return TaxBreakdown(
+          rate: (item['rate'] as num).toDouble(),
+          amount: (item['amount'] as num).toDouble(),
+        );
+      }).toList();
+    }
+    
     return Receipt.create(
       originalImagePath: widget.imagePath,
       processedImagePath: _processedImagePath,
@@ -235,6 +250,8 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       totalAmount: data['total_amount'] as double?,
       subtotalAmount: data['subtotal_amount'] as double?,
       taxAmount: data['tax_amount'] as double?,
+      taxBreakdown: taxBreakdown ?? const [],
+      taxTotal: data['tax_total'] as double?,
       paymentMethod: data['payment_method'] != null 
           ? PaymentMethod.values.firstWhere(
               (pm) => pm.name == data['payment_method'],
@@ -635,23 +652,39 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
               _buildDataRow('Payment Method', receipt.paymentMethod!.displayName),
           ]),
           
+          // Currency
+          if (receipt.currency != null) ...[
+            _buildSectionTitle('Currency'),
+            _buildDataCard([
+              _buildDataRow('Currency', receipt.currency.code),
+            ]),
+          ],
+          
           // Amount breakdown
           _buildSectionTitle('Amount Breakdown'),
           _buildDataCard([
             if (_isEditing)
               _buildEditableDataRow('Subtotal', _subtotalController, hint: '0.00', isAmount: true)
             else if (receipt.subtotalAmount != null)
-              _buildDataRow('Subtotal', _formatAmount(receipt.subtotalAmount!, receipt.currency)),
-            if (_isEditing)
+              _buildDataRow('Subtotal', _formatAmount(receipt.subtotalAmount!)),
+            // TaxBreakdownを表示
+            if (!_isEditing && receipt.taxBreakdown.isNotEmpty) ...[
+              ...receipt.taxBreakdown.map((tax) => _buildDataRow(
+                'Tax ${tax.rate}%',
+                _formatAmount(tax.amount),
+              )),
+              if (receipt.taxTotal != null)
+                _buildDataRow('Tax Total', _formatAmount(receipt.taxTotal!), isHighlighted: true),
+            ] else if (_isEditing)
               _buildEditableDataRow('Tax', _taxController, hint: '0.00', isAmount: true)
-            else if (receipt.taxAmount != null)
-              _buildDataRow('Tax', _formatAmount(receipt.taxAmount!, receipt.currency)),
+            else if (receipt.taxTotal != null)
+              _buildDataRow('Tax', _formatAmount(receipt.taxTotal!)),
             if (_isEditing)
               _buildEditableDataRow('Total', _totalController, hint: '0.00', isAmount: true, isHighlighted: true)
             else if (receipt.totalAmount != null)
               _buildDataRow(
                 'Total', 
-                _formatAmount(receipt.totalAmount!, receipt.currency),
+                _formatAmount(receipt.totalAmount!),
                 isHighlighted: true,
               ),
           ]),
@@ -887,7 +920,11 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  String _formatAmount(double amount, Currency currency) {
+  String _formatAmount(double amount) {
+    return amount.toStringAsFixed(2);
+  }
+  
+  String _formatAmountWithCurrency(double amount, Currency currency) {
     return '${currency.symbol}${amount.toStringAsFixed(2)}';
   }
 
@@ -964,6 +1001,14 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
             ? null
             : _paymentMethodController.text.trim(),
         'currency': _extractedReceipt!.currency.code,
+        // TaxBreakdownとTaxTotalを保存（既存の値を使用）
+        'tax_breakdown': _extractedReceipt!.taxBreakdown.isNotEmpty
+            ? _extractedReceipt!.taxBreakdown.map((tax) => {
+                'rate': tax.rate,
+                'amount': tax.amount,
+              }).toList()
+            : null,
+        'tax_total': _extractedReceipt!.taxTotal,
       };
 
       // Validate required fields

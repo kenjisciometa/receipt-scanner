@@ -76,6 +76,15 @@ class LanguageKeywords {
       'it': ['ricevuta'],
       'es': ['recibo'],
     },
+    'item_table_header': {
+      'en': ['qty', 'quantity', 'description', 'item', 'product', 'unit price', 'unit', 'price', 'amount'],
+      'fi': ['määrä', 'kappalemäärä', 'kuvaus', 'tuote', 'yksikköhinta', 'hinta', 'summa'],
+      'sv': ['kvantitet', 'antal', 'beskrivning', 'produkt', 'enhetspris', 'pris', 'belopp'],
+      'fr': ['quantité', 'description', 'article', 'produit', 'prix unitaire', 'prix', 'montant'],
+      'de': ['menge', 'anzahl', 'beschreibung', 'artikel', 'produkt', 'einzelpreis', 'preis', 'betrag'],
+      'it': ['quantità', 'descrizione', 'articolo', 'prodotto', 'prezzo unitario', 'prezzo', 'importo'],
+      'es': ['cantidad', 'descripción', 'artículo', 'producto', 'precio unitario', 'precio', 'importe'],
+    },
   };
 
   /// Get all keywords for a category across all languages

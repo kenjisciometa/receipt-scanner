@@ -24,17 +24,21 @@ def collect_from_database(db_path: str, output_dir: Path):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # レシートデータを取得
+    # レシート/領収書データを取得（document_typeで区別）
     cursor.execute("""
         SELECT id, original_image_path, raw_ocr_text, 
                merchant_name, purchase_date, total_amount,
                subtotal_amount, tax_amount, payment_method,
-               currency, detected_language, confidence
+               currency, detected_language, confidence,
+               document_type  -- 'receipt' or 'invoice'
         FROM receipts
         WHERE confidence > 0.7  -- 高信頼度のデータのみ
         ORDER BY created_at DESC
         LIMIT 1000
     """)
+    
+    # レシートと領収書の比率を調整（60-70%:30-40%）
+    # 実装例は load_mixed_training_data() を参照
     
     training_samples = []
     for row in cursor.fetchall():
@@ -84,7 +88,7 @@ def infer_labels_for_lines(
     return labeled_lines
 
 def infer_label(line: Dict, extraction_result: Dict) -> str:
-    """ルールベースでラベルを推論"""
+    """ルールベースでラベルを推論（レシートと領収書の両方に対応）"""
     text = line["text"].lower()
     
     # マーチャント名
@@ -206,9 +210,10 @@ from tensorflow.keras import layers
 def create_model(
     vocab_size: int = 10000,
     max_text_length: int = 100,
-    num_labels: int = 12
+    num_labels: int = 12,
+    max_sequence_length: int = 50  # レシートと領収書の両方に対応（領収書は行数が多い）
 ):
-    """レシート抽出モデル"""
+    """レシート/領収書抽出モデル（混合学習対応）"""
     
     # 入力
     text_input = keras.Input(shape=(max_text_length,), name="text")
@@ -253,10 +258,11 @@ import tensorflow as tf
 from pathlib import Path
 import json
 import numpy as np
+import random
 from sklearn.model_selection import train_test_split
 
-def load_dataset(data_dir: Path):
-    """データセットの読み込み"""
+def load_dataset(data_dir: Path, receipt_ratio: float = 0.65):
+    """データセットの読み込み（レシートと領収書の混合）"""
     X_text, X_pos, X_conf = [], [], []
     y = []
     
@@ -267,7 +273,22 @@ def load_dataset(data_dir: Path):
         "PAYMENT_METHOD": 9, "CURRENCY": 10, "OTHER": 11
     }
     
-    for json_file in sorted(data_dir.glob("*.json")):
+    # レシートと領収書を分けて読み込む
+    receipt_files = sorted(data_dir.glob("receipt_*.json"))
+    invoice_files = sorted(data_dir.glob("invoice_*.json"))
+    
+    # 比率に基づいてサンプリング
+    total_files = len(receipt_files) + len(invoice_files)
+    num_receipts = int(total_files * receipt_ratio)
+    num_invoices = total_files - num_receipts
+    
+    sampled_receipts = receipt_files[:min(num_receipts, len(receipt_files))]
+    sampled_invoices = invoice_files[:min(num_invoices, len(invoice_files))]
+    
+    all_files = sampled_receipts + sampled_invoices
+    random.shuffle(all_files)
+    
+    for json_file in all_files:
         with open(json_file) as f:
             data = json.load(f)
         
@@ -291,9 +312,9 @@ def load_dataset(data_dir: Path):
     )
 
 def main():
-    # データ読み込み
+    # データ読み込み（レシートと領収書の混合、比率: 65%:35%）
     data_dir = Path("data/training")
-    X, y = load_dataset(data_dir)
+    X, y = load_dataset(data_dir, receipt_ratio=0.65)
     
     # 訓練/検証分割
     X_train, X_val, y_train, y_val = train_test_split(
@@ -501,8 +522,16 @@ final finalResult = ruleBasedResult.confidence > 0.8
 
 ## 次のアクション
 
-1. **学習データ生成スクリプトを作成**: `scripts/collect_training_data.py`
-2. **小規模プロトタイプを訓練**: 10-20サンプルで動作確認
+1. **学習データ生成スクリプトを作成**: `scripts/collect_training_data.py`（レシートと領収書の両方に対応）
+2. **小規模プロトタイプを訓練**: 10-20サンプルで動作確認（レシートと領収書の両方で）
 3. **Flutter統合の準備**: `tflite_flutter`パッケージの追加
-4. **段階的にデータを拡張**: 100 → 500 → 1000サンプル
+4. **段階的にデータを拡張**: 100 → 500 → 1000サンプル（レシート60-70%、領収書30-40%の比率を維持）
+
+---
+
+## 参考資料
+
+- [ml-training-guide.md](./ml-training-guide.md)
+- [receipt-vs-invoice-training.md](./receipt-vs-invoice-training.md) - レシートと領収書の混合学習について
+- [pseudo-label-collection-strategy.md](./pseudo-label-collection-strategy.md) - データ拡張戦略
 

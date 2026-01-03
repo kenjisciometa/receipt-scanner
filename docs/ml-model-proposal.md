@@ -10,8 +10,9 @@
 現在のルールベース抽出では、多様なレシートフォーマットや言語に対応するのが困難です。`textLines`の構造化データを活用した機械学習モデルにより、より汎用的で高精度な抽出を実現します。
 
 ### 目標
-- **汎用性**: 様々なレシートフォーマットに対応
+- **汎用性**: 様々なレシート/領収書フォーマットに対応
 - **多言語対応**: 言語に依存しない抽出
+- **混合学習**: レシートと領収書を混ぜて学習（推奨比率: 60-70%:30-40%）
 - **自動学習**: 既存のルールベース結果から学習データを自動生成
 - **オンデバイス推論**: Flutterアプリ内で高速に動作
 
@@ -92,9 +93,10 @@ Output: [label_probabilities]
 
 ```
 ┌─────────────────────────────────────────┐
-│ 1. 既存レシート画像 + OCR結果            │
+│ 1. 既存レシート/領収書画像 + OCR結果    │
 │    - textLines (構造化データ)           │
 │    - boundingBox情報                    │
+│    - レシートと領収書の両方を含む       │
 └─────────────────────────────────────────┘
               ↓
 ┌─────────────────────────────────────────┐
@@ -221,7 +223,20 @@ def infer_label(line: Dict, extraction_result: Dict) -> str:
 
 ## 4. モデル実装アプローチ
 
-### 4.1 フレームワーク選択
+### 4.1 レシートと領収書の混合学習
+
+**推奨アプローチ：混合学習（60-70%:30-40%）**
+
+- レシートと領収書を混ぜて学習することで、1つのモデルで両方に対応可能
+- 位置情報ベースの特徴量を使用しているため、レイアウトの違いに対応可能
+- 詳細は [receipt-vs-invoice-training.md](./receipt-vs-invoice-training.md) を参照
+
+**実装上の注意点：**
+- シーケンス長を統一（推奨: 50行、レシートはパディング、領収書はトリミング）
+- ラベルの一貫性を保つ（共通ラベルセットを使用）
+- データのバランスを維持（レシート60-70%、領収書30-40%）
+
+### 4.2 フレームワーク選択
 
 #### オプション1: TensorFlow Lite（推奨）
 - **メリット**: Flutter統合が容易、オンデバイス推論が高速
@@ -248,9 +263,10 @@ from tensorflow.keras import layers
 def create_receipt_extraction_model(
     vocab_size: int = 10000,
     embedding_dim: int = 128,
-    num_labels: int = 12
+    num_labels: int = 12,
+    max_sequence_length: int = 50  # レシートと領収書の両方に対応
 ):
-    """レシート抽出用モデル"""
+    """レシート/領収書抽出用モデル（混合学習対応）"""
     
     # 入力層
     text_input = keras.Input(shape=(None,), name="text")
@@ -539,11 +555,24 @@ class ReceiptParser {
 
 ---
 
-## 8. 参考リソース
+## 8. レシートと領収書の混合学習
+
+詳細は [receipt-vs-invoice-training.md](./receipt-vs-invoice-training.md) を参照してください。
+
+**要点：**
+- レシートと領収書を混ぜて学習可能（推奨比率: 60-70%:30-40%）
+- 位置情報ベースの特徴量を使用しているため、レイアウトの違いに対応可能
+- 1つのモデルで両方に対応可能で、実装がシンプル
+- シーケンス長を統一（推奨: 50行、レシートはパディング、領収書はトリミング）
+
+---
+
+## 9. 参考リソース
 
 - [TensorFlow Lite ガイド](https://www.tensorflow.org/lite)
 - [Flutter ML パッケージ](https://pub.dev/packages/tflite_flutter)
 - [NER (Named Entity Recognition) チュートリアル](https://huggingface.co/docs/transformers/tasks/token_classification)
+- [receipt-vs-invoice-training.md](./receipt-vs-invoice-training.md) - レシートと領収書の混合学習について
 
 ---
 

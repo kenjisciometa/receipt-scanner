@@ -18,6 +18,11 @@ Receipt _$ReceiptFromJson(Map<String, dynamic> json) => Receipt(
       totalAmount: (json['totalAmount'] as num?)?.toDouble(),
       subtotalAmount: (json['subtotalAmount'] as num?)?.toDouble(),
       taxAmount: (json['taxAmount'] as num?)?.toDouble(),
+      taxBreakdown: (json['taxBreakdown'] as List<dynamic>?)
+              ?.map((e) => TaxBreakdown.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      taxTotal: (json['taxTotal'] as num?)?.toDouble(),
       paymentMethod:
           $enumDecodeNullable(_$PaymentMethodEnumMap, json['paymentMethod']),
       currency: $enumDecodeNullable(_$CurrencyEnumMap, json['currency']) ??
@@ -49,6 +54,8 @@ Map<String, dynamic> _$ReceiptToJson(Receipt instance) => <String, dynamic>{
       'totalAmount': instance.totalAmount,
       'subtotalAmount': instance.subtotalAmount,
       'taxAmount': instance.taxAmount,
+      'taxBreakdown': instance.taxBreakdown.map((e) => e.toJson()).toList(),
+      'taxTotal': instance.taxTotal,
       'paymentMethod': _$PaymentMethodEnumMap[instance.paymentMethod],
       'currency': _$CurrencyEnumMap[instance.currency]!,
       'items': instance.items.map((e) => e.toJson()).toList(),
@@ -66,6 +73,7 @@ const _$PaymentMethodEnumMap = {
   PaymentMethod.cash: 'cash',
   PaymentMethod.creditCard: 'credit_card',
   PaymentMethod.debitCard: 'debit_card',
+  PaymentMethod.card: 'card',
   PaymentMethod.mobilePayment: 'mobile_payment',
   PaymentMethod.contactless: 'contactless',
   PaymentMethod.bankTransfer: 'bank_transfer',

@@ -36,19 +36,16 @@ class TrainingDataCollector {
       final trainingData = <String, dynamic>{
         'receipt_id': receiptId,
         'timestamp': DateTime.now().toIso8601String(),
+        'is_verified': false, // Explicitly mark as not verified
         'text_lines': _prepareTextLines(ocrResult, extractionResult),
         'extraction_result': _prepareExtractionResult(extractionResult),
-        'metadata': {
-          'image_path': imagePath,
-          'language': ocrResult.detectedLanguage ?? 'unknown',
-          'ocr_confidence': ocrResult.confidence,
-          'extraction_confidence': extractionResult.confidence,
-          'extraction_method': extractionResult.metadata['parsing_method'] ?? 'rule_based',
-          'consistency_score': extractionResult.metadata['consistency_score'],
-          'text_lines_count': ocrResult.textLines.length,
-          'text_blocks_count': ocrResult.textBlocks.length,
-          if (additionalMetadata != null) ...additionalMetadata,
-        },
+        'metadata': _buildMetadata(
+          imagePath: imagePath,
+          ocrResult: ocrResult,
+          extractionResult: extractionResult,
+          isVerified: false,
+          additionalMetadata: additionalMetadata,
+        ),
       };
 
       // Get training data directory
@@ -113,21 +110,25 @@ class TrainingDataCollector {
         // Generate pseudo-label
         final labelInfo = _generatePseudoLabel(line, extractionResult, i);
         
+        // Always provide features and feature_vector (use defaults if not available)
+        final finalFeatures = features ?? _getDefaultFeatures();
+        final finalFeatureVector = featureVector ?? _getDefaultFeatureVector();
+        
         textLines.add({
           'text': line.text,
-          'bounding_box': line.boundingBox,
+          'bounding_box': line.boundingBox ?? [0.0, 0.0, 0.0, 0.0], // Default if null
           'confidence': line.confidence,
           'line_index': i,
           'elements': line.elements.map((e) => {
             'text': e.text,
             'confidence': e.confidence,
-            'bounding_box': e.boundingBox,
+            'bounding_box': e.boundingBox ?? [0.0, 0.0, 0.0, 0.0], // Default if null
           }).toList(),
-          // ML training fields
+          // ML training fields (always present)
           'label': labelInfo['label'],
           'label_confidence': labelInfo['confidence'],
-          if (features != null) 'features': _featuresToMap(features),
-          if (featureVector != null) 'feature_vector': featureVector,
+          'features': _featuresToMap(finalFeatures),
+          'feature_vector': finalFeatureVector,
         });
       }
     } else {
@@ -138,11 +139,14 @@ class TrainingDataCollector {
         
         textLines.add({
           'text': block.text,
-          'bounding_box': block.boundingBox,
+          'bounding_box': block.boundingBox ?? [0.0, 0.0, 0.0, 0.0], // Default if null
           'confidence': block.confidence,
           'line_index': i,
+          'elements': [], // Empty array for textBlocks
           'label': labelInfo['label'],
           'label_confidence': labelInfo['confidence'],
+          'features': _getDefaultFeatures(), // Default features
+          'feature_vector': _getDefaultFeatureVector(), // Default feature vector
         });
       }
     }
@@ -382,6 +386,60 @@ class TrainingDataCollector {
     };
   }
 
+  /// Get default features when bounding box is not available
+  TextLineFeatures _getDefaultFeatures() {
+    return TextLineFeatures(
+      xCenter: 0.0,
+      yCenter: 0.0,
+      width: 0.0,
+      height: 0.0,
+      isRightSide: false,
+      isBottomArea: false,
+      isMiddleSection: false,
+      lineIndexNorm: 0.0,
+      hasCurrencySymbol: false,
+      hasPercent: false,
+      hasAmountLike: false,
+      hasTotalKeyword: false,
+      hasTaxKeyword: false,
+      hasSubtotalKeyword: false,
+      hasDateLike: false,
+      hasQuantityMarker: false,
+      hasItemLike: false,
+      digitCount: 0,
+      alphaCount: 0,
+      containsColon: false,
+    );
+  }
+
+  /// Get default feature vector
+  List<double> _getDefaultFeatureVector() {
+    return List.filled(20, 0.0);
+  }
+
+  /// Build unified metadata structure
+  Map<String, dynamic> _buildMetadata({
+    required String imagePath,
+    required OCRResult ocrResult,
+    required ExtractionResult extractionResult,
+    required bool isVerified,
+    Map<String, dynamic>? additionalMetadata,
+  }) {
+    return {
+      'image_path': imagePath,
+      'language': ocrResult.detectedLanguage ?? 'unknown',
+      'ocr_confidence': ocrResult.confidence,
+      'extraction_confidence': extractionResult.confidence,
+      'extraction_method': extractionResult.metadata['parsing_method'] ?? 'rule_based',
+      'consistency_score': extractionResult.metadata['consistency_score'],
+      'text_lines_count': ocrResult.textLines.length,
+      'text_blocks_count': ocrResult.textBlocks.length,
+      'is_verified': isVerified, // Unified field
+      'verified_at': isVerified ? DateTime.now().toIso8601String() : null, // Unified field
+      if (additionalMetadata != null) ...additionalMetadata,
+    };
+  }
+
   /// Convert TextLineFeatures to Map for JSON serialization
   Map<String, dynamic> _featuresToMap(TextLineFeatures features) {
     return {
@@ -474,34 +532,34 @@ class TrainingDataCollector {
         confidence: 1.0,
       );
       
+      // Create ExtractionResult for verified data
+      final verifiedExtractionResult = ExtractionResult(
+        success: true,
+        processingTime: 0,
+        extractedData: correctedData,
+        confidence: 1.0,
+        warnings: [],
+        appliedPatterns: [],
+        metadata: {
+          'parsing_method': 'user_verified',
+          'is_ground_truth': true,
+        },
+      );
+      
       // Prepare verified training data structure
       final trainingData = <String, dynamic>{
         'receipt_id': receiptId,
         'timestamp': DateTime.now().toIso8601String(),
         'is_verified': true, // Mark as verified ground truth
-        'text_lines': _prepareTextLines(ocrResult, mockExtractionResult),
-        'extraction_result': {
-          'success': true,
-          'confidence': 1.0, // Verified data has maximum confidence
-          'extracted_data': correctedData,
-          'warnings': [],
-          'applied_patterns': [],
-          'metadata': {
-            'parsing_method': 'user_verified',
-            'is_ground_truth': true,
-          },
-        },
-        'metadata': {
-          'image_path': imagePath,
-          'language': ocrResult.detectedLanguage ?? 'unknown',
-          'ocr_confidence': ocrResult.confidence,
-          'extraction_confidence': 1.0, // Verified data
-          'extraction_method': 'user_verified',
-          'text_lines_count': ocrResult.textLines.length,
-          'text_blocks_count': ocrResult.textBlocks.length,
-          'verified_at': DateTime.now().toIso8601String(),
-          if (additionalMetadata != null) ...additionalMetadata,
-        },
+        'text_lines': _prepareTextLines(ocrResult, verifiedExtractionResult),
+        'extraction_result': _prepareExtractionResult(verifiedExtractionResult),
+        'metadata': _buildMetadata(
+          imagePath: imagePath,
+          ocrResult: ocrResult,
+          extractionResult: verifiedExtractionResult,
+          isVerified: true,
+          additionalMetadata: additionalMetadata,
+        ),
       };
 
       // Get training data directory
