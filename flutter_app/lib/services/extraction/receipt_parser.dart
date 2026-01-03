@@ -687,12 +687,12 @@ class ReceiptParser {
   /// 
   /// This method detects tables based on structure (multiple amounts in same row)
   /// rather than specific keywords, making it language-independent.
-  Map<String, double> _extractAmountsFromTable(
+  Map<String, dynamic> _extractAmountsFromTable(
     List<String> lines,
     List<String> appliedPatterns, {
     List<TextLine>? textLines,
   }) {
-    final amounts = <String, double>{};
+    final amounts = <String, dynamic>{};
     logger.d('📊 Starting structure-based table detection (language-independent)');
     
     // Amount pattern (language-independent - works with any currency)
@@ -734,6 +734,8 @@ class ReceiptParser {
   }
   
   /// Check if header text indicates a summary table (Subtotal, Tax, Total)
+  /// More strict: requires multiple column names and no amounts (or very few)
+  /// Uses word boundary matching to match whole words only
   bool _isSummaryTableHeader(String headerText) {
     final lower = headerText.toLowerCase();
     
@@ -742,19 +744,63 @@ class ReceiptParser {
     final subtotalKeywords = LanguageKeywords.getAllKeywords('subtotal');
     final taxKeywords = LanguageKeywords.getAllKeywords('tax');
     
-    // サマリーテーブルのキーワードを統合
-    final summaryTableKeywords = [
-      ...totalKeywords,
-      ...subtotalKeywords,
-      ...taxKeywords,
-    ];
+    // Count how many DIFFERENT keyword categories are found (not total count of matches)
+    // This prevents counting the same keyword multiple times if it appears in multiple languages
+    // Use word boundary matching to avoid false positives (e.g., "Subtotal" matching "total")
+    bool hasTotal = false;
+    bool hasSubtotal = false;
+    bool hasTax = false;
     
-    for (final keyword in summaryTableKeywords) {
-      if (lower.contains(keyword.toLowerCase())) {
-        return true;
+    for (final keyword in totalKeywords) {
+      // Use word boundary regex to match whole words only
+      final keywordLower = keyword.toLowerCase();
+      final pattern = RegExp(r'\b' + RegExp.escape(keywordLower) + r'\b');
+      if (pattern.hasMatch(lower)) {
+        hasTotal = true;
+        break;
+      }
+    }
+    for (final keyword in subtotalKeywords) {
+      // Use word boundary regex to match whole words only
+      final keywordLower = keyword.toLowerCase();
+      final pattern = RegExp(r'\b' + RegExp.escape(keywordLower) + r'\b');
+      if (pattern.hasMatch(lower)) {
+        hasSubtotal = true;
+        break;
+      }
+    }
+    for (final keyword in taxKeywords) {
+      // Use word boundary regex to match whole words only
+      final keywordLower = keyword.toLowerCase();
+      final pattern = RegExp(r'\b' + RegExp.escape(keywordLower) + r'\b');
+      if (pattern.hasMatch(lower)) {
+        hasTax = true;
+        break;
       }
     }
     
+    // Count distinct keyword categories found
+    int keywordCount = 0;
+    if (hasTotal) keywordCount++;
+    if (hasSubtotal) keywordCount++;
+    if (hasTax) keywordCount++;
+    
+    // テーブルヘッダーとして適切な条件:
+    // 1. 複数のキーワードカテゴリを含む（2つ以上）- テーブルヘッダーは複数の列名を含む
+    // 2. "rate" キーワードを含む場合も有効（"Tax rate" など）
+    final hasRateKeyword = RegExp(r'\brate\b').hasMatch(lower);
+    
+    // デバッグログ
+    logger.d('📊 _isSummaryTableHeader: "$headerText" -> hasTotal=$hasTotal, hasSubtotal=$hasSubtotal, hasTax=$hasTax, keywordCount=$keywordCount, hasRateKeyword=$hasRateKeyword');
+    
+    // 厳格な条件: 複数の列名を含むことを必須とする
+    // 単一のラベル行（例: "Subtotal: €12.58"）を除外
+    if (keywordCount >= 2 || (keywordCount >= 1 && hasRateKeyword)) {
+      logger.d('📊 _isSummaryTableHeader: returning true');
+      return true;
+    }
+    
+    logger.d('📊 _isSummaryTableHeader: returning false');
     return false;
   }
   
@@ -838,13 +884,13 @@ class ReceiptParser {
   }
   
   /// Extract amounts from table using boundingBox information (structure-based, language-independent)
-  Map<String, double> _extractAmountsFromTableWithBoundingBox(
+  Map<String, dynamic> _extractAmountsFromTableWithBoundingBox(
     List<TextLine> textLines,
     List<String> appliedPatterns,
     RegExp amountPattern,
     RegExp percentPattern,
   ) {
-    final amounts = <String, double>{};
+    final amounts = <String, dynamic>{};
     const yTolerance = 10.0; // Pixels tolerance for same line
     
     // Step 1: Detect table structure - find rows with multiple amounts (same Y coordinate)
@@ -911,11 +957,13 @@ class ReceiptParser {
           continue;
         }
         
-        // サマリーテーブルのヘッダー、またはアイテムテーブルでない場合
-        if (isSummaryTable || (!isItemTable && headerAmountCount <= 1)) {
+        // サマリーテーブルのヘッダーのみを選択（キーワードを含むことを必須とする）
+        if (isSummaryTable) {
           headerLine = _combineTextLines(sameYLines);
           headerIndex = i;
           logger.d('📊 Found summary table header at line $i: "${combinedText}"');
+        } else {
+          logger.d('📊 Skipping non-summary header at line $i: "${combinedText}"');
         }
       } else if (headerLine != null && amountCount >= 3 && i > headerIndex) {
         // データ行の検証
@@ -936,6 +984,7 @@ class ReceiptParser {
       double totalTax = 0.0;
       double totalSubtotal = 0.0;
       double? finalTotal;
+      final taxBreakdowns = <Map<String, double>>[];
       
       for (int rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
         final dataRow = dataRows[rowIndex];
@@ -948,18 +997,28 @@ class ReceiptParser {
         );
         
         if (extracted.isNotEmpty) {
-          // Accumulate values from multiple rows
-          if (extracted.containsKey('tax_amount')) {
-            totalTax += extracted['tax_amount']!;
+          final rowAmounts = extracted['amounts'] as Map<String, double>?;
+          if (rowAmounts != null) {
+            // Accumulate values from multiple rows
+            if (rowAmounts.containsKey('tax_amount')) {
+              totalTax += rowAmounts['tax_amount']!;
+            }
+            if (rowAmounts.containsKey('subtotal_amount')) {
+              totalSubtotal += rowAmounts['subtotal_amount']!;
+            }
+            if (rowAmounts.containsKey('total_amount') && finalTotal == null && dataRows.length == 1) {
+              finalTotal = rowAmounts['total_amount'];
+            }
+            
+            logger.d('📊 Row ${rowIndex + 1}: tax=${rowAmounts['tax_amount']}, subtotal=${rowAmounts['subtotal_amount']}, row_total=${rowAmounts['total_amount']}');
           }
-          if (extracted.containsKey('subtotal_amount')) {
-            totalSubtotal += extracted['subtotal_amount']!;
-          }
-          // For multiple rows, each row's total is that row's subtotal + tax
-          // The final total should be the sum of all rows' subtotals + taxes
-          // So we don't use individual row totals, but calculate from accumulated values
           
-          logger.d('📊 Row ${rowIndex + 1}: tax=${extracted['tax_amount']}, subtotal=${extracted['subtotal_amount']}, row_total=${extracted['total_amount']}');
+          // Extract tax breakdown information
+          if (extracted.containsKey('tax_breakdown')) {
+            final breakdown = extracted['tax_breakdown'] as Map<String, double>;
+            taxBreakdowns.add(breakdown);
+            logger.d('📊 Row ${rowIndex + 1} tax breakdown: ${breakdown['rate']}% = ${breakdown['amount']}');
+          }
         }
       }
       
@@ -979,6 +1038,12 @@ class ReceiptParser {
       } else if (finalTotal != null && dataRows.length == 1) {
         // For single row, use the row's total directly
         amounts['total_amount'] = finalTotal;
+      }
+      
+      // Store tax breakdown information for later use
+      if (taxBreakdowns.isNotEmpty) {
+        amounts['_tax_breakdowns'] = taxBreakdowns;
+        logger.d('📊 Tax breakdowns from table: $taxBreakdowns');
       }
       
       if (amounts.isNotEmpty) {
@@ -1039,34 +1104,50 @@ class ReceiptParser {
   }
   
   /// Extract table values using boundingBox column positions
-  Map<String, double> _extractTableValuesFromBoundingBox(
+  /// Returns a map with amounts and tax breakdown information
+  Map<String, dynamic> _extractTableValuesFromBoundingBox(
     TextLine headerLine,
     TextLine dataLine,
     List<String> appliedPatterns,
     RegExp amountPattern,
     RegExp percentPattern,
   ) {
+    final result = <String, dynamic>{};
     final amounts = <String, double>{};
     
-    // Extract header column positions (X coordinates)
-    final headerColumns = <double>[];
+    // Parse header to identify column names and positions
+    final headerText = headerLine.text.toLowerCase();
+    final headerElements = <({String text, double x, int index})>[];
+    
     if (headerLine.elements.isNotEmpty) {
-      for (final element in headerLine.elements) {
+      for (int i = 0; i < headerLine.elements.length; i++) {
+        final element = headerLine.elements[i];
         final bbox = element.boundingBox;
         if (bbox != null && bbox.length >= 4) {
-          headerColumns.add(bbox[0]); // X coordinate
+          headerElements.add((text: element.text.toLowerCase().trim(), x: bbox[0], index: i));
         }
       }
-    } else {
-      // Fallback: use header line boundingBox
-      final headerBbox = headerLine.boundingBox;
-      if (headerBbox != null && headerBbox.length >= 4) {
-        // Estimate column positions (assume 4 columns)
-        final width = headerBbox[2];
-        final startX = headerBbox[0];
-        for (int i = 0; i < 4; i++) {
-          headerColumns.add(startX + (width / 4) * i);
-        }
+    }
+    
+    // Sort header elements by X coordinate
+    headerElements.sort((a, b) => a.x.compareTo(b.x));
+    
+    // Identify column types based on header text
+    final columnTypes = <int, String>{}; // index -> type (tax_rate, tax, subtotal, total)
+    final totalKeywords = LanguageKeywords.getAllKeywords('total');
+    final subtotalKeywords = LanguageKeywords.getAllKeywords('subtotal');
+    final taxKeywords = LanguageKeywords.getAllKeywords('tax');
+    
+    for (int i = 0; i < headerElements.length; i++) {
+      final headerText = headerElements[i].text;
+      if (headerText.contains('rate') || headerText.contains('%')) {
+        columnTypes[i] = 'tax_rate';
+      } else if (taxKeywords.any((k) => headerText.contains(k.toLowerCase()))) {
+        columnTypes[i] = 'tax';
+      } else if (subtotalKeywords.any((k) => headerText.contains(k.toLowerCase()))) {
+        columnTypes[i] = 'subtotal';
+      } else if (totalKeywords.any((k) => headerText.contains(k.toLowerCase()))) {
+        columnTypes[i] = 'total';
       }
     }
     
@@ -1089,47 +1170,133 @@ class ReceiptParser {
     // Sort data values by X coordinate (left to right)
     dataValues.sort((a, b) => a.x.compareTo(b.x));
     
-    logger.d('📊 Header columns: $headerColumns, Data values: ${dataValues.map((v) => "${v.text}@${v.x.toStringAsFixed(1)}").toList()}');
+    // Match data values to header columns based on X coordinate proximity
+    // Each data value should match to a different column (avoid overwriting)
+    final matchedValues = <int, ({String text, double x})>{}; // column index -> value
+    final usedColumns = <int>{}; // Track which columns have been matched
     
-    // Extract amounts (skip percentage)
-    final amountValues = dataValues
-        .where((v) => !v.text.contains('%'))
-        .map((v) => _parseAmount(v.text))
-        .where((a) => a != null && a! > 0)
-        .cast<double>()
-        .toList();
-    
-    // Extract percentage if present
-    final percentValue = dataValues
-        .where((v) => v.text.contains('%'))
-        .map((v) => percentPattern.firstMatch(v.text))
-        .where((m) => m != null)
-        .map((m) => int.parse(m!.group(0)!.replaceAll('%', '')))
-        .firstOrNull;
-    
-    if (percentValue != null) {
-      logger.d('📊 Found tax rate: $percentValue%');
-      appliedPatterns.add('table_tax_rate_${percentValue}%');
+    for (final dataValue in dataValues) {
+      int bestMatchIndex = -1;
+      double minDistance = double.infinity;
+      
+      // Find the closest unmatched column
+      for (int i = 0; i < headerElements.length; i++) {
+        if (usedColumns.contains(i)) continue; // Skip already matched columns
+        
+        final distance = (dataValue.x - headerElements[i].x).abs();
+        if (distance < minDistance) {
+          minDistance = distance;
+          bestMatchIndex = i;
+        }
+      }
+      
+      if (bestMatchIndex >= 0 && minDistance < 100) { // Tolerance: 100 pixels
+        matchedValues[bestMatchIndex] = dataValue;
+        usedColumns.add(bestMatchIndex);
+        logger.d('📊 Matched "${dataValue.text}" to column $bestMatchIndex (distance: ${minDistance.toStringAsFixed(1)})');
+      } else if (bestMatchIndex >= 0) {
+        logger.d('📊 Skipped "${dataValue.text}" - distance too large: ${minDistance.toStringAsFixed(1)}');
+      }
     }
     
-    logger.d('📊 Extracted ${amountValues.length} amounts: $amountValues');
+    logger.d('📊 Header columns: ${headerElements.map((e) => "${e.text}@${e.x.toStringAsFixed(1)}").toList()}, Matched values: ${matchedValues.entries.map((e) => "col${e.key}=${e.value.text}@${e.value.x.toStringAsFixed(1)}").toList()}');
     
-    // Assign values based on count and position
-    // Typical order: Tax, Subtotal, Total (or just Subtotal, Total)
-    if (amountValues.length >= 3) {
-      // Usually: Tax, Subtotal, Total
-      amounts['tax_amount'] = amountValues[0];
-      amounts['subtotal_amount'] = amountValues[1];
-      amounts['total_amount'] = amountValues[2];
-      logger.d('📊 Assigned: tax=${amountValues[0]}, subtotal=${amountValues[1]}, total=${amountValues[2]}');
-    } else if (amountValues.length == 2) {
-      // If only 2 values, assume Subtotal and Total
-      amounts['subtotal_amount'] = amountValues[0];
-      amounts['total_amount'] = amountValues[1];
-      logger.d('📊 Assigned: subtotal=${amountValues[0]}, total=${amountValues[1]}');
+    // Extract tax rate
+    double? taxRate;
+    for (final entry in matchedValues.entries) {
+      final columnIndex = entry.key;
+      final value = entry.value;
+      
+      if (columnTypes[columnIndex] == 'tax_rate' || value.text.contains('%')) {
+        final percentMatch = percentPattern.firstMatch(value.text);
+        if (percentMatch != null) {
+          // percentPattern is r'\d+%', so use group(0) and remove %
+          final percentStr = percentMatch.group(0)!.replaceAll('%', '').replaceAll(',', '.');
+          taxRate = double.tryParse(percentStr);
+          if (taxRate != null) {
+            logger.d('📊 Found tax rate: $taxRate%');
+            appliedPatterns.add('table_tax_rate_${taxRate.toStringAsFixed(0)}%');
+            result['tax_rate'] = taxRate;
+          }
+        }
+      }
     }
     
-    return amounts;
+    // Extract amounts based on column types
+    for (final entry in matchedValues.entries) {
+      final columnIndex = entry.key;
+      final value = entry.value;
+      final columnType = columnTypes[columnIndex];
+      
+      if (value.text.contains('%')) continue; // Skip percentage, already processed
+      
+      final amount = _parseAmount(value.text);
+      if (amount == null || amount <= 0) continue;
+      
+      if (columnType == 'tax') {
+        amounts['tax_amount'] = amount;
+        logger.d('📊 Assigned tax amount: $amount (from column $columnIndex)');
+      } else if (columnType == 'subtotal') {
+        amounts['subtotal_amount'] = amount;
+        logger.d('📊 Assigned subtotal amount: $amount (from column $columnIndex)');
+      } else if (columnType == 'total') {
+        amounts['total_amount'] = amount;
+        logger.d('📊 Assigned total amount: $amount (from column $columnIndex)');
+      }
+    }
+    
+    // Fallback: if column types not identified, use position-based assignment
+    // But also check if we have tax rate to determine which value is tax amount
+    if (amounts.isEmpty && matchedValues.isNotEmpty) {
+      final sortedValues = matchedValues.entries.toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+      
+      final amountValues = sortedValues
+          .where((e) => !e.value.text.contains('%'))
+          .map((e) => _parseAmount(e.value.text))
+          .where((a) => a != null && a! > 0)
+          .cast<double>()
+          .toList();
+      
+      if (amountValues.length >= 3) {
+        // If we have tax rate, the first amount is likely tax amount
+        if (taxRate != null) {
+          amounts['tax_amount'] = amountValues[0];
+          amounts['subtotal_amount'] = amountValues[1];
+          amounts['total_amount'] = amountValues[2];
+          logger.d('📊 Fallback (with tax rate): tax=${amountValues[0]}, subtotal=${amountValues[1]}, total=${amountValues[2]}');
+        } else {
+          amounts['tax_amount'] = amountValues[0];
+          amounts['subtotal_amount'] = amountValues[1];
+          amounts['total_amount'] = amountValues[2];
+          logger.d('📊 Fallback: tax=${amountValues[0]}, subtotal=${amountValues[1]}, total=${amountValues[2]}');
+        }
+      } else if (amountValues.length == 2) {
+        // If we have tax rate, the first amount might be tax amount
+        if (taxRate != null) {
+          amounts['tax_amount'] = amountValues[0];
+          amounts['subtotal_amount'] = amountValues[1];
+          logger.d('📊 Fallback (with tax rate): tax=${amountValues[0]}, subtotal=${amountValues[1]}');
+        } else {
+          amounts['subtotal_amount'] = amountValues[0];
+          amounts['total_amount'] = amountValues[1];
+          logger.d('📊 Fallback: subtotal=${amountValues[0]}, total=${amountValues[1]}');
+        }
+      }
+    }
+    
+    result['amounts'] = amounts;
+    
+    // If we have both tax rate and tax amount, create tax breakdown info
+    if (taxRate != null && amounts.containsKey('tax_amount') && amounts['tax_amount'] is double) {
+      result['tax_breakdown'] = {
+        'rate': taxRate,
+        'amount': amounts['tax_amount'] as double,
+      };
+      logger.d('📊 Tax breakdown: ${taxRate}% = ${amounts['tax_amount']}');
+    }
+    
+    return result;
   }
   
   /// Fallback: Extract amounts from table using text-based structure detection
@@ -1278,7 +1445,7 @@ class ReceiptParser {
 
   /// Extract amounts line by line (adds VAT-specific support + better selection)
   /// Now with unified candidate collection (table + line-based) and consistency checking
-  Map<String, double> _extractAmountsLineByLine(
+  Map<String, dynamic> _extractAmountsLineByLine(
     List<String> lines,
     String? language,
     List<String> appliedPatterns, {
@@ -1304,7 +1471,7 @@ class ReceiptParser {
     final consistencyResult = _selectBestCandidates(allCandidates, itemsSum: itemsSum, itemsCount: itemsCount);
     
     // 3. 結果をマップに変換
-    final amounts = <String, double>{};
+    final amounts = <String, dynamic>{};
     for (final entry in consistencyResult.selectedCandidates.entries) {
       final fieldName = entry.key;
       final candidate = entry.value;
@@ -1321,14 +1488,27 @@ class ReceiptParser {
       }
     }
     
-    // 4. 警告をログに記録
+    // 4. テーブル抽出から_tax_breakdownsを取得（_collectAllCandidatesでは失われているため）
+    if (textLines != null && textLines.isNotEmpty) {
+      final tableAmounts = _extractAmountsFromTable(
+        lines,
+        appliedPatterns,
+        textLines: textLines,
+      );
+      if (tableAmounts.containsKey('_tax_breakdowns')) {
+        amounts['_tax_breakdowns'] = tableAmounts['_tax_breakdowns'];
+        logger.d('📊 Added _tax_breakdowns from table extraction: ${amounts['_tax_breakdowns']}');
+      }
+    }
+    
+    // 5. 警告をログに記録
     if (consistencyResult.warnings.isNotEmpty) {
       for (final warning in consistencyResult.warnings) {
         logger.w('⚠️ Consistency warning: $warning');
       }
     }
     
-    // 5. 要確認フラグをメタデータに追加
+    // 6. 要確認フラグをメタデータに追加
     if (consistencyResult.needsVerification) {
       appliedPatterns.add('needs_verification');
       logger.w('⚠️ Receipt needs manual verification');
@@ -1337,11 +1517,13 @@ class ReceiptParser {
     logger.d('Unified extraction completed. Found amounts: $amounts');
     logger.d('Consistency score: ${consistencyResult.consistencyScore.toStringAsFixed(2)}');
     
-    // 6. フォールバック: 整合性チェックで選択されなかったフィールドがあれば計算
+    // 7. フォールバック: 整合性チェックで選択されなかったフィールドがあれば計算
     if (!amounts.containsKey('total_amount') &&
         amounts.containsKey('subtotal_amount') &&
-        amounts.containsKey('tax_amount')) {
-      final computed = (amounts['subtotal_amount']! + amounts['tax_amount']!);
+        amounts.containsKey('tax_amount') &&
+        amounts['subtotal_amount'] is double &&
+        amounts['tax_amount'] is double) {
+      final computed = ((amounts['subtotal_amount'] as double) + (amounts['tax_amount'] as double));
       amounts['total_amount'] = double.parse(computed.toStringAsFixed(2));
       appliedPatterns.add('computed_total_from_subtotal_tax');
       logger.d('✅ Computed TOTAL from subtotal+tax: ${amounts['total_amount']}');
@@ -1996,18 +2178,41 @@ class ReceiptParser {
         items: items,
       );
       logger.d('Extracted amounts from blocks: $amounts');
-      extractedData.addAll(amounts);
       
       // Extract TaxBreakdown (multiple tax rates)
-      final taxBreakdownCandidates = _collectTaxBreakdownCandidates(
+      // First, check if table extraction provided tax breakdown information
+      final taxBreakdownCandidates = <TaxBreakdownCandidate>[];
+      
+      if (amounts.containsKey('_tax_breakdowns')) {
+        final tableTaxBreakdowns = amounts['_tax_breakdowns'] as List<Map<String, double>>;
+        for (final breakdown in tableTaxBreakdowns) {
+          taxBreakdownCandidates.add(TaxBreakdownCandidate(
+            rate: breakdown['rate']!,
+            amount: breakdown['amount']!,
+            lineIndex: -1,
+            score: 95, // High score for table extraction
+            source: 'table_extraction',
+            boundingBox: null,
+            confidence: 1.0,
+          ));
+          logger.d('✅ Tax breakdown from table: ${breakdown['rate']}% = ${breakdown['amount']}');
+        }
+        // Remove temporary key before adding to extractedData
+        amounts.remove('_tax_breakdowns');
+      }
+      
+      extractedData.addAll(amounts);
+      
+      // Also collect from line-based extraction (may find additional tax breakdowns)
+      final lineBasedTaxBreakdownCandidates = _collectTaxBreakdownCandidates(
         combinedLines,
         detectedLanguage,
         appliedPatterns,
         textLines: textLines,
         amountCandidates: {
-          'subtotal_amount': amounts.containsKey('subtotal_amount')
+          'subtotal_amount': amounts.containsKey('subtotal_amount') && amounts['subtotal_amount'] is double
               ? [AmountCandidate(
-                  amount: amounts['subtotal_amount']!,
+                  amount: amounts['subtotal_amount'] as double,
                   score: 100,
                   lineIndex: -1,
                   source: 'selected',
@@ -2016,6 +2221,17 @@ class ReceiptParser {
               : [],
         },
       );
+      
+      // Merge table and line-based tax breakdowns (avoid duplicates)
+      for (final candidate in lineBasedTaxBreakdownCandidates) {
+        final isDuplicate = taxBreakdownCandidates.any((tb) => 
+          (tb.rate - candidate.rate).abs() < 0.01 && 
+          (tb.amount - candidate.amount).abs() < 0.01
+        );
+        if (!isDuplicate) {
+          taxBreakdownCandidates.add(candidate);
+        }
+      }
       
       if (taxBreakdownCandidates.isNotEmpty) {
         // TaxBreakdownをextractedDataに追加
@@ -2413,8 +2629,10 @@ class ReceiptParser {
     // Compute total if possible
     if (!amounts.containsKey('total_amount') &&
         amounts.containsKey('subtotal_amount') &&
-        amounts.containsKey('tax_amount')) {
-      final computed = (amounts['subtotal_amount']! + amounts['tax_amount']!);
+        amounts.containsKey('tax_amount') &&
+        amounts['subtotal_amount'] is double &&
+        amounts['tax_amount'] is double) {
+      final computed = ((amounts['subtotal_amount'] as double) + (amounts['tax_amount'] as double));
       amounts['total_amount'] = double.parse(computed.toStringAsFixed(2));
       appliedPatterns.add('structured_computed_total');
     }
@@ -4086,9 +4304,9 @@ class ReceiptParser {
     
     // テーブルから抽出された値を候補に変換
     // テーブル抽出は構造的に信頼度が高いため、スコアを高く設定
-    if (tableAmounts.containsKey('total_amount')) {
+    if (tableAmounts.containsKey('total_amount') && tableAmounts['total_amount'] is double) {
       candidates.add(AmountCandidate(
-        amount: tableAmounts['total_amount']!,
+        amount: tableAmounts['total_amount'] as double,
         score: 95,  // テーブル抽出は高信頼度
         lineIndex: -1,  // テーブル行は複数行にまたがる可能性
         source: 'table_extraction_total',
@@ -4099,9 +4317,9 @@ class ReceiptParser {
       logger.d('📊 Added table candidate: total_amount=${tableAmounts['total_amount']}');
     }
     
-    if (tableAmounts.containsKey('subtotal_amount')) {
+    if (tableAmounts.containsKey('subtotal_amount') && tableAmounts['subtotal_amount'] is double) {
       candidates.add(AmountCandidate(
-        amount: tableAmounts['subtotal_amount']!,
+        amount: tableAmounts['subtotal_amount'] as double,
         score: 95,
         lineIndex: -1,
         source: 'table_extraction_subtotal',
@@ -4112,9 +4330,9 @@ class ReceiptParser {
       logger.d('📊 Added table candidate: subtotal_amount=${tableAmounts['subtotal_amount']}');
     }
     
-    if (tableAmounts.containsKey('tax_amount')) {
+    if (tableAmounts.containsKey('tax_amount') && tableAmounts['tax_amount'] is double) {
       candidates.add(AmountCandidate(
-        amount: tableAmounts['tax_amount']!,
+        amount: tableAmounts['tax_amount'] as double,
         score: 95,
         lineIndex: -1,
         source: 'table_extraction_tax',
