@@ -77,13 +77,13 @@ class LanguageKeywords {
       'es': ['recibo'],
     },
     'item_table_header': {
-      'en': ['qty', 'quantity', 'description', 'item', 'product', 'unit price', 'unit', 'price', 'amount'],
-      'fi': ['määrä', 'kappalemäärä', 'kuvaus', 'tuote', 'yksikköhinta', 'hinta', 'summa'],
-      'sv': ['kvantitet', 'antal', 'beskrivning', 'produkt', 'enhetspris', 'pris', 'belopp'],
-      'fr': ['quantité', 'description', 'article', 'produit', 'prix unitaire', 'prix', 'montant'],
-      'de': ['menge', 'anzahl', 'beschreibung', 'artikel', 'produkt', 'einzelpreis', 'preis', 'betrag'],
-      'it': ['quantità', 'descrizione', 'articolo', 'prodotto', 'prezzo unitario', 'prezzo', 'importo'],
-      'es': ['cantidad', 'descripción', 'artículo', 'producto', 'precio unitario', 'precio', 'importe'],
+      'en': ['qty', 'quantity', 'description', 'item', 'product', 'unit price', 'unit', 'price', 'amount', 'vat', 'tax', 'sales tax'],
+      'fi': ['määrä', 'kappalemäärä', 'kuvaus', 'tuote', 'yksikköhinta', 'hinta', 'summa', 'alv', 'arvonlisävero'],
+      'sv': ['kvantitet', 'antal', 'beskrivning', 'produkt', 'enhetspris', 'pris', 'belopp', 'moms', 'mervärdesskatt'],
+      'fr': ['quantité', 'description', 'article', 'produit', 'prix unitaire', 'prix', 'montant', 'tva', 'taxe'],
+      'de': ['menge', 'anzahl', 'beschreibung', 'artikel', 'produkt', 'einzelpreis', 'preis', 'betrag', 'mwst', 'umsatzsteuer', 'steuer'],
+      'it': ['quantità', 'descrizione', 'articolo', 'prodotto', 'prezzo unitario', 'prezzo', 'importo', 'iva', 'imposta'],
+      'es': ['cantidad', 'descripción', 'artículo', 'producto', 'precio unitario', 'precio', 'importe', 'iva', 'impuesto'],
     },
   };
 
