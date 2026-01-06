@@ -12,11 +12,13 @@ datasource db {
 
 // Processing jobs table
 model ProcessingJob {
-  id          String   @id @default(uuid())
-  imagePath   String
-  status      String   // pending, processing, completed, failed
-  createdAt   DateTime @default(now())
-  completedAt DateTime?
+  id           String   @id @default(uuid())
+  imagePath    String
+  originalName String?  // Original filename for JSON export
+  fileId       String?  // UUID filename  
+  status       String   // pending, processing, completed, failed
+  createdAt    DateTime @default(now())
+  completedAt  DateTime?
 
   // Relations
   ocrResult        OcrResult?

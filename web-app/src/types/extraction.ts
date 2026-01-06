@@ -17,8 +17,8 @@ export interface ReceiptItem {
 
 export interface ExtractionResult {
   merchant_name: string | null;
-  date: string | null;           // ISO 8601
-  currency: string;              // EUR, USD, etc.
+  date: Date | null;             // Date object (changed from string)
+  currency?: string;             // EUR, USD, etc. (made optional)
   subtotal: number | null;
   tax_breakdown: TaxBreakdown[];
   tax_total: number | null;
@@ -27,13 +27,25 @@ export interface ExtractionResult {
   payment_method: string | null;
   confidence: number;
   status: ReceiptStatus;
-  needs_verification: boolean;
-  extracted_items: ReceiptItem[];
+  needs_verification?: boolean;  // Made optional
+  items?: ReceiptItem[];         // Renamed and made optional
+  warnings?: string[];           // Added for evidence-based fusion
   
   // Document classification
   document_type?: DocumentType;
   document_type_confidence?: number;
   document_type_reason?: string;
+  
+  // Metadata for enhanced extraction
+  metadata?: {
+    extraction_method?: string;
+    evidence_summary?: any;
+    processing_times?: any;
+    applied_patterns?: string[];
+    language_detected?: string;
+    fusion_config?: any;
+    fallback_reason?: string;
+  };
 }
 
 // Document Type Classification

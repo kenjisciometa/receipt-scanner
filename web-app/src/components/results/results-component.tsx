@@ -136,7 +136,7 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
             {job.extraction_result?.document_type && (
               <div className="bg-gray-50 rounded-lg p-4">
                 <h3 className="text-sm font-medium text-gray-900 mb-3">Document Classification</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 mb-3">
                   <div>
                     <span className="text-sm text-gray-500">Type:</span>
                     <span
@@ -155,6 +155,14 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                     </span>
                   </div>
                 </div>
+                {job.extraction_result.document_type_reason && (
+                  <div>
+                    <span className="text-sm text-gray-500">Reason:</span>
+                    <div className="mt-1 text-xs text-gray-700 bg-white rounded px-2 py-1">
+                      {job.extraction_result.document_type_reason}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -187,7 +195,7 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                     <label className="block text-xs font-medium text-gray-500">Total Amount</label>
                     <div className="mt-1 text-sm font-medium text-gray-900">
                       {job.extraction_result?.total 
-                        ? `${job.extraction_result.currency || 'N/A'} ${job.extraction_result.total.toFixed(2)}`
+                        ? job.extraction_result.total.toFixed(2)
                         : 'Not found'
                       }
                     </div>
@@ -196,7 +204,7 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                     <label className="block text-xs font-medium text-gray-500">Subtotal</label>
                     <div className="mt-1 text-sm text-gray-900">
                       {job.extraction_result?.subtotal 
-                        ? `${job.extraction_result.currency || 'N/A'} ${job.extraction_result.subtotal.toFixed(2)}`
+                        ? job.extraction_result.subtotal.toFixed(2)
                         : 'Not found'
                       }
                     </div>
@@ -205,7 +213,7 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                     <label className="block text-xs font-medium text-gray-500">Tax Total</label>
                     <div className="mt-1 text-sm text-gray-900">
                       {job.extraction_result?.tax_total 
-                        ? `${job.extraction_result.currency || 'N/A'} ${job.extraction_result.tax_total.toFixed(2)}`
+                        ? job.extraction_result.tax_total.toFixed(2)
                         : 'Not found'
                       }
                     </div>
@@ -313,29 +321,168 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
               </div>
               <div className="p-4">
                 {isEditing ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700">Merchant Name</label>
-                        <input
-                          type="text"
-                          value={editedData.merchant_name || ''}
-                          onChange={(e) => setEditedData({...editedData, merchant_name: e.target.value})}
-                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700">Total Amount</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={editedData.total || ''}
-                          onChange={(e) => setEditedData({...editedData, total: parseFloat(e.target.value) || 0})}
-                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                        />
+                  <div className="space-y-6">
+                    {/* Document Classification Section */}
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <h4 className="text-sm font-medium text-gray-900 mb-3">Document Classification</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Document Type</label>
+                          <select
+                            value={editedData.document_type || 'unknown'}
+                            onChange={(e) => setEditedData({...editedData, document_type: e.target.value})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                          >
+                            <option value="receipt">Receipt</option>
+                            <option value="invoice">Invoice</option>
+                            <option value="unknown">Unknown</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Document Type Confidence</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="1"
+                            value={editedData.document_type_confidence || ''}
+                            onChange={(e) => setEditedData({...editedData, document_type_confidence: parseFloat(e.target.value) || 0})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="0.0 - 1.0"
+                          />
+                        </div>
                       </div>
                     </div>
-                    <div className="flex justify-end space-x-3">
+
+                    {/* Main Fields Section */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 mb-3">Extracted Information</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Merchant Name</label>
+                          <input
+                            type="text"
+                            value={editedData.merchant_name || ''}
+                            onChange={(e) => setEditedData({...editedData, merchant_name: e.target.value})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="Enter merchant name"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Date</label>
+                          <input
+                            type="date"
+                            value={editedData.date ? new Date(editedData.date).toISOString().split('T')[0] : ''}
+                            onChange={(e) => setEditedData({...editedData, date: e.target.value ? new Date(e.target.value).toISOString() : null})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Currency</label>
+                          <select
+                            value={editedData.currency || 'USD'}
+                            onChange={(e) => setEditedData({...editedData, currency: e.target.value})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                          >
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                            <option value="JPY">JPY</option>
+                            <option value="SEK">SEK</option>
+                            <option value="NOK">NOK</option>
+                            <option value="DKK">DKK</option>
+                            <option value="CHF">CHF</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Total Amount</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editedData.total || ''}
+                            onChange={(e) => setEditedData({...editedData, total: parseFloat(e.target.value) || 0})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Subtotal</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editedData.subtotal || ''}
+                            onChange={(e) => setEditedData({...editedData, subtotal: parseFloat(e.target.value) || null})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Tax Total</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editedData.tax_total || ''}
+                            onChange={(e) => setEditedData({...editedData, tax_total: parseFloat(e.target.value) || null})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Payment Method</label>
+                          <input
+                            type="text"
+                            value={editedData.payment_method || ''}
+                            onChange={(e) => setEditedData({...editedData, payment_method: e.target.value})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="e.g., cash, card, mobile"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Receipt Number</label>
+                          <input
+                            type="text"
+                            value={editedData.receipt_number || ''}
+                            onChange={(e) => setEditedData({...editedData, receipt_number: e.target.value})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="Enter receipt number"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Confidence Section */}
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <h4 className="text-sm font-medium text-gray-900 mb-3">Extraction Quality</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Overall Confidence</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="1"
+                            value={editedData.confidence || ''}
+                            onChange={(e) => setEditedData({...editedData, confidence: parseFloat(e.target.value) || 0})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="0.0 - 1.0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700">Needs Verification</label>
+                          <select
+                            value={editedData.needs_verification ? 'true' : 'false'}
+                            onChange={(e) => setEditedData({...editedData, needs_verification: e.target.value === 'true'})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                          >
+                            <option value="false">No - Data is correct</option>
+                            <option value="true">Yes - Data needs review</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                       <button
                         onClick={() => setIsEditing(false)}
                         className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
@@ -351,9 +498,65 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <p>Click "Edit" to manually verify and correct the extracted data.</p>
-                    <p className="text-xs mt-1">This will create verified training data for ML improvement.</p>
+                  <div className="space-y-4">
+                    {/* Show current data in read-only format matching extracted fields */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 mb-3">Current Verified Data</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Merchant Name</label>
+                          <div className="mt-1 text-sm text-gray-900">
+                            {editedData.merchant_name || job.extraction_result?.merchant_name || 'Not set'}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Date</label>
+                          <div className="mt-1 text-sm text-gray-900">
+                            {editedData.date || job.extraction_result?.date || 'Not set'}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Currency</label>
+                          <div className="mt-1 text-sm text-gray-900">
+                            {editedData.currency || job.extraction_result?.currency || 'Not set'}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Total Amount</label>
+                          <div className="mt-1 text-sm font-medium text-gray-900">
+                            {editedData.total || job.extraction_result?.total || 'Not set'}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Subtotal</label>
+                          <div className="mt-1 text-sm text-gray-900">
+                            {editedData.subtotal || job.extraction_result?.subtotal || 'Not set'}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Tax Total</label>
+                          <div className="mt-1 text-sm text-gray-900">
+                            {editedData.tax_total || job.extraction_result?.tax_total || 'Not set'}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Payment Method</label>
+                          <div className="mt-1 text-sm text-gray-900">
+                            {editedData.payment_method || job.extraction_result?.payment_method || 'Not set'}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Receipt Number</label>
+                          <div className="mt-1 text-sm text-gray-900">
+                            {editedData.receipt_number || job.extraction_result?.receipt_number || 'Not set'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-center py-4 text-gray-500">
+                      <p>Click "Edit" to manually verify and correct the extracted data.</p>
+                      <p className="text-xs mt-1">This will create verified training data for ML improvement.</p>
+                    </div>
                   </div>
                 )}
               </div>

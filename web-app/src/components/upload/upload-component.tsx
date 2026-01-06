@@ -17,6 +17,7 @@ export function UploadComponent({
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'uploaded' | 'error'>('idle');
   const [error, setError] = useState<string>('');
+  const [uploadResult, setUploadResult] = useState<any>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -56,9 +57,10 @@ export function UploadComponent({
       }
 
       setUploadStatus('uploaded');
+      setUploadResult(result);
       
       // Automatically start processing
-      await processFile(result.file_id);
+      await processFile(result.file_id, result.original_name);
 
     } catch (err) {
       setUploadStatus('error');
@@ -66,7 +68,7 @@ export function UploadComponent({
     }
   };
 
-  const processFile = async (fileId: string) => {
+  const processFile = async (fileId: string, originalName?: string) => {
     onProcessingStart();
     
     try {
@@ -78,6 +80,7 @@ export function UploadComponent({
         body: JSON.stringify({
           file_id: fileId,
           language_hint: 'auto',
+          original_name: originalName,
         }),
       });
 
@@ -97,6 +100,7 @@ export function UploadComponent({
   const resetUpload = () => {
     setUploadedFile(null);
     setUploadStatus('idle');
+    setUploadResult(null);
     setError('');
   };
 

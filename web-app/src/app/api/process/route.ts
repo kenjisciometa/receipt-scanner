@@ -14,7 +14,7 @@ const ocrService = useGoogleVision ? new GoogleVisionOCRService() : new MockOCRS
 
 export async function POST(request: NextRequest) {
   try {
-    const { file_id, language_hint } = await request.json();
+    const { file_id, language_hint, original_name } = await request.json();
 
     if (!file_id) {
       return NextResponse.json({ 
@@ -34,10 +34,12 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // Create processing job
+    // Create processing job with original filename
     const job = await prisma.processingJob.create({
       data: {
         imagePath: filePath,
+        fileId: file_id,
+        originalName: original_name,
         status: 'processing',
       }
     });
@@ -78,9 +80,13 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // Import advanced extraction service
-      const { AdvancedReceiptExtractionService } = await import('@/services/extraction/advanced-receipt-extractor');
-      const extractionService = new AdvancedReceiptExtractionService();
+      // Import enhanced extraction service with Evidence-Based Fusion
+      const { EnhancedReceiptExtractionService } = await import('@/services/extraction/enhanced-receipt-extractor');
+      const extractionService = new EnhancedReceiptExtractionService({
+        enableDebugLogging: true,
+        minEvidenceConfidence: 0.3,
+        enabledSources: ['table', 'text', 'summary_calculation', 'spatial_analysis', 'calculation']
+      });
       
       // Perform extraction
       const extractionResult = await extractionService.extract(ocrResult, ocrResult.detected_language);
@@ -91,7 +97,7 @@ export async function POST(request: NextRequest) {
           jobId: job.id,
           extractedData: JSON.stringify(extractionResult),
           confidence: extractionResult.confidence,
-          needsVerification: extractionResult.needs_verification,
+          needsVerification: extractionResult.needs_verification || false,
           documentType: extractionResult.document_type || 'unknown',
           documentTypeConfidence: extractionResult.document_type_confidence,
           documentTypeReason: extractionResult.document_type_reason,
@@ -106,7 +112,8 @@ export async function POST(request: NextRequest) {
         job.id,
         ocrResult,
         extractionResult,
-        job.imagePath
+        job.imagePath,
+        job.originalName || undefined
       );
 
       // Update job status

@@ -46,7 +46,8 @@ export class TrainingDataCollector {
     receiptId: string,
     ocrResult: OCRResult,
     extractionResult: ExtractionResult,
-    imagePath: string
+    imagePath: string,
+    originalName?: string
   ): Promise<string | null> {
     
     // Only save if confidence is acceptable
@@ -56,7 +57,11 @@ export class TrainingDataCollector {
     }
 
     try {
-      const fileName = `receipt_${receiptId}_${Date.now()}.json`;
+      // Generate filename using original name if available
+      const baseFilename = originalName 
+        ? path.parse(originalName).name // Remove extension from original name
+        : `receipt_${receiptId}`;
+      const fileName = `${baseFilename}_${Date.now()}.json`;
       const filePath = path.join(this.RAW_DATA_DIR, fileName);
 
       // Generate text lines with labels and features
@@ -98,11 +103,16 @@ export class TrainingDataCollector {
     receiptId: string,
     ocrResult: OCRResult,
     correctedData: Record<string, any>,
-    originalImagePath: string
+    originalImagePath: string,
+    originalName?: string
   ): Promise<string | null> {
     
     try {
-      const fileName = `verified_receipt_${receiptId}_${Date.now()}.json`;
+      // Generate filename using original name if available
+      const baseFilename = originalName 
+        ? `verified_${path.parse(originalName).name}` // Remove extension from original name
+        : `verified_receipt_${receiptId}`;
+      const fileName = `${baseFilename}_${Date.now()}.json`;
       const filePath = path.join(this.VERIFIED_DATA_DIR, fileName);
 
       // Generate verified labels based on corrected data
@@ -229,7 +239,7 @@ export class TrainingDataCollector {
     }
     
     // Check if line contains date
-    if (extractionResult.date && text.includes(extractionResult.date.split('T')[0])) {
+    if (extractionResult.date && typeof extractionResult.date === 'string' && text.includes(extractionResult.date.split('T')[0])) {
       return 'DATE';
     }
     
