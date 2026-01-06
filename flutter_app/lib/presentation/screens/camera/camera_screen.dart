@@ -622,6 +622,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   /// Show test receipt selection dialog
   Future<void> _showTestReceiptDialog() async {
     final testReceipts = [
+      // Test receipts (original)
       {
         'name': 'Test Receipt (Original)',
         'path': 'assets/images/test_receipt.png',
@@ -638,6 +639,18 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         'description': 'Receipt with multiple tax rates (14% and 24%)',
       },
       {
+        'name': 'Test Receipt R1',
+        'path': 'assets/images/test_receipt_r1.png',
+        'description': 'Real-world receipt format (R1)',
+      },
+      {
+        'name': 'Test Receipt R2',
+        'path': 'assets/images/test_receipt_r2.png',
+        'description': 'Real-world receipt format (R2)',
+      },
+      
+      // Test receipts by language
+      {
         'name': 'Test Receipt (Finnish)',
         'path': 'assets/images/test_receipt_fi.png',
         'description': 'Finnish receipt format (Suomi)',
@@ -652,16 +665,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         'path': 'assets/images/test_receipt_sv.png',
         'description': 'Swedish receipt format (Svenska)',
       },
-      {
-        'name': 'Test Receipt R1',
-        'path': 'assets/images/test_receipt_r1.png',
-        'description': 'Real-world receipt format (R1)',
-      },
-      {
-        'name': 'Test Receipt R2',
-        'path': 'assets/images/test_receipt_r2.png',
-        'description': 'Real-world receipt format (R2)',
-      },
+      
+      // Test invoices
       {
         'name': 'Test Invoice R1',
         'path': 'assets/images/test_invoice_r1.png',
@@ -671,6 +676,131 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         'name': 'Test Invoice R2',
         'path': 'assets/images/test_invoice_r2.png',
         'description': 'Real-world invoice format (R2)',
+      },
+      
+      // English receipts
+      {
+        'name': 'Receipt EN 1',
+        'path': 'assets/images/receipt_en_1.png',
+        'description': 'English receipt sample 1',
+      },
+      {
+        'name': 'Receipt EN 2',
+        'path': 'assets/images/receipt_en_2.png',
+        'description': 'English receipt sample 2',
+      },
+      {
+        'name': 'Receipt EN 3',
+        'path': 'assets/images/receipt_en_3.png',
+        'description': 'English receipt sample 3',
+      },
+      {
+        'name': 'Receipt EN 4',
+        'path': 'assets/images/receipt_en_4.png',
+        'description': 'English receipt sample 4',
+      },
+      {
+        'name': 'Receipt EN 5',
+        'path': 'assets/images/receipt_en_5.png',
+        'description': 'English receipt sample 5',
+      },
+      
+      // Finnish receipts
+      {
+        'name': 'Receipt FI 1',
+        'path': 'assets/images/receipt_fi_1.png',
+        'description': 'Finnish receipt sample 1 (Suomi)',
+      },
+      {
+        'name': 'Receipt FI 2',
+        'path': 'assets/images/receipt_fi_2.png',
+        'description': 'Finnish receipt sample 2 (Suomi)',
+      },
+      {
+        'name': 'Receipt FI 3',
+        'path': 'assets/images/receipt_fi_3.png',
+        'description': 'Finnish receipt sample 3 (Suomi)',
+      },
+      
+      // German receipts
+      {
+        'name': 'Receipt DE 1',
+        'path': 'assets/images/receipt_de_1.png',
+        'description': 'German receipt sample 1 (Deutsch)',
+      },
+      {
+        'name': 'Receipt DE 2',
+        'path': 'assets/images/receipt_de_2.png',
+        'description': 'German receipt sample 2 (Deutsch)',
+      },
+      {
+        'name': 'Receipt DE 3',
+        'path': 'assets/images/receipt_de_3.png',
+        'description': 'German receipt sample 3 (Deutsch)',
+      },
+      {
+        'name': 'Receipt DE 4',
+        'path': 'assets/images/receipt_de_4.png',
+        'description': 'German receipt sample 4 (Deutsch)',
+      },
+      {
+        'name': 'Receipt DE 5',
+        'path': 'assets/images/receipt_de_5.png',
+        'description': 'German receipt sample 5 (Deutsch)',
+      },
+      {
+        'name': 'Receipt DE 6',
+        'path': 'assets/images/receipt_de_6.png',
+        'description': 'German receipt sample 6 (Deutsch)',
+      },
+      {
+        'name': 'Receipt DE 7',
+        'path': 'assets/images/receipt_de_7.png',
+        'description': 'German receipt sample 7 (Deutsch)',
+      },
+      
+      // French receipts
+      {
+        'name': 'Receipt FR 1',
+        'path': 'assets/images/receipt_fr_1.png',
+        'description': 'French receipt sample 1 (Français)',
+      },
+      {
+        'name': 'Receipt FR 2',
+        'path': 'assets/images/receipt_fr_2.png',
+        'description': 'French receipt sample 2 (Français)',
+      },
+      
+      // Swedish receipts
+      {
+        'name': 'Receipt SV 1',
+        'path': 'assets/images/receipt_sv_1.png',
+        'description': 'Swedish receipt sample 1 (Svenska)',
+      },
+      {
+        'name': 'Receipt SV 2',
+        'path': 'assets/images/receipt_sv_2.png',
+        'description': 'Swedish receipt sample 2 (Svenska)',
+      },
+      {
+        'name': 'Receipt SV 3',
+        'path': 'assets/images/receipt_sv_3.png',
+        'description': 'Swedish receipt sample 3 (Svenska)',
+      },
+      {
+        'name': 'Receipt SV 4',
+        'path': 'assets/images/receipt_sv_4.png',
+        'description': 'Swedish receipt sample 4 (Svenska)',
+      },
+      {
+        'name': 'Receipt SV 5',
+        'path': 'assets/images/receipt_sv_5.png',
+        'description': 'Swedish receipt sample 5 (Svenska)',
+      },
+      {
+        'name': 'Receipt SV 6',
+        'path': 'assets/images/receipt_sv_6.png',
+        'description': 'Swedish receipt sample 6 (Svenska)',
       },
     ];
 
@@ -725,8 +855,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       final Directory tempDir = await getTemporaryDirectory();
       
       // Load asset image
+      logger.d('Loading asset image: $assetPath');
       final ByteData data = await rootBundle.load(assetPath);
       final Uint8List bytes = data.buffer.asUint8List();
+      logger.d('Asset image loaded: ${bytes.length} bytes');
       
       // Extract filename from path
       final filename = assetPath.split('/').last;
@@ -736,14 +868,21 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       final File tempFile = File(tempPath);
       await tempFile.writeAsBytes(bytes);
       
-      logger.i('Using test receipt image: $tempPath (from $assetPath)');
+      // Verify file was written correctly
+      if (await tempFile.exists()) {
+        final fileSize = await tempFile.length();
+        logger.i('Using test receipt image: $tempPath (from $assetPath, size: $fileSize bytes)');
+      } else {
+        throw Exception('Failed to create temporary file: $tempPath');
+      }
       
       // Navigate to preview screen
       if (mounted) {
         context.pushNamed('preview', extra: tempPath);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       logger.e('Failed to use test image: $e');
+      logger.e('Stack trace: $stackTrace');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

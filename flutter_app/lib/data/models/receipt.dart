@@ -2,7 +2,6 @@ import 'package:json_annotation/json_annotation.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/constants/language_keywords.dart';
 import 'receipt_item.dart';
-import 'tax_breakdown.dart';
 
 part 'receipt.g.dart';
 
@@ -157,8 +156,6 @@ class Receipt {
     this.totalAmount,
     this.subtotalAmount,
     this.taxAmount,
-    this.taxBreakdown = const [],
-    this.taxTotal,
     this.paymentMethod,
     this.currency = Currency.eur,
     this.items = const [],
@@ -198,15 +195,8 @@ class Receipt {
   /// Subtotal amount (before tax)
   final double? subtotalAmount;
   
-  /// Tax/VAT amount (deprecated: use taxTotal instead)
-  @Deprecated('Use taxTotal instead')
+  /// Tax/VAT amount
   final double? taxAmount;
-  
-  /// Tax breakdown by rate (e.g., [TaxBreakdown(rate: 14.0, amount: 10.0), TaxBreakdown(rate: 24.0, amount: 5.0)])
-  final List<TaxBreakdown> taxBreakdown;
-  
-  /// Total tax amount (sum of all tax breakdown amounts)
-  final double? taxTotal;
   
   /// Method of payment used
   final PaymentMethod? paymentMethod;
@@ -284,8 +274,6 @@ class Receipt {
     double? totalAmount,
     double? subtotalAmount,
     double? taxAmount,
-    List<TaxBreakdown> taxBreakdown = const [],
-    double? taxTotal,
     PaymentMethod? paymentMethod,
     Currency currency = Currency.eur,
     List<ReceiptItem> items = const [],
@@ -307,8 +295,6 @@ class Receipt {
       totalAmount: totalAmount,
       subtotalAmount: subtotalAmount,
       taxAmount: taxAmount,
-      taxBreakdown: taxBreakdown,
-      taxTotal: taxTotal ?? (taxBreakdown.isNotEmpty ? taxBreakdown.map((t) => t.amount).fold<double>(0.0, (a, b) => a + b) : taxAmount),
       paymentMethod: paymentMethod,
       currency: currency,
       items: items,
@@ -342,8 +328,6 @@ class Receipt {
     double? totalAmount,
     double? subtotalAmount,
     double? taxAmount,
-    List<TaxBreakdown>? taxBreakdown,
-    double? taxTotal,
     PaymentMethod? paymentMethod,
     Currency? currency,
     List<ReceiptItem>? items,
@@ -366,8 +350,6 @@ class Receipt {
       totalAmount: totalAmount ?? this.totalAmount,
       subtotalAmount: subtotalAmount ?? this.subtotalAmount,
       taxAmount: taxAmount ?? this.taxAmount,
-      taxBreakdown: taxBreakdown ?? this.taxBreakdown,
-      taxTotal: taxTotal ?? this.taxTotal,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       currency: currency ?? this.currency,
       items: items ?? this.items,

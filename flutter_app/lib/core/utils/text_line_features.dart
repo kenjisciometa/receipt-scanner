@@ -206,7 +206,7 @@ class TextLineFeatureExtractor {
   }
   
   static bool _hasCurrencySymbol(String text) {
-    return RegExp(r'[€\$£¥₹]|EUR|USD|GBP|SEK|NOK|DKK|CHF', caseSensitive: false).hasMatch(text);
+    return LanguageKeywords.hasCurrencySymbol(text);
   }
   
   static bool _hasAmountLike(String text) {
