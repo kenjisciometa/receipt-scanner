@@ -818,10 +818,44 @@ export class TaxBreakdownFusionEngine {
       const deviationPercent = (deviation / result.total) * 100;
       
       if (deviationPercent > this.config.mathematicalTolerancePercent) {
-        // If inconsistent, trust the tax breakdown calculation
-        if (result.tax_breakdown && result.tax_breakdown.length > 0) {
+        console.log(`⚠️ [FuseToOptimalValue] Mathematical inconsistency detected: subtotal(${result.subtotal}) + tax(${result.tax_amount}) = ${calculatedTotal}, but total=${result.total}, deviation=${deviationPercent.toFixed(2)}%`);
+        
+        // If inconsistent, prioritize text evidence for total if available
+        const totalCluster = clusters.find(c => c.type === 'total');
+        const totalTextEvidence = totalCluster?.evidence.filter(e => 
+          (e.source === 'text' || e.source === 'pattern') && e.confidence > 0.7
+        );
+        
+        if (totalTextEvidence && totalTextEvidence.length > 0) {
+          // Trust high-confidence text evidence for total
+          const textTotal = totalTextEvidence.sort((a, b) => b.confidence - a.confidence)[0].amount;
+          if (textTotal !== undefined) {
+            const recalculatedDeviation = Math.abs(calculatedTotal - textTotal);
+            const recalculatedDeviationPercent = (recalculatedDeviation / textTotal) * 100;
+            
+            if (recalculatedDeviationPercent <= this.config.mathematicalTolerancePercent) {
+              // Text total matches calculation, use it
+              console.log(`✅ [FuseToOptimalValue] Using text total evidence: ${textTotal} (matches calculation: ${calculatedTotal})`);
+              result.total = Math.round(textTotal * 100) / 100;
+            } else {
+              // Text total doesn't match, recalculate from subtotal + tax
+              console.log(`🔄 [FuseToOptimalValue] Text total (${textTotal}) doesn't match calculation (${calculatedTotal}), recalculating total from subtotal + tax`);
+              result.total = Math.round(calculatedTotal * 100) / 100;
+            }
+          } else {
+            // No valid text total, recalculate from subtotal + tax
+            console.log(`🔄 [FuseToOptimalValue] No valid text total evidence, recalculating total from subtotal + tax`);
+            result.total = Math.round(calculatedTotal * 100) / 100;
+          }
+        } else {
+          // No text evidence for total, recalculate from subtotal + tax
+          console.log(`🔄 [FuseToOptimalValue] No text total evidence found, recalculating total from subtotal + tax`);
+          result.total = Math.round(calculatedTotal * 100) / 100;
+        }
+        
+        // Ensure tax_amount is set correctly
+        if (result.tax_breakdown && result.tax_breakdown.length > 0 && result.tax_total !== undefined) {
           result.tax_amount = result.tax_total;
-          result.subtotal = result.total - result.tax_amount;
         }
       }
     }
@@ -1120,7 +1154,61 @@ export class TaxBreakdownFusionEngine {
     }
     
     // PRIORITY 3: For total field, verify with subtotal + tax calculation
+    // BUT prioritize high-confidence text evidence for total if available
     if (field === 'total') {
+      // First check if we have high-confidence text evidence for total
+      const totalTextEvidence = cluster.evidence.filter(e => 
+        (e.source === 'text' || e.source === 'pattern') && 
+        e.confidence > 0.8 && 
+        e.amount !== undefined
+      );
+      
+      if (totalTextEvidence.length > 0) {
+        // We have high-confidence text evidence for total, verify it makes sense
+        const bestTotalText = totalTextEvidence.sort((a, b) => b.confidence - a.confidence)[0];
+        const subtotalCluster = clusters.find(c => c.type === 'subtotal');
+        const taxCluster = clusters.find(c => c.type === 'tax_amount');
+        
+        if (subtotalCluster && taxCluster) {
+          // Get text evidence values for subtotal and tax
+          const subtotalTextEvidence = subtotalCluster.evidence.filter(e => 
+            (e.source === 'text' || e.source === 'pattern') && e.confidence > 0.7
+          );
+          const taxTextEvidence = taxCluster.evidence.filter(e => 
+            (e.source === 'text' || e.source === 'pattern') && e.confidence > 0.7
+          );
+          
+          if (subtotalTextEvidence.length > 0 && taxTextEvidence.length > 0) {
+            const subtotalValue = subtotalTextEvidence.sort((a, b) => b.confidence - a.confidence)[0].amount;
+            const taxValue = taxTextEvidence.sort((a, b) => b.confidence - a.confidence)[0].amount;
+            
+            if (subtotalValue !== undefined && taxValue !== undefined) {
+              const calculatedTotal = subtotalValue + taxValue;
+              const deviation = Math.abs(calculatedTotal - bestTotalText.amount!);
+              const deviationPercent = (deviation / bestTotalText.amount!) * 100;
+              
+              // If text total is within reasonable tolerance (5%), trust it
+              if (deviationPercent <= 5.0) {
+                console.log(`✅ [FuseNumericValue] High-confidence text total (${bestTotalText.amount}) verified with calculation (${calculatedTotal}), deviation=${deviationPercent.toFixed(2)}%`);
+                return Math.round(bestTotalText.amount! * 100) / 100;
+              } else {
+                console.log(`⚠️ [FuseNumericValue] Text total (${bestTotalText.amount}) deviates significantly from calculation (${calculatedTotal}), deviation=${deviationPercent.toFixed(2)}%`);
+                // Still trust text if confidence is very high (>0.9)
+                if (bestTotalText.confidence > 0.9) {
+                  console.log(`✅ [FuseNumericValue] Using high-confidence text total despite deviation (conf: ${bestTotalText.confidence.toFixed(2)})`);
+                  return Math.round(bestTotalText.amount! * 100) / 100;
+                }
+              }
+            }
+          }
+        } else {
+          // No subtotal/tax clusters, trust high-confidence text total
+          console.log(`✅ [FuseNumericValue] Using high-confidence text total (${bestTotalText.amount}) without verification`);
+          return Math.round(bestTotalText.amount! * 100) / 100;
+        }
+      }
+      
+      // Fallback: calculate total from subtotal + tax if no high-confidence text evidence
       const subtotalCluster = clusters.find(c => c.type === 'subtotal');
       const taxCluster = clusters.find(c => c.type === 'tax_amount');
       
@@ -1141,8 +1229,8 @@ export class TaxBreakdownFusionEngine {
             const calculatedTotal = subtotalValue + taxValue;
             
             // Check if this calculated total matches any text evidence within tolerance
-            const totalTextEvidence = cluster.evidence.filter(e => e.source === 'text' || e.source === 'pattern');
-            const matchingTextEvidence = totalTextEvidence.find(e => {
+            const allTotalTextEvidence = cluster.evidence.filter(e => e.source === 'text' || e.source === 'pattern');
+            const matchingTextEvidence = allTotalTextEvidence.find(e => {
               if (e.amount === undefined) return false;
               const deviation = Math.abs(calculatedTotal - e.amount);
               return deviation <= 0.05; // 5 cent tolerance for rounding differences
@@ -1152,7 +1240,8 @@ export class TaxBreakdownFusionEngine {
               console.log(`🧮 [FuseNumericValue] Total calculation matches text evidence: using text value ${matchingTextEvidence.amount} (calculated: ${calculatedTotal})`);
               return Math.round(matchingTextEvidence.amount * 100) / 100;
             } else {
-              console.log(`⚠️ [FuseNumericValue] Total calculation mismatch: calculated=${calculatedTotal}, text=${totalTextEvidence[0]?.amount}`);
+              console.log(`⚠️ [FuseNumericValue] Total calculation mismatch: calculated=${calculatedTotal}, text=${allTotalTextEvidence[0]?.amount}, using calculated value`);
+              return Math.round(calculatedTotal * 100) / 100;
             }
           }
         }

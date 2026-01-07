@@ -49,6 +49,7 @@ export class CurrencyExtractor {
   }
 
   // Get currency pattern string for regex (escaped symbols)
+  // Returns optional pattern matching all currency symbols (matches Flutter implementation)
   static get currencySymbolPattern(): string {
     // Escape special regex characters in symbols
     const escapedSymbols = this.allCurrencySymbols.map((s) => {
@@ -57,7 +58,7 @@ export class CurrencyExtractor {
       if (s === '£') return '£';
       return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape special regex chars
     }).join('');
-    return `[${escapedSymbols}]`;
+    return `[${escapedSymbols}]?`; // Optional pattern (matches Flutter implementation)
   }
 
   // Get currency code pattern string for regex
@@ -68,23 +69,28 @@ export class CurrencyExtractor {
   }
 
   // Get all currency regex patterns
+  // Returns patterns matching currency symbols and codes (matches Flutter implementation)
   static get currencyPatterns(): RegExp[] {
+    // Remove optional '?' from pattern for symbol matching (required match)
+    const symbolPattern = this.currencySymbolPattern.replace('?', '');
     return [
-      // Currency symbols pattern
-      new RegExp(this.currencySymbolPattern, 'gi'),
+      // Currency symbols pattern (required match, not optional)
+      new RegExp(symbolPattern, 'gim'), // multiLine flag added to match Flutter
       // Currency codes pattern  
-      new RegExp(this.currencyCodePattern, 'gi'),
+      new RegExp(this.currencyCodePattern, 'gim'), // case-insensitive, multiLine
     ];
   }
 
   /**
    * Extract currency from text
-   * Returns the Currency enum value if found, null otherwise
+   * Returns the CurrencyInfo if found, null otherwise
+   * Matches Flutter's LanguageKeywords.extractCurrency implementation
    * @param text Text to search for currency
    * @param appliedPatterns Optional list to add applied pattern names
    */
   static extractCurrency(text: string, appliedPatterns?: string[]): CurrencyInfo | null {
     // Check for currency symbols first (strong indicators)
+    // This matches Flutter's implementation which checks symbols before codes
     for (const [symbol, currency] of this.currencySymbolMap.entries()) {
       if (text.includes(symbol)) {
         appliedPatterns?.push(`currency_symbol_${currency.toLowerCase()}`);
@@ -96,14 +102,16 @@ export class CurrencyExtractor {
     }
 
     // Check for currency codes using patterns
+    // Reset regex lastIndex to ensure proper matching (Flutter uses firstMatch)
     for (let i = 0; i < this.currencyPatterns.length; i++) {
       const pattern = this.currencyPatterns[i];
+      pattern.lastIndex = 0; // Reset regex state
       const match = pattern.exec(text);
       if (match) {
         const currencyText = match[0];
         appliedPatterns?.push(`currency_pattern_${i}`);
 
-        // Try to match by symbol
+        // Try to match by symbol first (matches Flutter logic)
         const symbolMatch = this.currencySymbolMap.get(currencyText);
         if (symbolMatch) {
           return {
@@ -121,13 +129,15 @@ export class CurrencyExtractor {
           };
         }
 
-        // Handle special cases
+        // Handle special cases (matches Flutter's switch statement)
         const lowerText = currencyText.toLowerCase();
         switch (lowerText) {
           case '€':
           case 'eur':
             return { code: Currency.EUR, symbol: '€' };
           case 'kr':
+            // Default to SEK for 'kr' (most common, matches Flutter)
+            return { code: Currency.SEK, symbol: 'kr' };
           case 'sek':
             return { code: Currency.SEK, symbol: 'kr' };
           case 'nok':
