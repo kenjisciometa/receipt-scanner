@@ -25,6 +25,7 @@ export type EvidenceField =
   | 'total' 
   | 'tax_rate' 
   | 'tax_breakdown'
+  | 'currency'
   | 'merchant_name'
   | 'purchase_date'
   | 'payment_method';
@@ -32,7 +33,11 @@ export type EvidenceField =
 export interface TaxBreakdown {
   rate: number;                    // Tax rate as percentage (e.g., 14.0 for 14%)
   amount: number;                  // Tax amount for this rate
+  net?: number;                    // Net amount (tax-free amount) for this rate
+  gross?: number;                  // Gross amount (including tax) for this rate
+  category?: string;               // Tax category code (A, B, C, Standard, Reduced)
   confidence: number;              // Confidence score for this breakdown
+  description?: string;            // Multilingual description of the tax category
   supportingEvidence: number;      // Number of evidence sources supporting this
 }
 
@@ -137,6 +142,7 @@ export interface EvidenceBasedExtractedData {
   subtotal?: number;
   tax_amount?: number;
   total?: number;
+  currency?: string;
   merchant_name?: string;
   purchase_date?: Date;
   payment_method?: string;

@@ -85,7 +85,7 @@ export class LanguageKeywords {
       fi: ['alv', 'arvonlisävero', 'vero', 'ALV', 'ARVONLISÄVERO', 'VERO'],
       sv: ['moms', 'mervärdesskatt', 'MOMS', 'MERVÄRDESSKATT'],
       fr: ['tva', 'taxe', 'TVA', 'TAXE'],
-      de: ['mwst', 'umsatzsteuer', 'steuer', 'MWST', 'UMSATZSTEUER', 'STEUER'],
+      de: ['mwst', 'umsatzsteuer', 'steuer', 'ust', 'MWST', 'UMSATZSTEUER', 'STEUER', 'UST'],
       it: ['iva', 'imposta', 'IVA', 'IMPOSTA'],
       es: ['iva', 'impuesto', 'IVA', 'IMPUESTO'],
     },
@@ -213,8 +213,8 @@ export class LanguageKeywords {
         'QUANTITÉ', 'DESCRIPTION', 'ARTICLE', 'PRODUIT', 'PRIX UNITAIRE', 'PRIX', 'MONTANT', 'TVA', 'TAXE'
       ],
       de: [
-        'menge', 'anzahl', 'beschreibung', 'artikel', 'produkt', 'einzelpreis', 'preis', 'betrag', 'mwst', 'umsatzsteuer', 'steuer',
-        'MENGE', 'ANZAHL', 'BESCHREIBUNG', 'ARTIKEL', 'PRODUKT', 'EINZELPREIS', 'PREIS', 'BETRAG', 'MWST', 'UMSATZSTEUER', 'STEUER'
+        'menge', 'anzahl', 'beschreibung', 'artikel', 'produkt', 'einzelpreis', 'preis', 'betrag', 'mwst', 'umsatzsteuer', 'steuer', 'ust', 'netto', 'brutto',
+        'MENGE', 'ANZAHL', 'BESCHREIBUNG', 'ARTIKEL', 'PRODUKT', 'EINZELPREIS', 'PREIS', 'BETRAG', 'MWST', 'UMSATZSTEUER', 'STEUER', 'UST', 'NETTO', 'BRUTTO'
       ],
       it: [
         'quantità', 'descrizione', 'articolo', 'prodotto', 'prezzo unitario', 'prezzo', 'importo', 'iva', 'imposta',

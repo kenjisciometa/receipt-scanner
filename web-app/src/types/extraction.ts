@@ -3,8 +3,13 @@ export type ReceiptStatus = 'pending' | 'processing' | 'completed' | 'failed' | 
 export type DocumentType = 'receipt' | 'invoice' | 'unknown';
 
 export interface TaxBreakdown {
-  rate: number;    // 14.0, 24.0 etc
-  amount: number;  // tax amount
+  rate: number;           // 14.0, 24.0 etc (tax rate percentage)
+  amount: number;         // tax amount (税額)
+  net?: number;           // net amount (税抜き金額)
+  gross?: number;         // gross amount (税込み金額)
+  category?: string;      // tax category (A, B, Standard, Reduced)
+  confidence?: number;    // detection confidence (0.0-1.0)
+  description?: string;   // multilingual description
 }
 
 export interface ReceiptItem {

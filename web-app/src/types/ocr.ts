@@ -3,6 +3,7 @@ export interface TextLine {
   text: string;
   confidence: number;
   boundingBox: [number, number, number, number]; // [x, y, w, h]
+  merged?: boolean; // Flag to indicate if this line was merged from multiple OCR elements
 }
 
 export interface OCRResult {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface ProcessingJob {
   job_id: string;
@@ -19,6 +19,15 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
   const [activeTab, setActiveTab] = useState<'extraction' | 'ocr' | 'verification'>('extraction');
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState(job.extraction_result || {});
+  const [taxBreakdown, setTaxBreakdown] = useState(job.extraction_result?.tax_breakdown || []);
+
+  // Reset tax breakdown when entering edit mode
+  useEffect(() => {
+    if (isEditing) {
+      const initialTaxBreakdown = editedData.tax_breakdown || job.extraction_result?.tax_breakdown || [];
+      setTaxBreakdown(initialTaxBreakdown.length > 0 ? initialTaxBreakdown : []);
+    }
+  }, [isEditing, editedData.tax_breakdown, job.extraction_result?.tax_breakdown]);
 
   const getStatusColor = (status: string, confidence?: number) => {
     if (status === 'failed') return 'text-red-600 bg-red-50';
@@ -35,8 +44,33 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
     }
   };
 
+  const addTaxBreakdown = () => {
+    setTaxBreakdown([...taxBreakdown, { rate: 0, amount: 0 }]);
+  };
+
+  const removeTaxBreakdown = (index: number) => {
+    const newTaxBreakdown = taxBreakdown.filter((_item: any, i: number) => i !== index);
+    setTaxBreakdown(newTaxBreakdown);
+  };
+
+  const updateTaxBreakdown = (index: number, field: 'rate' | 'amount', value: number) => {
+    const newTaxBreakdown = [...taxBreakdown];
+    newTaxBreakdown[index] = { ...newTaxBreakdown[index], [field]: value };
+    setTaxBreakdown(newTaxBreakdown);
+  };
+
+  const calculateTaxTotal = () => {
+    return taxBreakdown.reduce((sum: number, tax: any) => sum + (tax.amount || 0), 0);
+  };
+
   const handleSaveVerification = async () => {
     try {
+      const verifiedData = {
+        ...editedData,
+        tax_breakdown: taxBreakdown,
+        tax_total: calculateTaxTotal(),
+      };
+
       const response = await fetch('/api/verify', {
         method: 'POST',
         headers: {
@@ -44,7 +78,7 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
         },
         body: JSON.stringify({
           job_id: job.job_id,
-          verified_data: editedData,
+          verified_data: verifiedData,
         }),
       });
 
@@ -209,13 +243,36 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                       }
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500">Tax Total</label>
-                    <div className="mt-1 text-sm text-gray-900">
-                      {job.extraction_result?.tax_total 
-                        ? job.extraction_result.tax_total.toFixed(2)
-                        : 'Not found'
-                      }
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-500">Tax Breakdown</label>
+                    <div className="mt-1">
+                      {job.extraction_result?.tax_breakdown && job.extraction_result.tax_breakdown.length > 0 ? (
+                        <div className="space-y-1">
+                          {job.extraction_result.tax_breakdown.map((tax: any, index: number) => (
+                            <div key={index} className="flex justify-between text-sm">
+                              <span className="text-gray-600">
+                                Tax {typeof tax.rate === 'number' ? (tax.rate % 1 === 0 ? tax.rate.toString() : tax.rate.toFixed(1)) : tax.rate}%:
+                              </span>
+                              <span className="text-gray-900 font-medium">
+                                {typeof tax.amount === 'number' ? tax.amount.toFixed(2) : '0.00'}
+                              </span>
+                            </div>
+                          ))}
+                          {job.extraction_result.tax_total && (
+                            <div className="flex justify-between text-sm pt-1 border-t border-gray-200">
+                              <span className="text-gray-900 font-medium">Tax Total:</span>
+                              <span className="text-gray-900 font-bold">{job.extraction_result.tax_total.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-900">
+                          {job.extraction_result?.tax_total 
+                            ? `Total: ${job.extraction_result.tax_total.toFixed(2)}`
+                            : 'Not found'
+                          }
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -416,16 +473,64 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                             placeholder="0.00"
                           />
                         </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700">Tax Total</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={editedData.tax_total || ''}
-                            onChange={(e) => setEditedData({...editedData, tax_total: parseFloat(e.target.value) || null})}
-                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                            placeholder="0.00"
-                          />
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-medium text-gray-700 mb-2">Tax Breakdown</label>
+                          <div className="space-y-3">
+                            {taxBreakdown.map((tax, index) => (
+                              <div key={index} className="flex items-center space-x-2">
+                                <div className="flex-1">
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={tax.rate || ''}
+                                    onChange={(e) => updateTaxBreakdown(index, 'rate', parseFloat(e.target.value) || 0)}
+                                    className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                                    placeholder="Rate (%)"
+                                  />
+                                </div>
+                                <div className="flex-1">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={tax.amount || ''}
+                                    onChange={(e) => updateTaxBreakdown(index, 'amount', parseFloat(e.target.value) || 0)}
+                                    className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                                    placeholder="Amount"
+                                  />
+                                </div>
+                                {taxBreakdown.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeTaxBreakdown(index)}
+                                    className="p-2 text-red-500 hover:text-red-700"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            
+                            <div className="flex items-center justify-between">
+                              <button
+                                type="button"
+                                onClick={addTaxBreakdown}
+                                className="inline-flex items-center px-3 py-1 border border-blue-300 text-sm text-blue-600 bg-white rounded-md hover:bg-blue-50"
+                              >
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Add Tax Rate
+                              </button>
+                              
+                              {taxBreakdown.length > 0 && (
+                                <div className="text-sm text-gray-600">
+                                  <span className="font-medium">Tax Total: {calculateTaxTotal().toFixed(2)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-700">Payment Method</label>
@@ -533,10 +638,38 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                             {editedData.subtotal || job.extraction_result?.subtotal || 'Not set'}
                           </div>
                         </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500">Tax Total</label>
-                          <div className="mt-1 text-sm text-gray-900">
-                            {editedData.tax_total || job.extraction_result?.tax_total || 'Not set'}
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-medium text-gray-500">Tax Breakdown</label>
+                          <div className="mt-1">
+                            {(editedData.tax_breakdown || job.extraction_result?.tax_breakdown)?.length > 0 ? (
+                              <div className="space-y-1">
+                                {(editedData.tax_breakdown || job.extraction_result?.tax_breakdown || []).map((tax: any, index: number) => (
+                                  <div key={index} className="flex justify-between text-sm">
+                                    <span className="text-gray-600">
+                                      Tax {typeof tax.rate === 'number' ? (tax.rate % 1 === 0 ? tax.rate.toString() : tax.rate.toFixed(1)) : tax.rate}%:
+                                    </span>
+                                    <span className="text-gray-900 font-medium">
+                                      {typeof tax.amount === 'number' ? tax.amount.toFixed(2) : '0.00'}
+                                    </span>
+                                  </div>
+                                ))}
+                                {(editedData.tax_total || job.extraction_result?.tax_total) && (
+                                  <div className="flex justify-between text-sm pt-1 border-t border-gray-200">
+                                    <span className="text-gray-900 font-medium">Tax Total:</span>
+                                    <span className="text-gray-900 font-bold">
+                                      {(editedData.tax_total || job.extraction_result?.tax_total).toFixed(2)}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-900">
+                                {editedData.tax_total || job.extraction_result?.tax_total 
+                                  ? `Total: ${(editedData.tax_total || job.extraction_result?.tax_total).toFixed(2)}`
+                                  : 'Not set'
+                                }
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div>

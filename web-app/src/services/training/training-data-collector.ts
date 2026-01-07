@@ -5,6 +5,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   OCRResult, 
+  TextLine,
   TextLineWithLabels, 
   TextLineFeatures 
 } from '@/types/ocr';
@@ -157,6 +158,99 @@ export class TrainingDataCollector {
   }
 
   /**
+   * Apply Y-coordinate based line grouping to OCR result (Flutter-compatible)
+   */
+  private groupTextLinesByY(textLines: TextLine[]): TextLine[] {
+    // Sort by Y coordinate first
+    const sortedLines = [...textLines].sort((a, b) => {
+      const aY = a.boundingBox[1]; // Y coordinate
+      const bY = b.boundingBox[1];
+      return aY - bY;
+    });
+
+    const groupedLines: TextLine[] = [];
+    const yTolerance = 15; // Pixels tolerance for same line detection
+
+    let currentGroup: TextLine[] = [];
+    let currentY: number | null = null;
+
+    for (const line of sortedLines) {
+      const lineY = line.boundingBox[1];
+      
+      // Start new group or add to current group
+      if (currentY === null || Math.abs(lineY - currentY) <= yTolerance) {
+        currentGroup.push(line);
+        currentY = currentY === null ? lineY : (currentY + lineY) / 2; // Average Y
+      } else {
+        // Finish current group and start new one
+        if (currentGroup.length > 0) {
+          groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
+        }
+        currentGroup = [line];
+        currentY = lineY;
+      }
+    }
+
+    // Don't forget the last group
+    if (currentGroup.length > 0) {
+      groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
+    }
+
+    console.log(`🔗 [Training Data Collection] Merged ${textLines.length} text elements into ${groupedLines.length} lines`);
+    
+    return groupedLines;
+  }
+
+  /**
+   * Merge multiple TextLines in the same group into one consolidated line
+   */
+  private mergeTextLinesInGroup(group: TextLine[]): TextLine {
+    if (group.length === 1) {
+      return group[0];
+    }
+
+    // Sort by X coordinate within the group
+    const sortedGroup = group.sort((a, b) => {
+      const aX = a.boundingBox[0]; // X coordinate
+      const bX = b.boundingBox[0];
+      return aX - bX;
+    });
+
+    // Merge text with space separation
+    const mergedText = sortedGroup.map(line => line.text.trim()).filter(text => text.length > 0).join(' ');
+    
+    // Calculate consolidated bounding box
+    const minX = Math.min(...sortedGroup.map(line => line.boundingBox[0]));
+    const minY = Math.min(...sortedGroup.map(line => line.boundingBox[1]));
+    const maxX = Math.max(...sortedGroup.map(line => line.boundingBox[0] + line.boundingBox[2]));
+    const maxY = Math.max(...sortedGroup.map(line => line.boundingBox[1] + line.boundingBox[3]));
+    
+    const consolidatedBoundingBox: [number, number, number, number] = [
+      minX,
+      minY, 
+      maxX - minX, // width
+      maxY - minY  // height
+    ];
+
+    // Average confidence
+    const avgConfidence = sortedGroup.reduce((sum, line) => sum + line.confidence, 0) / sortedGroup.length;
+
+    const merged: TextLine = {
+      text: mergedText,
+      confidence: avgConfidence,
+      boundingBox: consolidatedBoundingBox,
+      merged: group.length > 1 // Set merged flag
+    };
+
+    // Log successful merges for debugging
+    if (group.length > 1) {
+      console.log(`🔗 [Training Data Merge] "${group.map(g => g.text).join('" + "')}" → "${mergedText}"`);
+    }
+
+    return merged;
+  }
+
+  /**
    * Generate text lines with labels and features for ML training
    */
   private generateTextLinesWithLabels(
@@ -164,12 +258,15 @@ export class TrainingDataCollector {
     extractionResult: ExtractionResult
   ): TextLineWithLabels[] {
     
-    return ocrResult.textLines.map((line, index) => {
+    // Apply line grouping before processing (Flutter-compatible approach)
+    const groupedTextLines = this.groupTextLinesByY(ocrResult.textLines);
+    
+    return groupedTextLines.map((line, index) => {
       // Generate label based on extraction result
       const label = this.generateLabelForTextLine(line.text, extractionResult);
       
       // Extract features
-      const features = this.extractTextLineFeatures(line, index, ocrResult.textLines);
+      const features = this.extractTextLineFeatures(line, index, groupedTextLines);
       
       return {
         ...line,
@@ -191,10 +288,13 @@ export class TrainingDataCollector {
     correctedData: Record<string, any>
   ): TextLineWithLabels[] {
     
-    return ocrResult.textLines.map((line, index) => {
+    // Apply line grouping before processing for verified data too
+    const groupedTextLines = this.groupTextLinesByY(ocrResult.textLines);
+    
+    return groupedTextLines.map((line, index) => {
       // More accurate labeling since we have ground truth
       const label = this.generateGroundTruthLabel(line.text, correctedData);
-      const features = this.extractTextLineFeatures(line, index, ocrResult.textLines);
+      const features = this.extractTextLineFeatures(line, index, groupedTextLines);
       
       return {
         ...line,
@@ -239,8 +339,11 @@ export class TrainingDataCollector {
     }
     
     // Check if line contains date
-    if (extractionResult.date && typeof extractionResult.date === 'string' && text.includes(extractionResult.date.split('T')[0])) {
-      return 'DATE';
+    if (extractionResult.date && extractionResult.date instanceof Date) {
+      const dateStr = extractionResult.date.toISOString().split('T')[0];
+      if (text.includes(dateStr)) {
+        return 'DATE';
+      }
     }
     
     // Check if line contains receipt number
