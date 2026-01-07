@@ -108,9 +108,14 @@ export async function POST(request: NextRequest) {
       const { TrainingDataCollector } = await import('@/services/training/training-data-collector');
       const trainingCollector = new TrainingDataCollector();
       
+      // Use rescued TextLines if available, otherwise fall back to OCR result
+      const modifiedOCRResult = (extractionResult as any).processedTextLines 
+        ? { ...ocrResult, textLines: (extractionResult as any).processedTextLines }
+        : ocrResult;
+
       await trainingCollector.saveRawTrainingData(
         job.id,
-        ocrResult,
+        modifiedOCRResult,
         extractionResult,
         job.imagePath,
         job.originalName || undefined

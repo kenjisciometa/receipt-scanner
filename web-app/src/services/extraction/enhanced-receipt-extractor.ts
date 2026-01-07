@@ -93,7 +93,8 @@ export class EnhancedReceiptExtractionService {
     
     return {
       ...finalResult,
-      confidence: overallConfidence
+      confidence: overallConfidence,
+      processedTextLines: textLines  // Include rescued TextLines for training data
     };
   }
 
@@ -173,7 +174,12 @@ export class EnhancedReceiptExtractionService {
 
     console.log(`🔗 [Line Grouping] Merged ${textLines.length} text elements into ${groupedLines.length} lines`);
     
-    return groupedLines;
+    // Phase 2: Rescue orphaned financial keywords (selective application)
+    const finalGroups = this.rescueOrphanedFinancialKeywords(groupedLines);
+    
+    console.log(`🆘 [Rescue Complete] Final groups count: ${finalGroups.length}`);
+    
+    return finalGroups;
   }
 
 
@@ -224,6 +230,167 @@ export class EnhancedReceiptExtractionService {
     }
 
     return merged;
+  }
+
+  /**
+   * Phase 2: Selective rescue of orphaned financial keywords
+   * Only triggered when financial keywords are found without corresponding amounts
+   */
+  private rescueOrphanedFinancialKeywords(groups: TextLine[]): TextLine[] {
+    // Step 1: Identify orphaned financial keywords
+    const orphanedKeywords: Array<{group: TextLine, index: number}> = [];
+    
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      const isFinancialKeyword = this.isFinancialKeyword(group.text);
+      const hasAmount = this.hasAmountPattern(group.text);
+      
+      if (isFinancialKeyword && !hasAmount) {
+        orphanedKeywords.push({ group, index: i });
+        console.log(`🆘 [Orphaned Keyword] Found: "${group.text}" at index ${i}`);
+      }
+    }
+    
+    // Step 2: Early exit if no orphaned keywords found
+    if (orphanedKeywords.length === 0) {
+      console.log(`✅ [Phase 2] No orphaned keywords found - skipping rescue phase`);
+      return groups;
+    }
+    
+    console.log(`🔧 [Phase 2] Rescuing ${orphanedKeywords.length} orphaned financial keywords...`);
+    
+    // Step 3: Attempt rescue for each orphaned keyword
+    const rescuedGroups = [...groups];
+    const processedIndices = new Set<number>();
+    
+    for (const orphan of orphanedKeywords) {
+      if (processedIndices.has(orphan.index)) continue;
+      
+      const nearbyAmount = this.findNearbyAmountForOrphan(orphan, rescuedGroups);
+      
+      if (nearbyAmount) {
+        // Merge orphan with nearby amount
+        const mergedGroup = this.mergeOrphanWithAmount(orphan.group, nearbyAmount.group);
+        
+        // Replace both original groups with merged result
+        const minIndex = Math.min(orphan.index, nearbyAmount.index);
+        const maxIndex = Math.max(orphan.index, nearbyAmount.index);
+        
+        // Remove the higher index first to avoid index shifting
+        rescuedGroups.splice(maxIndex, 1);
+        rescuedGroups.splice(minIndex, 1);
+        
+        // Insert merged group at the earlier position
+        rescuedGroups.splice(minIndex, 0, mergedGroup);
+        
+        // Mark as processed
+        processedIndices.add(orphan.index);
+        processedIndices.add(nearbyAmount.index);
+        
+        console.log(`✅ [Rescued] "${orphan.group.text}" + "${nearbyAmount.group.text}" → "${mergedGroup.text}"`);
+      } else {
+        console.log(`⚠️ [No Rescue] Could not find nearby amount for: "${orphan.group.text}"`);
+      }
+    }
+    
+    console.log(`🏁 [Phase 2] Rescue completed: ${groups.length} → ${rescuedGroups.length} groups`);
+    return rescuedGroups;
+  }
+
+  /**
+   * Check if text contains financial keywords (basic patterns)
+   */
+  private isFinancialKeyword(text: string): boolean {
+    const financialPatterns = [
+      /\b(total|sum|summa|yhteensä|总计|合计)\b/i,
+      /\b(tax|vat|moms|alv|vero|税|增值税)\b/i,
+      /\b(subtotal|sub-total|delsumma|välisumma|小计)\b/i
+    ];
+    
+    return financialPatterns.some(pattern => pattern.test(text.toLowerCase()));
+  }
+
+  /**
+   * Check if text contains amount/currency patterns
+   */
+  private hasAmountPattern(text: string): boolean {
+    const amountPatterns = [
+      /[\$€£¥₹₦₽¢]\s*[\d,.\s]+/,  // Currency symbols with numbers
+      /[\d,.\s]+\s*[\$€£¥₹₦₽¢]/,  // Numbers with currency symbols
+      /\b\d+[,.]?\d*\s*kr\b/i,     // Scandinavian kroner
+      /\b\d{1,3}(,\d{3})*\.\d{2}\b/, // Standard decimal amounts
+      /\b\d{1,3}(\s\d{3})*,\d{2}\b/, // European decimal format
+    ];
+    
+    return amountPatterns.some(pattern => pattern.test(text));
+  }
+
+  /**
+   * Find nearby amount for orphaned financial keyword
+   */
+  private findNearbyAmountForOrphan(
+    orphan: {group: TextLine, index: number}, 
+    allGroups: TextLine[]
+  ): {group: TextLine, index: number} | null {
+    const orphanY = orphan.group.boundingBox[1];
+    const searchRadius = 18; // Tight search radius to avoid false positives
+    
+    // Search in nearby positions (±2 lines)
+    for (let offset = -2; offset <= 2; offset++) {
+      if (offset === 0) continue; // Skip self
+      
+      const targetIndex = orphan.index + offset;
+      
+      if (targetIndex < 0 || targetIndex >= allGroups.length) continue;
+      
+      const targetGroup = allGroups[targetIndex];
+      const targetY = targetGroup.boundingBox[1];
+      const yDistance = Math.abs(orphanY - targetY);
+      
+      // Check if target contains amount and is within search radius
+      if (yDistance <= searchRadius && this.hasAmountPattern(targetGroup.text)) {
+        // Avoid merging with items that already have keywords (prevent double-merging)
+        if (!this.isFinancialKeyword(targetGroup.text)) {
+          console.log(`🎯 [Found Match] "${orphan.group.text}" ↔ "${targetGroup.text}" (${yDistance}px apart)`);
+          return { group: targetGroup, index: targetIndex };
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Merge orphaned keyword with found amount
+   */
+  private mergeOrphanWithAmount(keywordGroup: TextLine, amountGroup: TextLine): TextLine {
+    // Determine order by X coordinate (left to right)
+    const keywordX = keywordGroup.boundingBox[0];
+    const amountX = amountGroup.boundingBox[0];
+    
+    const orderedGroups = keywordX <= amountX 
+      ? [keywordGroup, amountGroup] 
+      : [amountGroup, keywordGroup];
+    
+    // Merge text with space
+    const mergedText = orderedGroups.map(g => g.text.trim()).join(' ');
+    
+    // Calculate encompassing bounding box
+    const allBoxes = [keywordGroup, amountGroup];
+    const minX = Math.min(...allBoxes.map(g => g.boundingBox[0]));
+    const minY = Math.min(...allBoxes.map(g => g.boundingBox[1]));
+    const maxX = Math.max(...allBoxes.map(g => g.boundingBox[0] + g.boundingBox[2]));
+    const maxY = Math.max(...allBoxes.map(g => g.boundingBox[1] + g.boundingBox[3]));
+    
+    // Average confidence
+    const avgConfidence = (keywordGroup.confidence + amountGroup.confidence) / 2;
+    
+    return {
+      text: mergedText,
+      confidence: avgConfidence,
+      boundingBox: [minX, minY, maxX - minX, maxY - minY] as [number, number, number, number],
+      merged: true
+    };
   }
 
   /**
