@@ -10,6 +10,7 @@ import { ExtractionResult, ReceiptItem, DocumentType } from '@/types/extraction'
 import { DocumentTypeClassifier } from '../classification/document-type-classifier';
 import { LanguageKeywords, SupportedLanguage } from '../keywords/language-keywords';
 import { TaxBreakdownFusionEngine } from './tax-breakdown-fusion-engine';
+import { MultiCountryTaxExtractor, MultiCountryTaxResult } from './multi-country-tax-extractor';
 import { 
   EvidenceBasedExtractedData, 
   EvidenceFusionConfig, 
@@ -29,11 +30,13 @@ const TURBOPACK_FIX = true;
  */
 export class EnhancedReceiptExtractionService {
   private fusionEngine: TaxBreakdownFusionEngine;
+  private multiCountryTaxExtractor: MultiCountryTaxExtractor;
   private config: EvidenceFusionConfig;
 
   constructor(config: Partial<EvidenceFusionConfig> = {}) {
     this.config = { ...DEFAULT_EVIDENCE_FUSION_CONFIG, ...config };
     this.fusionEngine = new TaxBreakdownFusionEngine(this.config);
+    this.multiCountryTaxExtractor = new MultiCountryTaxExtractor(config.enableDebugLogging || false);
   }
 
   /**
@@ -70,13 +73,34 @@ export class EnhancedReceiptExtractionService {
       return this.fallbackToTraditionalExtraction(ocrResult, languageHint);
     }
     
-    // Phase 2: Traditional Field Extraction (SUPPLEMENTARY)
-    console.log(`🔧 [Phase 2] Extracting supplementary fields...`);
+    // Phase 2: Multi-Country Tax Extraction & Supplementary Fields
+    console.log(`🌍 [Phase 2a] Starting multi-country tax breakdown extraction...`);
+    let multiCountryTaxResult: MultiCountryTaxResult | null = null;
+    
+    try {
+      const textLinesArray = textLines.map(tl => tl.text);
+      multiCountryTaxResult = await this.multiCountryTaxExtractor.extractTaxBreakdown(
+        textLinesArray, 
+        fullText, 
+        language
+      );
+      console.log(`✅ [Phase 2a] Multi-country tax extraction completed:`, {
+        country: multiCountryTaxResult.detected_country,
+        format: multiCountryTaxResult.detected_format,
+        breakdownEntries: multiCountryTaxResult.tax_breakdown.length,
+        totalTax: multiCountryTaxResult.tax_total,
+        confidence: multiCountryTaxResult.extraction_confidence
+      });
+    } catch (error) {
+      console.warn(`⚠️ [Phase 2a] Multi-country tax extraction failed:`, error);
+    }
+    
+    console.log(`🔧 [Phase 2b] Extracting supplementary fields...`);
     const supplementaryData = await this.extractSupplementaryFields(textLines, fullText, language);
     
     // Phase 3: Result Fusion and Validation
     console.log(`🔄 [Phase 3] Fusing results and validating...`);
-    const finalResult = this.fuseResults(evidenceBasedResult, supplementaryData, documentTypeResult);
+    const finalResult = this.fuseResults(evidenceBasedResult, supplementaryData, documentTypeResult, multiCountryTaxResult);
     
     // Phase 4: Confidence Assessment
     const overallConfidence = this.calculateOverallConfidence(evidenceBasedResult, finalResult);
@@ -248,9 +272,14 @@ export class EnhancedReceiptExtractionService {
   }
 
   /**
-   * Fuse Evidence-Based results with supplementary data
+   * Fuse Evidence-Based results with supplementary data and multi-country tax extraction
    */
-  private fuseResults(evidenceResult: EvidenceBasedExtractedData, supplementary: any, documentType: any): ExtractionResult {
+  private fuseResults(
+    evidenceResult: EvidenceBasedExtractedData, 
+    supplementary: any, 
+    documentType: any, 
+    multiCountryTaxResult?: MultiCountryTaxResult | null
+  ): ExtractionResult {
     return {
       // Core financial data from Evidence-Based Fusion
       subtotal: evidenceResult.subtotal || null,
@@ -258,8 +287,8 @@ export class EnhancedReceiptExtractionService {
       total: evidenceResult.total || 0,
       currency: evidenceResult.currency || undefined,
       
-      // Tax breakdown from Evidence-Based analysis
-      tax_breakdown: evidenceResult.tax_breakdown || [],
+      // Tax breakdown - prioritize multi-country extraction if available
+      tax_breakdown: this.selectBestTaxBreakdown(evidenceResult.tax_breakdown, multiCountryTaxResult),
       
       // Supplementary fields
       merchant_name: evidenceResult.merchant_name || supplementary.merchant_name || null,
@@ -290,6 +319,47 @@ export class EnhancedReceiptExtractionService {
         fusion_config: null
       }
     };
+  }
+
+  /**
+   * Select the best tax breakdown between evidence-based and multi-country extraction
+   */
+  private selectBestTaxBreakdown(
+    evidenceBreakdown: TaxBreakdown[] = [],
+    multiCountryResult?: MultiCountryTaxResult | null
+  ): TaxBreakdown[] {
+    if (!multiCountryResult || multiCountryResult.tax_breakdown.length === 0) {
+      return evidenceBreakdown;
+    }
+
+    // Convert multi-country breakdown to our TaxBreakdown format
+    const multiCountryBreakdown: TaxBreakdown[] = multiCountryResult.tax_breakdown.map(entry => ({
+      rate: entry.rate,
+      amount: entry.tax_amount,  // Map tax_amount to amount field
+      net: entry.net_amount || 0,
+      description: `${entry.rate}% ${multiCountryResult.detected_country || 'Tax'}`,
+      confidence: entry.confidence,
+      supportingEvidence: 1 // Multi-country extraction counts as 1 source
+    }));
+
+    // If evidence-based has no breakdown, use multi-country
+    if (evidenceBreakdown.length === 0) {
+      console.log(`🔄 Using multi-country tax breakdown (${multiCountryBreakdown.length} entries)`);
+      return multiCountryBreakdown;
+    }
+
+    // If multi-country has higher confidence, use it
+    const evidenceAvgConfidence = evidenceBreakdown.reduce((sum, t) => sum + (t.confidence || 0), 0) / evidenceBreakdown.length;
+    const multiCountryConfidence = multiCountryResult.extraction_confidence;
+
+    if (multiCountryConfidence > evidenceAvgConfidence + 0.1) { // Slight bias toward multi-country
+      console.log(`🔄 Switching to multi-country tax breakdown (confidence: ${multiCountryConfidence} > ${evidenceAvgConfidence})`);
+      return multiCountryBreakdown;
+    }
+
+    // Use evidence-based as fallback
+    console.log(`🔄 Using evidence-based tax breakdown (confidence: ${evidenceAvgConfidence} >= ${multiCountryConfidence})`);
+    return evidenceBreakdown;
   }
 
   /**

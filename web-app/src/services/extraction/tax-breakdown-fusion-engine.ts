@@ -314,10 +314,23 @@ export class TaxBreakdownFusionEngine {
     // Get unified patterns using the new multilingual system
     const patterns = this.getUnifiedTextPatterns();
 
+    // Direct tax breakdown extraction for US-style receipts like Walmart
+    this.extractDirectTaxBreakdown(textLines, evidence, timestamp);
+
     for (const line of textLines) {
       for (const { pattern, field } of patterns) {
         pattern.lastIndex = 0; // Reset regex
         const matches = Array.from(line.text.matchAll(pattern));
+        
+        // Debug tax breakdown pattern matching
+        if (field === 'tax_breakdown' && line.text.toLowerCase().includes('tax')) {
+          console.log(`🎯 [TaxBreakdown] Pattern: ${pattern.source.substring(0, 100)}... testing line: "${line.text}" → matches: ${matches.length}`);
+          if (matches.length > 0) {
+            matches.forEach((match, i) => {
+              console.log(`   Match ${i}: full="${match[0]}" rate="${match[1]}" amount="${match[2]}"`);
+            });
+          }
+        }
         
         for (const match of matches) {
           if (field === 'tax_breakdown' && match[1] && match[2]) {
@@ -512,16 +525,23 @@ export class TaxBreakdownFusionEngine {
           confidence = 0.7;
         }
       } else { // lower section
-        // Lower section likely contains total
-        if (this.containsKeywords(line.text, ['total', 'grand total', 'amount due', 'balance due'])) {
+        // Lower section likely contains total, but check for subtotal/tax keywords first
+        if (this.containsKeywords(line.text, ['subtotal', 'sub-total', 'sub total', 'net', 'merchandise total'])) {
+          field = 'subtotal';
+          confidence = 0.85;
+        } else if (this.containsKeywords(line.text, ['tax', 'vat', 'sales tax', 'state tax', 'local tax'])) {
+          field = 'tax_amount';
+          confidence = 0.8;
+        } else if (this.containsKeywords(line.text, ['total', 'grand total', 'amount due', 'balance due'])) {
           field = 'total';
           confidence = 0.9;
         } else if (this.containsKeywords(line.text, ['change', 'change due', 'cash back'])) {
           field = 'total'; // Might be change, but we treat as total for now
           confidence = 0.75;
         } else {
-          field = 'total';
-          confidence = 0.8;
+          // Don't default to total unless we're confident it's actually a total
+          // Skip lines that don't match known patterns
+          continue;
         }
       }
       
@@ -1486,12 +1506,23 @@ export class TaxBreakdownFusionEngine {
     try {
       // Generate tax breakdown patterns (rate + amount)
       for (const language of detectedLanguages) {
-        const taxBreakdownPattern = MultilingualPatternGenerator.generateTaxBreakdownPattern(language, {
-          includeCurrency: true,
-          flexibleSeparators: true,
-          supportDecimalVariations: true
-        });
-        patterns.push({ pattern: taxBreakdownPattern, field: 'tax_breakdown' as EvidenceField });
+        try {
+          const taxBreakdownPattern = MultilingualPatternGenerator.generateTaxBreakdownPattern(language, {
+            includeCurrency: true,
+            flexibleSeparators: true,
+            supportDecimalVariations: true
+          });
+          patterns.push({ pattern: taxBreakdownPattern, field: 'tax_breakdown' as EvidenceField });
+          console.log(`✅ [TaxBreakdownPattern] Generated successfully for ${language}: ${taxBreakdownPattern.source.substring(0, 80)}...`);
+        } catch (error) {
+          console.warn(`⚠️ [TaxBreakdownPattern] Failed to generate for language ${language}:`, error);
+          // Fallback: Simple tax breakdown pattern for US-style receipts
+          if (language === 'en') {
+            const fallbackPattern = /\b(?:tax|vat)\s*\d*\s*(\d+(?:[.,]\d+)?)\s*%.*?(\d+[.,]\d{2})/gi;
+            patterns.push({ pattern: fallbackPattern, field: 'tax_breakdown' as EvidenceField });
+            console.log(`✅ [TaxBreakdownPattern] Added fallback pattern for English`);
+          }
+        }
       }
 
       // Generate field-specific patterns for multiple languages
@@ -1532,18 +1563,18 @@ export class TaxBreakdownFusionEngine {
     } catch (error) {
       console.warn('⚠️ [UnifiedPatterns] Error generating patterns, falling back to basic patterns:', error);
       
-      // Fallback to basic patterns
+      // Fallback to basic patterns with word boundaries to avoid false matches
       patterns.push(
         {
-          pattern: /(?:total|sum|yhteensä|summa|gesamt|totalt|montant total|totale|importe)\s*:?\s*([€$£¥₹]?\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*[€$£¥₹])/gi,
+          pattern: /\b(?:total|sum|yhteensä|summa|gesamt|totalt|montant total|totale|importe)\s*:?\s*([€$£¥₹]?\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*[€$£¥₹])/gi,
           field: 'total' as EvidenceField
         },
         {
-          pattern: /(?:subtotal|välisumma|zwischensumme|delsumma|sous-total|subtotale|base imponible)\s*:?\s*([€$£¥₹]?\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*[€$£¥₹])/gi,
+          pattern: /\b(?:subtotal|välisumma|zwischensumme|delsumma|sous-total|subtotale|base imponible)\s*:?\s*([€$£¥₹]?\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*[€$£¥₹])/gi,
           field: 'subtotal' as EvidenceField
         },
         {
-          pattern: /(?:tax|vat|alv|mwst|ust|moms|tva|iva|steuer)\s*:?\s*([€$£¥₹]?\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*[€$£¥₹])/gi,
+          pattern: /\b(?:tax|vat|alv|mwst|ust|moms|tva|iva|steuer)\s*:?\s*([€$£¥₹]?\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*[€$£¥₹])/gi,
           field: 'tax_amount' as EvidenceField
         }
       );

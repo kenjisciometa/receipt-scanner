@@ -130,11 +130,11 @@ export class MultilingualPatternGenerator {
       throw new Error(`No keywords found for category '${category}' in language '${language}'`);
     }
 
-    // Build keyword pattern
+    // Build keyword pattern with word boundaries to prevent false matches
     const escapedKeywords = keywords.map(keyword => 
       keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     );
-    const keywordPattern = `(?:${escapedKeywords.join('|')})`;
+    const keywordPattern = `\\b(?:${escapedKeywords.join('|')})\\b`;
 
     // Build separator pattern
     const separatorPattern = mergedOptions.flexibleSeparators 
