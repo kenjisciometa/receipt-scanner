@@ -11,6 +11,7 @@ import { DocumentTypeClassifier } from '../classification/document-type-classifi
 import { LanguageKeywords, SupportedLanguage } from '../keywords/language-keywords';
 import { TaxBreakdownFusionEngine } from './tax-breakdown-fusion-engine';
 import { MultiCountryTaxExtractor, MultiCountryTaxResult } from './multi-country-tax-extractor';
+import { UniversalTaxExtractor, UniversalTaxResult } from './universal/universal-tax-extractor';
 import { 
   EvidenceBasedExtractedData, 
   EvidenceFusionConfig, 
@@ -31,12 +32,20 @@ const TURBOPACK_FIX = true;
 export class EnhancedReceiptExtractionService {
   private fusionEngine: TaxBreakdownFusionEngine;
   private multiCountryTaxExtractor: MultiCountryTaxExtractor;
+  private universalTaxExtractor: UniversalTaxExtractor;
   private config: EvidenceFusionConfig;
 
   constructor(config: Partial<EvidenceFusionConfig> = {}) {
     this.config = { ...DEFAULT_EVIDENCE_FUSION_CONFIG, ...config };
     this.fusionEngine = new TaxBreakdownFusionEngine(this.config);
     this.multiCountryTaxExtractor = new MultiCountryTaxExtractor(config.enableDebugLogging || false);
+    this.universalTaxExtractor = new UniversalTaxExtractor({
+      enableLearning: !config.enableDebugLogging, // Disable learning in debug mode for consistency
+      minConfidenceThreshold: 0.3,
+      maxCandidatesPerSection: 10,
+      enableFallbackMethods: true,
+      debugMode: config.enableDebugLogging || false
+    });
   }
 
   /**
@@ -59,6 +68,7 @@ export class EnhancedReceiptExtractionService {
     console.log(`🧠 [Phase 1] Starting Evidence-Based Fusion extraction...`);
     let evidenceBasedResult: EvidenceBasedExtractedData;
     
+    let evidenceBasedFailed = false;
     try {
       evidenceBasedResult = await this.fusionEngine.extractWithEvidence(textLines);
       console.log(`✅ [Phase 1] Evidence-Based extraction completed:`, {
@@ -69,8 +79,36 @@ export class EnhancedReceiptExtractionService {
       });
     } catch (error) {
       console.error(`❌ [Phase 1] Evidence-Based extraction failed:`, error);
-      // Fall back to traditional extraction
-      return this.fallbackToTraditionalExtraction(ocrResult, languageHint);
+      evidenceBasedFailed = true;
+      // Create empty result to continue processing
+      evidenceBasedResult = {
+        tax_breakdown: [],
+        tax_total: 0,
+        subtotal: 0,
+        tax_amount: 0,
+        total: 0,
+        evidence_summary: {
+          totalEvidencePieces: 0,
+          sourcesUsed: [],
+          averageConfidence: 0,
+          consistencyScore: 0,
+          warnings: ['Evidence-Based Fusion failed']
+        },
+        validation: {
+          clusters: [],
+          overallConfidence: 0,
+          checksPerformed: [],
+          warnings: [],
+          mathematicalConsistency: 0,
+          spatialConsistency: 0
+        },
+        processingMetadata: {
+          evidenceCollectionTime: 0,
+          validationTime: 0,
+          fusionTime: 0,
+          totalProcessingTime: 0
+        }
+      };
     }
     
     // Phase 2: Multi-Country Tax Extraction & Supplementary Fields
@@ -94,13 +132,33 @@ export class EnhancedReceiptExtractionService {
     } catch (error) {
       console.warn(`⚠️ [Phase 2a] Multi-country tax extraction failed:`, error);
     }
+
+    // Phase 2b: Universal Tax Extraction
+    console.log(`🌍 [Phase 2b] Starting universal tax extraction...`);
+    let universalTaxResult: UniversalTaxResult | null = null;
     
-    console.log(`🔧 [Phase 2b] Extracting supplementary fields...`);
+    try {
+      const textLinesArray = textLines.map(tl => tl.text);
+      universalTaxResult = await this.universalTaxExtractor.extractTaxInformation(
+        textLinesArray, 
+        language
+      );
+      console.log(`✅ [Phase 2b] Universal tax extraction completed:`, {
+        entries: universalTaxResult.taxEntries.length,
+        totalTax: universalTaxResult.taxTotal,
+        confidence: universalTaxResult.extractionConfidence,
+        primaryMethod: universalTaxResult.detectionSummary.primaryMethod
+      });
+    } catch (error) {
+      console.warn(`⚠️ [Phase 2b] Universal tax extraction failed:`, error);
+    }
+    
+    console.log(`🔧 [Phase 2c] Extracting supplementary fields...`);
     const supplementaryData = await this.extractSupplementaryFields(textLines, fullText, language);
     
     // Phase 3: Result Fusion and Validation
     console.log(`🔄 [Phase 3] Fusing results and validating...`);
-    const finalResult = this.fuseResults(evidenceBasedResult, supplementaryData, documentTypeResult, multiCountryTaxResult);
+    const finalResult = this.fuseResults(evidenceBasedResult, supplementaryData, documentTypeResult, multiCountryTaxResult, universalTaxResult);
     
     // Phase 4: Confidence Assessment
     const overallConfidence = this.calculateOverallConfidence(evidenceBasedResult, finalResult);
@@ -278,17 +336,21 @@ export class EnhancedReceiptExtractionService {
     evidenceResult: EvidenceBasedExtractedData, 
     supplementary: any, 
     documentType: any, 
-    multiCountryTaxResult?: MultiCountryTaxResult | null
+    multiCountryTaxResult?: MultiCountryTaxResult | null,
+    universalTaxResult?: UniversalTaxResult | null
   ): ExtractionResult {
+    // Select best financial values from all sources
+    const bestFinancialData = this.selectBestFinancialData(evidenceResult, multiCountryTaxResult, universalTaxResult);
+    
     return {
-      // Core financial data from Evidence-Based Fusion
-      subtotal: evidenceResult.subtotal || null,
-      tax_total: evidenceResult.tax_amount || null,
-      total: evidenceResult.total || 0,
-      currency: evidenceResult.currency || undefined,
+      // Core financial data from best available source
+      subtotal: bestFinancialData.subtotal,
+      tax_total: bestFinancialData.tax_total,
+      total: bestFinancialData.total,
+      currency: bestFinancialData.currency,
       
-      // Tax breakdown - prioritize multi-country extraction if available
-      tax_breakdown: this.selectBestTaxBreakdown(evidenceResult.tax_breakdown, multiCountryTaxResult),
+      // Tax breakdown - prioritize best extraction method
+      tax_breakdown: this.selectBestTaxBreakdown(evidenceResult.tax_breakdown, multiCountryTaxResult, universalTaxResult),
       
       // Supplementary fields
       merchant_name: evidenceResult.merchant_name || supplementary.merchant_name || null,
@@ -322,44 +384,129 @@ export class EnhancedReceiptExtractionService {
   }
 
   /**
-   * Select the best tax breakdown between evidence-based and multi-country extraction
+   * Select the best financial data from all extraction methods
+   */
+  private selectBestFinancialData(
+    evidenceResult: EvidenceBasedExtractedData,
+    multiCountryResult?: MultiCountryTaxResult | null,
+    universalResult?: UniversalTaxResult | null
+  ) {
+    // Check Universal Tax Extractor first for scattered tax patterns
+    if (universalResult && universalResult.taxEntries.length > 0) {
+      // Find subtotal and total from Universal result structure
+      const subtotal = universalResult.detectionSummary.structuralAnalysis?.taxRelevantSections?.[0]?.subtotal;
+      const total = universalResult.detectionSummary.structuralAnalysis?.taxRelevantSections?.[0]?.total;
+      
+      if (subtotal && total && universalResult.taxTotal > 0) {
+        console.log(`🌍 [FuseResults] Using Universal Tax Extractor financial data`);
+        return {
+          subtotal,
+          tax_total: universalResult.taxTotal,
+          total,
+          currency: 'USD' // Default, could be enhanced
+        };
+      }
+    }
+    
+    // Check Multi-Country Tax Extractor
+    if (multiCountryResult && multiCountryResult.tax_breakdown.length > 0) {
+      console.log(`🌍 [FuseResults] Using Multi-Country Tax Extractor financial data`);
+      return {
+        subtotal: evidenceResult.subtotal || null, // Use Evidence-Based Fusion for subtotal
+        tax_total: multiCountryResult.tax_total,
+        total: evidenceResult.total || null, // Use Evidence-Based Fusion for total
+        currency: evidenceResult.currency || null // Use Evidence-Based Fusion for currency
+      };
+    }
+    
+    // Fall back to Evidence-Based result
+    console.log(`🧠 [FuseResults] Using Evidence-Based Fusion financial data`);
+    return {
+      subtotal: evidenceResult.subtotal || null,
+      tax_total: evidenceResult.tax_amount || null,
+      total: evidenceResult.total || 0,
+      currency: evidenceResult.currency || undefined
+    };
+  }
+
+  /**
+   * Select the best tax breakdown among all extraction methods
    */
   private selectBestTaxBreakdown(
     evidenceBreakdown: TaxBreakdown[] = [],
-    multiCountryResult?: MultiCountryTaxResult | null
+    multiCountryResult?: MultiCountryTaxResult | null,
+    universalResult?: UniversalTaxResult | null
   ): TaxBreakdown[] {
-    if (!multiCountryResult || multiCountryResult.tax_breakdown.length === 0) {
-      return evidenceBreakdown;
+    const candidates: Array<{
+      breakdown: TaxBreakdown[];
+      confidence: number;
+      source: string;
+    }> = [];
+
+    // Add evidence-based breakdown
+    if (evidenceBreakdown.length > 0) {
+      const avgConfidence = evidenceBreakdown.reduce((sum, t) => sum + (t.confidence || 0), 0) / evidenceBreakdown.length;
+      candidates.push({
+        breakdown: evidenceBreakdown,
+        confidence: avgConfidence,
+        source: 'evidence-based'
+      });
     }
 
-    // Convert multi-country breakdown to our TaxBreakdown format
-    const multiCountryBreakdown: TaxBreakdown[] = multiCountryResult.tax_breakdown.map(entry => ({
-      rate: entry.rate,
-      amount: entry.tax_amount,  // Map tax_amount to amount field
-      net: entry.net_amount || 0,
-      description: `${entry.rate}% ${multiCountryResult.detected_country || 'Tax'}`,
-      confidence: entry.confidence,
-      supportingEvidence: 1 // Multi-country extraction counts as 1 source
-    }));
+    // Add multi-country breakdown
+    if (multiCountryResult && multiCountryResult.tax_breakdown.length > 0) {
+      const multiCountryBreakdown: TaxBreakdown[] = multiCountryResult.tax_breakdown.map(entry => ({
+        rate: entry.rate,
+        amount: entry.tax_amount,
+        net: entry.net_amount || 0,
+        description: `${entry.rate}% ${multiCountryResult.detected_country || 'Tax'}`,
+        confidence: entry.confidence,
+        supportingEvidence: 1
+      }));
 
-    // If evidence-based has no breakdown, use multi-country
-    if (evidenceBreakdown.length === 0) {
-      console.log(`🔄 Using multi-country tax breakdown (${multiCountryBreakdown.length} entries)`);
-      return multiCountryBreakdown;
+      candidates.push({
+        breakdown: multiCountryBreakdown,
+        confidence: multiCountryResult.extraction_confidence,
+        source: 'multi-country'
+      });
     }
 
-    // If multi-country has higher confidence, use it
-    const evidenceAvgConfidence = evidenceBreakdown.reduce((sum, t) => sum + (t.confidence || 0), 0) / evidenceBreakdown.length;
-    const multiCountryConfidence = multiCountryResult.extraction_confidence;
+    // Add universal breakdown
+    if (universalResult && universalResult.taxEntries.length > 0) {
+      const universalBreakdown: TaxBreakdown[] = universalResult.taxEntries.map(entry => ({
+        rate: entry.rate || 0,
+        amount: entry.taxAmount,
+        net: entry.taxableAmount || 0,
+        gross: entry.grossAmount,
+        description: entry.detectionMethod,
+        confidence: entry.confidence,
+        supportingEvidence: 1
+      }));
 
-    if (multiCountryConfidence > evidenceAvgConfidence + 0.1) { // Slight bias toward multi-country
-      console.log(`🔄 Switching to multi-country tax breakdown (confidence: ${multiCountryConfidence} > ${evidenceAvgConfidence})`);
-      return multiCountryBreakdown;
+      candidates.push({
+        breakdown: universalBreakdown,
+        confidence: universalResult.extractionConfidence,
+        source: 'universal'
+      });
     }
 
-    // Use evidence-based as fallback
-    console.log(`🔄 Using evidence-based tax breakdown (confidence: ${evidenceAvgConfidence} >= ${multiCountryConfidence})`);
-    return evidenceBreakdown;
+    // If no candidates, return empty
+    if (candidates.length === 0) {
+      return [];
+    }
+
+    // Select best candidate based on confidence and completeness
+    const bestCandidate = candidates.reduce((best, current) => {
+      // Factor in both confidence and number of entries
+      const currentScore = current.confidence * (1 + current.breakdown.length * 0.1);
+      const bestScore = best.confidence * (1 + best.breakdown.length * 0.1);
+      
+      return currentScore > bestScore ? current : best;
+    });
+
+    console.log(`🔄 Selected ${bestCandidate.source} tax breakdown (${bestCandidate.breakdown.length} entries, confidence: ${bestCandidate.confidence})`);
+    
+    return bestCandidate.breakdown;
   }
 
   /**
