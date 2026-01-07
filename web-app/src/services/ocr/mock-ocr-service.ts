@@ -93,6 +93,38 @@ export class MockOCRService {
           { text: "Vielen Dank!", confidence: 0.80, boundingBox: [130, 435, 120, 25] }
         ]
       },
+      // Walmart Receipt with problematic line merging (test case for adaptive threshold)
+      {
+        language: 'en',
+        textLines: [
+          { text: "WALL-MART", confidence: 0.8, boundingBox: [59, 35, 100, 14] },
+          { text: "SUPERSTORE", confidence: 0.8, boundingBox: [160, 35, 120, 14] },
+          { text: "GATORADE #2323", confidence: 0.9, boundingBox: [16, 124, 150, 20] },
+          { text: "2.97", confidence: 0.9, boundingBox: [200, 124, 40, 20] },
+          { text: "TOWEL OP #23432435", confidence: 0.8, boundingBox: [16, 148, 180, 20] },
+          { text: "2.00", confidence: 0.9, boundingBox: [200, 148, 40, 20] },
+          { text: "PUSH-SHIRT PINS", confidence: 0.8, boundingBox: [16, 172, 160, 20] },
+          { text: "16.88", confidence: 0.9, boundingBox: [190, 172, 50, 20] },
+          // Problematic financial summary section (closely spaced)
+          { text: "TAX", confidence: 0.8, boundingBox: [87, 205, 30, 12] },
+          { text: "TAX", confidence: 0.8, boundingBox: [120, 205, 30, 12] }, 
+          { text: "2", confidence: 0.8, boundingBox: [155, 205, 15, 12] },
+          { text: "1", confidence: 0.8, boundingBox: [175, 205, 15, 12] },
+          { text: "SUBTOTAL", confidence: 0.9, boundingBox: [87, 218, 60, 12] },
+          { text: "7.89", confidence: 0.9, boundingBox: [150, 218, 35, 12] },
+          { text: "4.90", confidence: 0.9, boundingBox: [190, 218, 35, 12] },
+          { text: "TOTAL", confidence: 0.9, boundingBox: [87, 231, 40, 12] },
+          { text: "%", confidence: 0.8, boundingBox: [130, 231, 15, 12] },
+          { text: "%", confidence: 0.8, boundingBox: [150, 231, 15, 12] },
+          { text: "23.09", confidence: 0.9, boundingBox: [170, 231, 40, 12] },
+          { text: "27.27", confidence: 0.9, boundingBox: [215, 231, 40, 12] },
+          { text: "2.90", confidence: 0.9, boundingBox: [260, 231, 35, 12] },
+          { text: "1.28", confidence: 0.9, boundingBox: [300, 231, 35, 12] },
+          { text: "CREDIT", confidence: 0.8, boundingBox: [149, 259, 60, 24] },
+          { text: "27.27", confidence: 0.9, boundingBox: [220, 259, 40, 24] },
+          { text: "CUSTOMER COPY", confidence: 0.8, boundingBox: [97, 541, 151, 11] }
+        ]
+      },
       // French Café Receipt
       {
         language: 'fr',

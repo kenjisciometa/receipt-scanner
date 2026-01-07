@@ -158,7 +158,7 @@ export class TrainingDataCollector {
   }
 
   /**
-   * Apply Y-coordinate based line grouping to OCR result (Flutter-compatible)
+   * Apply Y-coordinate based line grouping to OCR result (adaptive threshold)
    */
   private groupTextLinesByY(textLines: TextLine[]): TextLine[] {
     // Sort by Y coordinate first
@@ -169,7 +169,6 @@ export class TrainingDataCollector {
     });
 
     const groupedLines: TextLine[] = [];
-    const yTolerance = 15; // Pixels tolerance for same line detection
 
     let currentGroup: TextLine[] = [];
     let currentY: number | null = null;
@@ -177,8 +176,18 @@ export class TrainingDataCollector {
     for (const line of sortedLines) {
       const lineY = line.boundingBox[1];
       
-      // Start new group or add to current group
-      if (currentY === null || Math.abs(lineY - currentY) <= yTolerance) {
+      // Calculate adaptive threshold based on text height
+      const lineHeight = line.boundingBox[3];
+      const adaptiveThreshold = lineHeight * 0.4; // 40% of text height
+      const minThreshold = 5; // Minimum 5px
+      const maxThreshold = 20; // Maximum 20px
+      
+      const yTolerance = Math.max(minThreshold, Math.min(adaptiveThreshold, maxThreshold));
+      
+      const yDifference = currentY === null ? 0 : Math.abs(lineY - currentY);
+      const shouldGroup = currentY === null || yDifference <= yTolerance;
+      
+      if (shouldGroup) {
         currentGroup.push(line);
         currentY = currentY === null ? lineY : (currentY + lineY) / 2; // Average Y
       } else {
@@ -200,6 +209,7 @@ export class TrainingDataCollector {
     
     return groupedLines;
   }
+
 
   /**
    * Merge multiple TextLines in the same group into one consolidated line

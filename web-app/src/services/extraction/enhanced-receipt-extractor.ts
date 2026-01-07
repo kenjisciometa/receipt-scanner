@@ -129,7 +129,6 @@ export class EnhancedReceiptExtractionService {
     });
 
     const groupedLines: TextLine[] = [];
-    const yTolerance = 15; // Pixels tolerance for same line detection
 
     let currentGroup: TextLine[] = [];
     let currentY: number | null = null;
@@ -137,8 +136,24 @@ export class EnhancedReceiptExtractionService {
     for (const line of sortedLines) {
       const lineY = line.boundingBox[1];
       
+      // Calculate adaptive threshold based on text height
+      const lineHeight = line.boundingBox[3]; // Text height
+      const adaptiveThreshold = lineHeight * 0.4; // 40% of text height
+      const minThreshold = 5; // Minimum 5px
+      const maxThreshold = 20; // Maximum 20px
+      
+      const yTolerance = Math.max(minThreshold, Math.min(adaptiveThreshold, maxThreshold));
+      
+      // Log adaptive threshold for debugging
+      if (textLines.length < 50) { // Only log for smaller receipts to avoid spam
+        console.log(`📏 [Adaptive Threshold] "${line.text}" -> height: ${lineHeight}px, threshold: ${yTolerance.toFixed(1)}px`);
+      }
+      
       // Start new group or add to current group
-      if (currentY === null || Math.abs(lineY - currentY) <= yTolerance) {
+      const yDifference = currentY !== null ? Math.abs(lineY - currentY) : 0;
+      const shouldGroup = currentY === null || yDifference <= yTolerance;
+      
+      if (shouldGroup) {
         currentGroup.push(line);
         currentY = currentY === null ? lineY : (currentY + lineY) / 2; // Average Y
       } else {
@@ -160,6 +175,7 @@ export class EnhancedReceiptExtractionService {
     
     return groupedLines;
   }
+
 
   /**
    * Merge multiple TextLines in the same group into one consolidated line
