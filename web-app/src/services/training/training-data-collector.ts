@@ -350,7 +350,11 @@ export class TrainingDataCollector {
     
     // Check if line contains date
     if (extractionResult.date && extractionResult.date instanceof Date) {
-      const dateStr = extractionResult.date.toISOString().split('T')[0];
+      // Format as local date string (YYYY-MM-DD) without timezone conversion
+      const year = extractionResult.date.getFullYear();
+      const month = String(extractionResult.date.getMonth() + 1).padStart(2, '0');
+      const day = String(extractionResult.date.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
       if (text.includes(dateStr)) {
         return 'DATE';
       }

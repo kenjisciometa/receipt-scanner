@@ -126,7 +126,11 @@ export class ReceiptExtractionService {
           const dateStr = match[0];
           const parsedDate = new Date(dateStr);
           if (!isNaN(parsedDate.getTime())) {
-            return parsedDate.toISOString().split('T')[0]; // YYYY-MM-DD
+            // Format as local date string (YYYY-MM-DD) without timezone conversion
+            const year = parsedDate.getFullYear();
+            const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(parsedDate.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
           }
         } catch (error) {
           // Continue to next pattern

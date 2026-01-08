@@ -206,7 +206,7 @@ export class AdvancedReceiptExtractionService {
       confidence,
       status: confidence >= 0.7 ? 'completed' : 'needs_verification',
       needs_verification: confidence < 0.7,
-      extracted_items: items,
+      items: items,
       document_type: documentTypeResult.documentType,
       document_type_confidence: documentTypeResult.confidence,
       document_type_reason: documentTypeResult.reason,
@@ -886,7 +886,11 @@ export class AdvancedReceiptExtractionService {
           const dateStr = match[0];
           const parsedDate = new Date(dateStr);
           if (!isNaN(parsedDate.getTime())) {
-            return parsedDate.toISOString().split('T')[0];
+            // Format as local date string (YYYY-MM-DD) without timezone conversion
+            const year = parsedDate.getFullYear();
+            const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(parsedDate.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
           }
         } catch (error) {
           continue;

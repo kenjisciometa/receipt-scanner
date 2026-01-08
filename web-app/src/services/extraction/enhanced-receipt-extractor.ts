@@ -430,7 +430,32 @@ export class EnhancedReceiptExtractionService {
       
       // Supplementary fields
       merchant_name: evidenceResult.merchant_name || supplementary.merchant_name || null,
-      date: evidenceResult.purchase_date || supplementary.purchase_date || null,
+      date: (() => {
+        // Convert Date objects to YYYY-MM-DD string format, preserve strings as-is
+        const purchaseDate = evidenceResult.purchase_date || supplementary.purchase_date;
+        if (!purchaseDate) return null;
+        
+        if (purchaseDate instanceof Date) {
+          // Extract date components without timezone conversion
+          const year = purchaseDate.getFullYear();
+          const month = String(purchaseDate.getMonth() + 1).padStart(2, '0');
+          const day = String(purchaseDate.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        } else if (typeof purchaseDate === 'string') {
+          // If already a string, check if it's UTC format and extract date part only
+          if (purchaseDate.match(/^\d{4}-\d{2}-\d{2}T/)) {
+            return purchaseDate.split('T')[0];
+          }
+          // If already YYYY-MM-DD format, use as-is
+          if (purchaseDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            return purchaseDate;
+          }
+          // Try to extract YYYY-MM-DD from any format
+          const dateMatch = purchaseDate.match(/^(\d{4}-\d{2}-\d{2})/);
+          return dateMatch ? dateMatch[1] : purchaseDate;
+        }
+        return String(purchaseDate);
+      })(),
       payment_method: evidenceResult.payment_method || supplementary.payment_method || null,
       receipt_number: supplementary.receipt_number || null,
       
@@ -523,26 +548,99 @@ export class EnhancedReceiptExtractionService {
     return undefined;
   }
 
-  private extractPurchaseDate(textLines: TextLine[]): Date | undefined {
+  private extractPurchaseDate(textLines: TextLine[]): string | undefined {
     for (const line of textLines) {
       const text = line.text.trim();
       
-      // Various date patterns
+      // Various date patterns - including patterns with time components
+      // Note: We extract date part only, ignoring time to avoid timezone issues
       const datePatterns = [
-        /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/,     // MM/DD/YYYY or DD.MM.YY
-        /(\d{2,4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})/,     // YYYY/MM/DD
-        /(\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{2,4})/i // DD MMM YYYY
+        // MM/DD/YYYY with optional time (e.g., "05/30/2020 12:20 AM")
+        /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})(?:\s+\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))?/i,
+        // YYYY/MM/DD format
+        /(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})/,
+        // DD MMM YYYY format
+        /(\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{2,4})/i
       ];
       
       for (const pattern of datePatterns) {
         const match = text.match(pattern);
         if (match) {
-          const dateStr = match[1];
-          const parsedDate = new Date(dateStr);
+          // Extract only the date part (first capture group), ignoring time
+          const dateStr = match[1].trim();
+          
+          // Try to parse date string directly without timezone conversion
+          // First, try to parse common formats manually
+          let year: number, month: number, day: number;
+          
+          // Try YYYY/MM/DD or YYYY-MM-DD format
+          const ymdMatch = dateStr.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+          if (ymdMatch) {
+            year = parseInt(ymdMatch[1], 10);
+            month = parseInt(ymdMatch[2], 10);
+            day = parseInt(ymdMatch[3], 10);
+          } else {
+            // Try MM/DD/YYYY or DD.MM.YY format
+            const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+            if (mdyMatch) {
+              const part1 = parseInt(mdyMatch[1], 10);
+              const part2 = parseInt(mdyMatch[2], 10);
+              const part3 = parseInt(mdyMatch[3], 10);
+              
+              // Determine if it's MM/DD/YYYY or DD/MM/YYYY based on values
+              if (part3 > 31) {
+                // YYYY is in part3, so it's MM/DD/YYYY
+                year = part3;
+                month = part1;
+                day = part2;
+              } else if (part1 > 12) {
+                // Part1 > 12 means it's DD/MM/YYYY
+                year = part3 < 100 ? 2000 + part3 : part3;
+                month = part2;
+                day = part1;
+              } else {
+                // Ambiguous, assume MM/DD/YYYY (US format)
+                year = part3 < 100 ? 2000 + part3 : part3;
+                month = part1;
+                day = part2;
+              }
+            } else {
+              // Try text-based format (DD MMM YYYY)
+              // Extract date components from text format
+              const textMatch = dateStr.match(/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{2,4})/i);
+              if (textMatch) {
+                const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+                const monthName = textMatch[2].toLowerCase();
+                const monthIndex = monthNames.findIndex(m => monthName.startsWith(m));
+                if (monthIndex !== -1) {
+                  day = parseInt(textMatch[1], 10);
+                  month = monthIndex + 1;
+                  const yearStr = textMatch[3];
+                  year = yearStr.length === 2 ? 2000 + parseInt(yearStr, 10) : parseInt(yearStr, 10);
+                } else {
+                  continue; // Skip invalid month names
+                }
+              } else {
+                // Last resort: try parsing with Date object but extract local date components
+                // This should only be used for formats we can't parse manually
+                const parsedDate = new Date(dateStr);
+                if (!isNaN(parsedDate.getTime())) {
+                  // Use local date components to avoid timezone conversion
+                  year = parsedDate.getFullYear();
+                  month = parsedDate.getMonth() + 1;
+                  day = parsedDate.getDate();
+                } else {
+                  continue; // Skip invalid dates
+                }
+              }
+            }
+          }
           
           // Validate the date
-          if (!isNaN(parsedDate.getTime())) {
-            return parsedDate;
+          if (year && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            // Format as YYYY-MM-DD string without timezone conversion
+            const formattedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            return formattedDate;
           }
         }
       }

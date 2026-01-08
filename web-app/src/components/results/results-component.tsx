@@ -216,7 +216,20 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                   <div>
                     <label className="block text-xs font-medium text-gray-500">Date</label>
                     <div className="mt-1 text-sm text-gray-900">
-                      {job.extraction_result?.date || 'Not found'}
+                      {job.extraction_result?.date ? (() => {
+                        const dateStr = String(job.extraction_result.date);
+                        // If ISO format (with time), extract date part only
+                        if (dateStr.match(/^\d{4}-\d{2}-\d{2}T/)) {
+                          return dateStr.split('T')[0];
+                        }
+                        // If already YYYY-MM-DD format, use as-is
+                        if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                          return dateStr;
+                        }
+                        // Try to extract YYYY-MM-DD from any format
+                        const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+                        return dateMatch ? dateMatch[1] : dateStr;
+                      })() : 'Not found'}
                     </div>
                   </div>
                   <div>
@@ -429,8 +442,43 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                           <label className="block text-xs font-medium text-gray-700">Date</label>
                           <input
                             type="date"
-                            value={editedData.date ? new Date(editedData.date).toISOString().split('T')[0] : ''}
-                            onChange={(e) => setEditedData({...editedData, date: e.target.value ? new Date(e.target.value).toISOString() : null})}
+                            value={editedData.date ? (() => {
+                              // If already YYYY-MM-DD format, use as-is
+                              if (typeof editedData.date === 'string' && editedData.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                return editedData.date;
+                              }
+                              // If ISO format (with time), extract date part only
+                              if (typeof editedData.date === 'string' && editedData.date.match(/^\d{4}-\d{2}-\d{2}T/)) {
+                                return editedData.date.split('T')[0];
+                              }
+                              // If Date object or other format, parse without UTC conversion
+                              if (typeof editedData.date === 'string') {
+                                const dateMatch = editedData.date.match(/^(\d{4}-\d{2}-\d{2})/);
+                                if (dateMatch) {
+                                  return dateMatch[1];
+                                }
+                              }
+                              // Fallback: try to parse as date and extract YYYY-MM-DD without timezone conversion
+                              try {
+                                const dateStr = String(editedData.date);
+                                const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+                                if (dateMatch) {
+                                  return dateMatch[1];
+                                }
+                                // Last resort: parse and use local date components
+                                const parsed = new Date(dateStr);
+                                if (!isNaN(parsed.getTime())) {
+                                  const year = parsed.getFullYear();
+                                  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+                                  const day = String(parsed.getDate()).padStart(2, '0');
+                                  return `${year}-${month}-${day}`;
+                                }
+                              } catch (e) {
+                                // Ignore errors
+                              }
+                              return '';
+                            })() : ''}
+                            onChange={(e) => setEditedData({...editedData, date: e.target.value || null})}
                             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                           />
                         </div>
@@ -617,7 +665,21 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                         <div>
                           <label className="block text-xs font-medium text-gray-500">Date</label>
                           <div className="mt-1 text-sm text-gray-900">
-                            {editedData.date || job.extraction_result?.date || 'Not set'}
+                            {(() => {
+                              const dateStr = String(editedData.date || job.extraction_result?.date || '');
+                              if (!dateStr || dateStr === 'Not set') return 'Not set';
+                              // If ISO format (with time), extract date part only
+                              if (dateStr.match(/^\d{4}-\d{2}-\d{2}T/)) {
+                                return dateStr.split('T')[0];
+                              }
+                              // If already YYYY-MM-DD format, use as-is
+                              if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                return dateStr;
+                              }
+                              // Try to extract YYYY-MM-DD from any format
+                              const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+                              return dateMatch ? dateMatch[1] : dateStr;
+                            })()}
                           </div>
                         </div>
                         <div>
