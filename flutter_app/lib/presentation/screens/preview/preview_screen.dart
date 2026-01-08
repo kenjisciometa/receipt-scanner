@@ -50,6 +50,9 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   late final TextEditingController _taxController;
   late final TextEditingController _totalController;
   late final TextEditingController _paymentMethodController;
+  
+  // Tax Breakdown controllers (rate and amount pairs)
+  final List<({TextEditingController rate, TextEditingController amount})> _taxBreakdownControllers = [];
 
   @override
   void initState() {
@@ -81,6 +84,12 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     _taxController.dispose();
     _totalController.dispose();
     _paymentMethodController.dispose();
+    // Dispose tax breakdown controllers
+    for (final controllers in _taxBreakdownControllers) {
+      controllers.rate.dispose();
+      controllers.amount.dispose();
+    }
+    _taxBreakdownControllers.clear();
     super.dispose();
   }
 
@@ -100,10 +109,22 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       String imagePath = widget.imagePath;
       
       // Only apply preprocessing to camera-captured images, not test images
+      // Check if image is from assets (test images) by checking:
+      // 1. Contains test_receipt, test_invoice, receipt_*, or invoice_* patterns
+      // 2. Is in temporary directory (assets are copied to temp dir)
       final isTestImage = widget.imagePath.contains('test_receipt') || 
-                          widget.imagePath.contains('test_invoice_') ||
+                          widget.imagePath.contains('test_invoice') ||
+                          widget.imagePath.contains('receipt_') ||
+                          widget.imagePath.contains('invoice_') ||
                           widget.imagePath.contains('test_receipt_');
       logger.d('Image path: ${widget.imagePath}, isTestImage: $isTestImage');
+      
+      // Verify file exists
+      final file = File(imagePath);
+      if (!await file.exists()) {
+        throw Exception('Image file does not exist: $imagePath');
+      }
+      logger.d('Image file exists: ${await file.length()} bytes');
       
       if (!isTestImage) {
         final preprocessResult = await _imagePreprocessor.processReceiptImage(widget.imagePath);
@@ -267,6 +288,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           ? ReceiptStatus.completed 
           : ReceiptStatus.needsVerification,
       receiptNumber: data['receipt_number'] as String?,
+      documentType: data['document_type'] as String?,
     );
   }
 
@@ -627,6 +649,15 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
             const SizedBox(height: AppConstants.defaultPadding),
           ],
           
+          // Document Type
+          if (receipt.documentType != null) ...[
+            _buildSectionTitle('Document Type'),
+            _buildDataCard([
+              _buildDocumentTypeRow(receipt.documentType!),
+            ]),
+            const SizedBox(height: AppConstants.defaultPadding),
+          ],
+          
           // Merchant info
           _buildSectionTitle('Merchant'),
           _buildDataCard([
@@ -675,9 +706,43 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
               )),
               if (receipt.taxTotal != null)
                 _buildDataRow('Tax Total', _formatAmount(receipt.taxTotal!), isHighlighted: true),
-            ] else if (_isEditing)
-              _buildEditableDataRow('Tax', _taxController, hint: '0.00', isAmount: true)
-            else if (receipt.taxTotal != null)
+            ] else if (_isEditing) ...[
+              // Tax Breakdown編集UI
+              ..._taxBreakdownControllers.asMap().entries.map((entry) {
+                final index = entry.key;
+                final controllers = entry.value;
+                return _buildTaxBreakdownRow(
+                  index: index,
+                  rateController: controllers.rate,
+                  amountController: controllers.amount,
+                );
+              }),
+              // Add Tax Breakdown button
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          _addTaxBreakdownController();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Add Tax Rate'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blue,
+                          side: BorderSide(color: Colors.blue.shade300),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Fallback: Single Tax field (if no breakdowns)
+              if (_taxBreakdownControllers.isEmpty)
+                _buildEditableDataRow('Tax', _taxController, hint: '0.00', isAmount: true),
+            ] else if (receipt.taxTotal != null)
               _buildDataRow('Tax', _formatAmount(receipt.taxTotal!)),
             if (_isEditing)
               _buildEditableDataRow('Total', _totalController, hint: '0.00', isAmount: true, isHighlighted: true)
@@ -818,6 +883,66 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     );
   }
 
+  Widget _buildDocumentTypeRow(String documentType) {
+    // Determine icon and color based on document type
+    IconData icon;
+    Color color;
+    String displayText;
+    
+    switch (documentType.toLowerCase()) {
+      case 'receipt':
+        icon = Icons.receipt;
+        color = Colors.green;
+        displayText = 'Receipt';
+        break;
+      case 'invoice':
+        icon = Icons.description;
+        color = Colors.blue;
+        displayText = 'Invoice';
+        break;
+      default:
+        icon = Icons.help_outline;
+        color = Colors.grey;
+        displayText = 'Unknown';
+    }
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              'Type',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: AppConstants.smallPadding),
+                Text(
+                  displayText,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEditableDataRow(
     String label,
     TextEditingController controller, {
@@ -870,6 +995,110 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
                 fontSize: isHighlighted ? 16 : 14,
               ),
               keyboardType: isAmount ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  /// Build editable tax breakdown row with rate and amount
+  Widget _buildTaxBreakdownRow({
+    required int index,
+    required TextEditingController rateController,
+    required TextEditingController amountController,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Row(
+              children: [
+                Text(
+                  'Tax Rate',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (_taxBreakdownControllers.length > 1)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    color: Colors.red,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _removeTaxBreakdownController(index),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Padding(
+              padding: const EdgeInsets.only(right: AppConstants.smallPadding),
+              child: TextField(
+                controller: rateController,
+                decoration: InputDecoration(
+                  hintText: '14.0',
+                  suffixText: '%',
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(4),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(4),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(4),
+                    borderSide: BorderSide(color: Colors.blue, width: 2),
+                  ),
+                ),
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: TextField(
+              controller: amountController,
+              decoration: InputDecoration(
+                hintText: '0.00',
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide(color: Colors.blue, width: 2),
+                ),
+              ),
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 14,
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
           ),
         ],
@@ -945,6 +1174,44 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         ? receipt.totalAmount!.toStringAsFixed(2)
         : '';
     _paymentMethodController.text = receipt.paymentMethod?.displayName ?? '';
+    
+    // Initialize tax breakdown controllers
+    _clearTaxBreakdownControllers();
+    if (receipt.taxBreakdown.isNotEmpty) {
+      for (final tax in receipt.taxBreakdown) {
+        _addTaxBreakdownController(
+          rate: tax.rate.toStringAsFixed(1),
+          amount: tax.amount.toStringAsFixed(2),
+        );
+      }
+    }
+  }
+
+  /// Clear all tax breakdown controllers
+  void _clearTaxBreakdownControllers() {
+    for (final controllers in _taxBreakdownControllers) {
+      controllers.rate.dispose();
+      controllers.amount.dispose();
+    }
+    _taxBreakdownControllers.clear();
+  }
+  
+  /// Add a new tax breakdown controller
+  void _addTaxBreakdownController({String rate = '', String amount = ''}) {
+    _taxBreakdownControllers.add((
+      rate: TextEditingController(text: rate),
+      amount: TextEditingController(text: amount),
+    ));
+  }
+  
+  /// Remove a tax breakdown controller at index
+  void _removeTaxBreakdownController(int index) {
+    if (index >= 0 && index < _taxBreakdownControllers.length) {
+      _taxBreakdownControllers[index].rate.dispose();
+      _taxBreakdownControllers[index].amount.dispose();
+      _taxBreakdownControllers.removeAt(index);
+      setState(() {}); // Update UI
+    }
   }
 
   /// Toggle edit mode
@@ -1001,14 +1268,30 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
             ? null
             : _paymentMethodController.text.trim(),
         'currency': _extractedReceipt!.currency.code,
-        // TaxBreakdownとTaxTotalを保存（既存の値を使用）
-        'tax_breakdown': _extractedReceipt!.taxBreakdown.isNotEmpty
-            ? _extractedReceipt!.taxBreakdown.map((tax) => {
-                'rate': tax.rate,
-                'amount': tax.amount,
-              }).toList()
+        // TaxBreakdownを保存（編集された値を使用）
+        'tax_breakdown': _taxBreakdownControllers.isNotEmpty
+            ? _taxBreakdownControllers.map((controllers) {
+                final rate = double.tryParse(controllers.rate.text.trim());
+                final amount = double.tryParse(controllers.amount.text.trim());
+                if (rate != null && amount != null) {
+                  return {
+                    'rate': rate,
+                    'amount': amount,
+                  };
+                }
+                return null;
+              }).where((item) => item != null).cast<Map<String, double>>().toList()
             : null,
-        'tax_total': _extractedReceipt!.taxTotal,
+        // Tax Totalを計算（breakdownの合計、または単一のtax_amount）
+        'tax_total': _taxBreakdownControllers.isNotEmpty
+            ? _taxBreakdownControllers
+                .map((controllers) => double.tryParse(controllers.amount.text.trim()) ?? 0.0)
+                .fold(0.0, (sum, amount) => sum + amount)
+            : (_taxController.text.trim().isNotEmpty
+                ? double.tryParse(_taxController.text.trim())
+                : null),
+        // Document type from original extraction
+        'document_type': _extractedReceipt!.documentType,
       };
 
       // Validate required fields
@@ -1024,15 +1307,39 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
 
       // Save as verified training data
       final receiptId = _generateReceiptId();
+      
+      // Preserve document type metadata from original extraction if available
+      final additionalMetadata = <String, dynamic>{
+        'is_test_image': widget.imagePath.contains('test_receipt'),
+        'original_confidence': _extractionResult?.confidence,
+      };
+      
+      // Add document type metadata from original extraction
+      if (_extractionResult?.metadata != null) {
+        final originalMetadata = _extractionResult!.metadata;
+        if (originalMetadata.containsKey('document_type')) {
+          additionalMetadata['document_type'] = originalMetadata['document_type'];
+          if (originalMetadata.containsKey('document_type_confidence')) {
+            additionalMetadata['document_type_confidence'] = originalMetadata['document_type_confidence'];
+          }
+          if (originalMetadata.containsKey('document_type_reason')) {
+            additionalMetadata['document_type_reason'] = originalMetadata['document_type_reason'];
+          }
+          if (originalMetadata.containsKey('document_type_receipt_score')) {
+            additionalMetadata['document_type_receipt_score'] = originalMetadata['document_type_receipt_score'];
+          }
+          if (originalMetadata.containsKey('document_type_invoice_score')) {
+            additionalMetadata['document_type_invoice_score'] = originalMetadata['document_type_invoice_score'];
+          }
+        }
+      }
+      
       final savedPath = await _trainingDataCollector.saveVerifiedTrainingData(
         receiptId: receiptId,
         ocrResult: _ocrResult!,
         correctedData: correctedData,
         imagePath: widget.imagePath,
-        additionalMetadata: {
-          'is_test_image': widget.imagePath.contains('test_receipt'),
-          'original_confidence': _extractionResult?.confidence,
-        },
+        additionalMetadata: additionalMetadata,
       );
 
       if (savedPath != null) {

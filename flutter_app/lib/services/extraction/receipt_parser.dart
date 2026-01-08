@@ -144,6 +144,260 @@ class TableExtractionResult {
   }
 }
 
+/// Document type classification result
+class DocumentTypeResult {
+  final String documentType; // 'receipt', 'invoice', or 'unknown'
+  final double confidence; // 0.0-1.0
+  final String reason; // Human-readable reason for classification
+  final double receiptScore;
+  final double invoiceScore;
+
+  DocumentTypeResult({
+    required this.documentType,
+    required this.confidence,
+    required this.reason,
+    required this.receiptScore,
+    required this.invoiceScore,
+  });
+}
+
+/// Classifier for distinguishing between Receipt and Invoice documents
+class DocumentTypeClassifier {
+  /// Classify document type based on text lines
+  /// Returns DocumentTypeResult with classification and confidence
+  static DocumentTypeResult classify({
+    required List<TextLine> textLines,
+    String? detectedLanguage,
+  }) {
+    double receiptScore = 0.0;
+    double invoiceScore = 0.0;
+    final reasons = <String>[];
+
+    if (textLines.isEmpty) {
+      return DocumentTypeResult(
+        documentType: 'unknown',
+        confidence: 0.0,
+        reason: 'No text lines available',
+        receiptScore: 0.0,
+        invoiceScore: 0.0,
+      );
+    }
+
+    final normalizedText = textLines.map((line) => line.text.toLowerCase()).join(' ');
+
+    // 1. Keyword-based classification (weight: high = 2.0)
+    final receiptKeywordScore = _checkReceiptKeywords(normalizedText, detectedLanguage);
+    final invoiceKeywordScore = _checkInvoiceKeywords(normalizedText, detectedLanguage);
+    
+    receiptScore += receiptKeywordScore * 2.0;
+    invoiceScore += invoiceKeywordScore * 2.0;
+    
+    if (receiptKeywordScore > 0) {
+      reasons.add('Found receipt keywords (score: ${receiptKeywordScore.toStringAsFixed(2)})');
+    }
+    if (invoiceKeywordScore > 0) {
+      reasons.add('Found invoice keywords (score: ${invoiceKeywordScore.toStringAsFixed(2)})');
+    }
+
+    // 2. Layout complexity (weight: medium = 1.0)
+    final layoutScore = _checkLayoutComplexity(textLines);
+    receiptScore += layoutScore['receipt']! * 1.0;
+    invoiceScore += layoutScore['invoice']! * 1.0;
+    
+    if (layoutScore['receipt']! > 0.5) {
+      reasons.add('Simple layout suggests receipt');
+    }
+    if (layoutScore['invoice']! > 0.5) {
+      reasons.add('Complex layout suggests invoice');
+    }
+
+    // 3. Information detail level (weight: medium = 1.0)
+    final detailScore = _checkInformationDetail(textLines, normalizedText);
+    receiptScore += detailScore['receipt']! * 1.0;
+    invoiceScore += detailScore['invoice']! * 1.0;
+    
+    if (detailScore['receipt']! > 0.5) {
+      reasons.add('Simple information structure suggests receipt');
+    }
+    if (detailScore['invoice']! > 0.5) {
+      reasons.add('Detailed information structure suggests invoice');
+    }
+
+    // 4. Date types (weight: low = 0.5)
+    final dateScore = _checkDateTypes(normalizedText);
+    receiptScore += dateScore['receipt']! * 0.5;
+    invoiceScore += dateScore['invoice']! * 0.5;
+    
+    if (dateScore['invoice']! > 0.5) {
+      reasons.add('Multiple date types found (invoice indicator)');
+    }
+
+    // Determine document type
+    final scoreDifference = (receiptScore - invoiceScore).abs();
+    final totalScore = receiptScore + invoiceScore;
+    final confidence = totalScore > 0 ? (scoreDifference / totalScore).clamp(0.0, 1.0) : 0.0;
+    
+    String documentType;
+    if (receiptScore > invoiceScore + 1.0) {
+      documentType = 'receipt';
+    } else if (invoiceScore > receiptScore + 1.0) {
+      documentType = 'invoice';
+    } else {
+      documentType = 'unknown';
+    }
+
+    final reason = reasons.isEmpty 
+        ? 'Insufficient evidence for classification'
+        : reasons.join('; ');
+
+    logger.d('📄 Document type classification: $documentType '
+        '(receipt: ${receiptScore.toStringAsFixed(2)}, '
+        'invoice: ${invoiceScore.toStringAsFixed(2)}, '
+        'confidence: ${confidence.toStringAsFixed(2)})');
+
+    return DocumentTypeResult(
+      documentType: documentType,
+      confidence: confidence,
+      reason: reason,
+      receiptScore: receiptScore,
+      invoiceScore: invoiceScore,
+    );
+  }
+
+  /// Check for receipt-specific keywords
+  static double _checkReceiptKeywords(String normalizedText, String? language) {
+    double score = 0.0;
+    
+    // Check receipt keywords
+    final receiptKeywords = LanguageKeywords.getAllKeywords('receipt');
+    for (final keyword in receiptKeywords) {
+      if (normalizedText.contains(keyword.toLowerCase())) {
+        score += 1.0;
+      }
+    }
+    
+    // Check receipt-specific keywords (stronger indicator)
+    final receiptSpecificKeywords = LanguageKeywords.getAllKeywords('receipt_specific');
+    for (final keyword in receiptSpecificKeywords) {
+      if (normalizedText.contains(keyword.toLowerCase())) {
+        score += 2.0; // Stronger weight for specific keywords
+      }
+    }
+    
+    return score;
+  }
+
+  /// Check for invoice-specific keywords
+  static double _checkInvoiceKeywords(String normalizedText, String? language) {
+    double score = 0.0;
+    
+    // Check invoice keywords
+    final invoiceKeywords = LanguageKeywords.getAllKeywords('invoice');
+    for (final keyword in invoiceKeywords) {
+      if (normalizedText.contains(keyword.toLowerCase())) {
+        score += 1.0;
+      }
+    }
+    
+    // Check invoice-specific keywords (stronger indicator)
+    final invoiceSpecificKeywords = LanguageKeywords.getAllKeywords('invoice_specific');
+    for (final keyword in invoiceSpecificKeywords) {
+      if (normalizedText.contains(keyword.toLowerCase())) {
+        score += 2.0; // Stronger weight for specific keywords
+      }
+    }
+    
+    return score;
+  }
+
+  /// Check layout complexity (simple = receipt, complex = invoice)
+  static Map<String, double> _checkLayoutComplexity(List<TextLine> textLines) {
+    final lineCount = textLines.length;
+    
+    // Count table-like structures (multiple columns, aligned text)
+    int tableLikeLines = 0;
+    for (final line in textLines) {
+      final text = line.text.trim();
+      // Check for multiple spaces/tabs (potential table structure)
+      if (RegExp(r'\s{3,}').hasMatch(text) || text.contains('\t')) {
+        tableLikeLines++;
+      }
+    }
+    
+    final tableRatio = lineCount > 0 ? tableLikeLines / lineCount : 0.0;
+    
+    // Simple layout (receipt): fewer lines, less table structure
+    final receiptScore = lineCount < 30 && tableRatio < 0.3 ? 1.0 : 
+                        lineCount < 40 && tableRatio < 0.4 ? 0.5 : 0.0;
+    
+    // Complex layout (invoice): more lines, more table structure
+    final invoiceScore = lineCount > 40 && tableRatio > 0.4 ? 1.0 :
+                        lineCount > 30 && tableRatio > 0.3 ? 0.5 : 0.0;
+    
+    return {'receipt': receiptScore, 'invoice': invoiceScore};
+  }
+
+  /// Check information detail level
+  static Map<String, double> _checkInformationDetail(
+    List<TextLine> textLines,
+    String normalizedText,
+  ) {
+    // Check for detailed item information (quantity, unit price, tax breakdown)
+    final itemTableHeaders = LanguageKeywords.getAllKeywords('item_table_header');
+    int detailedItemIndicators = 0;
+    
+    for (final line in textLines) {
+      final lineText = line.text.toLowerCase();
+      // Count how many table header keywords appear
+      for (final header in itemTableHeaders) {
+        if (lineText.contains(header.toLowerCase())) {
+          detailedItemIndicators++;
+          break; // Count each line only once
+        }
+      }
+    }
+    
+    final detailRatio = textLines.isNotEmpty 
+        ? detailedItemIndicators / textLines.length 
+        : 0.0;
+    
+    // Simple information (receipt): fewer detailed indicators
+    final receiptScore = detailRatio < 0.2 ? 1.0 : 
+                        detailRatio < 0.3 ? 0.5 : 0.0;
+    
+    // Detailed information (invoice): more detailed indicators
+    final invoiceScore = detailRatio > 0.3 ? 1.0 :
+                        detailRatio > 0.2 ? 0.5 : 0.0;
+    
+    return {'receipt': receiptScore, 'invoice': invoiceScore};
+  }
+
+  /// Check for multiple date types (invoice often has issue date + due date)
+  static Map<String, double> _checkDateTypes(String normalizedText) {
+    // Look for date-related keywords
+    final dateKeywords = [
+      'date', 'datum', 'fecha', 'data', 'päivä',
+      'due date', 'due', 'fälligkeitsdatum', 'eräpäivä',
+      'issue date', 'invoice date', 'billing date',
+    ];
+    
+    int dateKeywordCount = 0;
+    for (final keyword in dateKeywords) {
+      if (normalizedText.contains(keyword.toLowerCase())) {
+        dateKeywordCount++;
+      }
+    }
+    
+    // Receipt: usually has single date
+    final receiptScore = dateKeywordCount <= 2 ? 0.5 : 0.0;
+    
+    // Invoice: often has multiple dates (issue date + due date)
+    final invoiceScore = dateKeywordCount > 2 ? 1.0 : 0.0;
+    
+    return {'receipt': receiptScore, 'invoice': invoiceScore};
+  }
+}
+
 /// Main service for parsing receipt data from OCR text
 class ReceiptParser {
   /// Parse receipt data from OCR text and (optional) structured OCR blocks
@@ -183,6 +437,17 @@ class ReceiptParser {
         throw InsufficientDataException(['raw_text']);
       }
 
+      // Document type classification
+      DocumentTypeResult? documentTypeResult;
+      if (textLines != null && textLines.isNotEmpty) {
+        documentTypeResult = DocumentTypeClassifier.classify(
+          textLines: textLines,
+          detectedLanguage: detectedLanguage,
+        );
+        logger.i('📄 Document type: ${documentTypeResult.documentType} '
+            '(confidence: ${documentTypeResult.confidence.toStringAsFixed(2)})');
+      }
+
       // Prefer structured parsing with textLines (best for receipts)
       if (textLines != null && textLines.isNotEmpty) {
         logger.d('Using structured parsing with ${textLines.length} textLines');
@@ -195,6 +460,7 @@ class ReceiptParser {
           warnings,
           stopwatch,
           textLines: textLines,
+          documentTypeResult: documentTypeResult,
         );
         return result;
       }
@@ -210,6 +476,7 @@ class ReceiptParser {
           appliedPatterns,
           warnings,
           stopwatch,
+          documentTypeResult: documentTypeResult,
         );
         return result;
       }
@@ -306,6 +573,11 @@ class ReceiptParser {
             .toList();
       }
 
+      // Add document type to extracted_data for JSON output
+      if (documentTypeResult != null) {
+        extractedData['document_type'] = documentTypeResult.documentType;
+      }
+
       // Confidence
       final confidence = _calculateExtractionConfidence(
         extractedData,
@@ -325,19 +597,31 @@ class ReceiptParser {
           'confidence: ${confidence.toStringAsFixed(2)}, '
           'warnings: ${warnings.length}');
 
+      // Add document type to metadata if available
+      final metadata = <String, dynamic>{
+        'detected_language': detectedLanguage,
+        'ocr_confidence': ocrConfidence,
+        'text_length': normalizedText.length,
+        'patterns_applied': appliedPatterns.length,
+        'parsing_method': 'text_line_by_line',
+      };
+      
+      // Add document type classification if available
+      if (documentTypeResult != null) {
+        metadata['document_type'] = documentTypeResult.documentType;
+        metadata['document_type_confidence'] = documentTypeResult.confidence;
+        metadata['document_type_reason'] = documentTypeResult.reason;
+        metadata['document_type_receipt_score'] = documentTypeResult.receiptScore;
+        metadata['document_type_invoice_score'] = documentTypeResult.invoiceScore;
+      }
+
       return ExtractionResult.success(
         extractedData: extractedData,
         processingTime: processingTime,
         confidence: confidence,
         warnings: warnings,
         appliedPatterns: appliedPatterns,
-        metadata: {
-          'detected_language': detectedLanguage,
-          'ocr_confidence': ocrConfidence,
-          'text_length': normalizedText.length,
-          'patterns_applied': appliedPatterns.length,
-          'parsing_method': 'text_line_by_line',
-        },
+        metadata: metadata,
       );
     } catch (e) {
       stopwatch.stop();
@@ -1683,48 +1967,8 @@ class ReceiptParser {
   }
 
   Currency? _extractCurrency(String text, List<String> appliedPatterns) {
-    // Strong: symbol presence
-    if (text.contains('€')) {
-      appliedPatterns.add('currency_symbol_eur');
-      return Currency.eur;
-    }
-    if (text.contains('£')) {
-      appliedPatterns.add('currency_symbol_gbp');
-      return Currency.gbp;
-    }
-    if (text.contains('\$')) {
-      appliedPatterns.add('currency_symbol_usd');
-      return Currency.usd;
-    }
-
-    // Fallback: project patterns
-    for (final pattern in RegexPatterns.currencyPatterns) {
-      final match = pattern.firstMatch(text);
-      if (match != null) {
-        final currencyText = match.group(0)!;
-        appliedPatterns.add('currency_pattern_${RegexPatterns.currencyPatterns.indexOf(pattern)}');
-
-        switch (currencyText.toLowerCase()) {
-          case '€':
-          case 'eur':
-            return Currency.eur;
-          case 'kr':
-          case 'sek':
-            return Currency.sek;
-          case 'nok':
-            return Currency.nok;
-          case 'dkk':
-            return Currency.dkk;
-          case '\$':
-          case 'usd':
-            return Currency.usd;
-          case '£':
-          case 'gbp':
-            return Currency.gbp;
-        }
-      }
-    }
-    return null;
+    // Use LanguageKeywords for centralized currency extraction
+    return LanguageKeywords.extractCurrency(text, appliedPatterns);
   }
 
   String? _extractReceiptNumber(String text, List<String> appliedPatterns) {
@@ -2188,6 +2432,7 @@ class ReceiptParser {
     List<String> warnings,
     Stopwatch stopwatch, {
     List<TextLine>? textLines,
+    DocumentTypeResult? documentTypeResult,
   }) async {
     try {
       final extractedData = <String, dynamic>{};
@@ -2414,6 +2659,11 @@ class ReceiptParser {
             .toList();
       }
 
+      // Add document type to extracted_data for JSON output
+      if (documentTypeResult != null) {
+        extractedData['document_type'] = documentTypeResult.documentType;
+      }
+
       final confidence = _calculateExtractionConfidence(
         extractedData,
         ocrConfidence,
@@ -2431,19 +2681,31 @@ class ReceiptParser {
           'confidence: ${confidence.toStringAsFixed(2)}, '
           'warnings: ${warnings.length}');
 
+      // Add document type to metadata if available
+      final metadata = <String, dynamic>{
+        'detected_language': detectedLanguage,
+        'ocr_confidence': ocrConfidence,
+        'text_blocks': textBlocks.length,
+        'text_lines': textLines?.length ?? 0,
+        'parsing_method': textLines != null && textLines.isNotEmpty ? 'structured_textlines' : 'structured',
+      };
+      
+      // Add document type classification if available
+      if (documentTypeResult != null) {
+        metadata['document_type'] = documentTypeResult.documentType;
+        metadata['document_type_confidence'] = documentTypeResult.confidence;
+        metadata['document_type_reason'] = documentTypeResult.reason;
+        metadata['document_type_receipt_score'] = documentTypeResult.receiptScore;
+        metadata['document_type_invoice_score'] = documentTypeResult.invoiceScore;
+      }
+
       return ExtractionResult.success(
         extractedData: extractedData,
         processingTime: processingTime,
         confidence: confidence,
         warnings: warnings,
         appliedPatterns: appliedPatterns,
-        metadata: {
-          'detected_language': detectedLanguage,
-          'ocr_confidence': ocrConfidence,
-          'text_blocks': textBlocks.length,
-          'text_lines': textLines?.length ?? 0,
-          'parsing_method': textLines != null && textLines.isNotEmpty ? 'structured_textlines' : 'structured',
-        },
+        metadata: metadata,
       );
     } catch (e) {
       logger.e('Structured parsing failed, falling back to text parsing: $e');
@@ -2609,7 +2871,7 @@ class ReceiptParser {
     
     // Create patterns in priority order: subtotal, tax, total
     final amountPattern = r'([-]?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|[-]?\d+(?:[.,]\d{2}))';
-    final currencyPattern = r'[€\$£¥₹kr]?';
+    final currencyPattern = LanguageKeywords.currencyPattern;
     
     // Pattern 1: Subtotal (highest priority)
     final subtotalPattern = RegExp(
@@ -2627,7 +2889,7 @@ class ReceiptParser {
       caseSensitive: false,
     );
     
-    final amountOnlyPattern = RegExp(r'^[€\$£¥₹kr]?\s*([-]?\d+[.,]\d{2})\s*$');
+    final amountOnlyPattern = RegExp('^${LanguageKeywords.currencyPattern}\\s*([-]?\\d+[.,]\\d{2})\\s*\$');
 
     for (final block in blocks) {
       final rawText = block['text'] as String;
@@ -2844,35 +3106,10 @@ class ReceiptParser {
   Currency? _extractCurrencyFromBlocks(List<Map<String, dynamic>> blocks, List<String> appliedPatterns) {
     for (final block in blocks) {
       final text = block['text'] as String;
-      if (text.contains('€')) {
-        appliedPatterns.add('structured_currency_eur');
-        return Currency.eur;
-      }
-      for (final pattern in RegexPatterns.currencyPatterns) {
-        final match = pattern.firstMatch(text);
-        if (match != null) {
-          appliedPatterns.add('structured_currency');
-          final currencyText = match.group(0)!;
-
-          switch (currencyText.toLowerCase()) {
-            case '€':
-            case 'eur':
-              return Currency.eur;
-            case 'kr':
-            case 'sek':
-              return Currency.sek;
-            case 'nok':
-              return Currency.nok;
-            case 'dkk':
-              return Currency.dkk;
-            case '\$':
-            case 'usd':
-              return Currency.usd;
-            case '£':
-            case 'gbp':
-              return Currency.gbp;
-          }
-        }
+      final currency = LanguageKeywords.extractCurrency(text, appliedPatterns);
+      if (currency != null) {
+        appliedPatterns.add('structured_currency');
+        return currency;
       }
     }
     return null;
@@ -3005,7 +3242,7 @@ class ReceiptParser {
         // Current line is a label, check if next line is an amount
         final nextLine = lines[i + 1].trim();
         final amountPattern = RegExp(
-          r'^[€\$£¥₹kr]?\s*[\d,]+[.,]\d{1,2}\s*$',
+          '^${LanguageKeywords.currencyPattern}\\s*[\\d,]+[.,]\\d{1,2}\\s*\$',
         );
 
         if (amountPattern.hasMatch(nextLine)) {
@@ -3023,7 +3260,7 @@ class ReceiptParser {
       if (currentLine.endsWith(':') && i + 1 < lines.length) {
         final nextLine = lines[i + 1].trim();
         // If next line looks like an amount, combine them
-        if (RegExp(r'^[€\$£¥₹kr]?\s*[\d,]+[.,]\d{1,2}').hasMatch(nextLine)) {
+        if (RegExp('^${LanguageKeywords.currencyPattern}\\s*[\\d,]+[.,]\\d{1,2}').hasMatch(nextLine)) {
           final combined = '$currentLine $nextLine';
           combinedLines.add(combined);
           logger.d('Combined label and amount: "$currentLine" + "$nextLine" = "$combined"');

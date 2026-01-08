@@ -1,3 +1,4 @@
+import 'language_keywords.dart';
 import 'pattern_generator.dart';
 
 /// Regular expression patterns for receipt data extraction
@@ -124,13 +125,8 @@ class RegexPatterns {
   // ========== CURRENCY PATTERNS ==========
   
   /// Currency symbol and code patterns
-  static final List<RegExp> currencyPatterns = [
-    // Currency symbols
-    RegExp(r'[€\$£¥₹kr]', multiLine: true),
-    
-    // Currency codes
-    RegExp(r'\b(EUR|USD|GBP|SEK|NOK|DKK|CHF)\b', multiLine: true),
-  ];
+  /// Generated from LanguageKeywords for centralized management
+  static List<RegExp> get currencyPatterns => LanguageKeywords.currencyPatterns;
   
   // ========== ITEM LINE PATTERNS ==========
   

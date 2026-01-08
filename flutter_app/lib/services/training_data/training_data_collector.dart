@@ -251,6 +251,18 @@ class TrainingDataCollector {
     final taxAmount = extractedData['tax_amount'] as double?;
     final totalAmount = extractedData['total_amount'] as double?;
     
+    // Extract tax breakdown array (for multiple tax rates)
+    List<Map<String, dynamic>>? taxBreakdowns;
+    if (extractedData['tax_breakdown'] != null) {
+      final taxBreakdownData = extractedData['tax_breakdown'];
+      if (taxBreakdownData is List) {
+        taxBreakdowns = taxBreakdownData
+            .where((item) => item is Map<String, dynamic>)
+            .cast<Map<String, dynamic>>()
+            .toList();
+      }
+    }
+    
     // Extract amount from text line
     final amountMatch = RegExp(r'[\d.,]+').firstMatch(line.text);
     double? lineAmount;
@@ -263,22 +275,51 @@ class TrainingDataCollector {
     final subtotalKeywords = LanguageKeywords.getAllKeywords('subtotal');
     for (final keyword in subtotalKeywords) {
       if (text.contains(keyword.toLowerCase())) {
-        final confidence = isVerified && subtotalAmount != null && lineAmount != null &&
-            (lineAmount - subtotalAmount).abs() < 0.01
-            ? confidenceBase
-            : 0.8;
+        // Verified data always has confidence 1.0
+        final confidence = isVerified 
+            ? confidenceBase  // 1.0 for verified data
+            : (subtotalAmount != null && lineAmount != null &&
+               (lineAmount - subtotalAmount).abs() < 0.01 ? 0.9 : 0.8);
         return {'label': 'SUBTOTAL', 'confidence': confidence};
       }
     }
     
     // Check Tax (keyword + amount match for verified data)
+    // Support multiple tax breakdowns: check if line amount matches any tax breakdown amount
     final taxKeywords = LanguageKeywords.getAllKeywords('tax');
     for (final keyword in taxKeywords) {
       if (text.contains(keyword.toLowerCase())) {
-        final confidence = isVerified && taxAmount != null && lineAmount != null &&
-            (lineAmount - taxAmount).abs() < 0.01
-            ? confidenceBase
-            : 0.8;
+        // For verified data with tax breakdowns, check if amount matches any breakdown
+        if (isVerified && taxBreakdowns != null && taxBreakdowns.isNotEmpty && lineAmount != null) {
+          // Check if line amount matches any tax breakdown amount
+          bool matchesBreakdown = false;
+          for (final breakdown in taxBreakdowns) {
+            final breakdownAmount = breakdown['amount'];
+            if (breakdownAmount != null) {
+              final breakdownAmountDouble = breakdownAmount is double 
+                  ? breakdownAmount 
+                  : (breakdownAmount is int 
+                      ? breakdownAmount.toDouble() 
+                      : double.tryParse(breakdownAmount.toString()));
+              if (breakdownAmountDouble != null && 
+                  (lineAmount - breakdownAmountDouble).abs() < 0.01) {
+                matchesBreakdown = true;
+                logger.d('✅ Tax line matches breakdown: ${breakdown['rate']}% = $lineAmount');
+                break;
+              }
+            }
+          }
+          if (matchesBreakdown) {
+            return {'label': 'TAX', 'confidence': confidenceBase};
+          }
+        }
+        
+        // Fallback: check against total tax amount (for single tax or when breakdown doesn't match)
+        // Verified data always has confidence 1.0
+        final confidence = isVerified 
+            ? confidenceBase  // 1.0 for verified data
+            : (taxAmount != null && lineAmount != null &&
+               (lineAmount - taxAmount).abs() < 0.01 ? 0.9 : 0.8);
         return {'label': 'TAX', 'confidence': confidence};
       }
     }
@@ -287,10 +328,11 @@ class TrainingDataCollector {
     final totalKeywords = LanguageKeywords.getAllKeywords('total');
     for (final keyword in totalKeywords) {
       if (text.contains(keyword.toLowerCase()) && !text.contains('subtotal')) {
-        final confidence = isVerified && totalAmount != null && lineAmount != null &&
-            (lineAmount - totalAmount).abs() < 0.01
-            ? confidenceBase
-            : 0.8;
+        // Verified data always has confidence 1.0
+        final confidence = isVerified 
+            ? confidenceBase  // 1.0 for verified data
+            : (totalAmount != null && lineAmount != null &&
+               (lineAmount - totalAmount).abs() < 0.01 ? 0.9 : 0.8);
         return {'label': 'TOTAL', 'confidence': confidence};
       }
     }
@@ -312,15 +354,18 @@ class TrainingDataCollector {
     
     // Check if it looks like an item (has price-like pattern)
     if (RegExp(r'[\d.,]+\s*[€$£¥kr]|[\d.,]+\s*[€$£¥kr]').hasMatch(line.text)) {
-      return {'label': 'ITEM_PRICE', 'confidence': isVerified ? 0.8 : 0.6};
+      // Verified data always has confidence 1.0
+      return {'label': 'ITEM_PRICE', 'confidence': isVerified ? confidenceBase : 0.6};
     }
     
     // Check if it looks like an item name (text before price)
     if (lineIndex > 0 && lineIndex < 15) { // Usually items are in middle section
-      return {'label': 'ITEM_NAME', 'confidence': isVerified ? 0.7 : 0.5};
+      // Verified data always has confidence 1.0
+      return {'label': 'ITEM_NAME', 'confidence': isVerified ? confidenceBase : 0.5};
     }
     
-    return {'label': 'OTHER', 'confidence': isVerified ? 0.5 : 0.3};
+    // Verified data always has confidence 1.0
+    return {'label': 'OTHER', 'confidence': isVerified ? confidenceBase : 0.3};
   }
 
   /// Generate pseudo-label for a TextBlock (fallback)
@@ -533,6 +578,31 @@ class TrainingDataCollector {
       );
       
       // Create ExtractionResult for verified data
+      // Preserve document type metadata from additionalMetadata if available
+      final verifiedMetadata = <String, dynamic>{
+        'parsing_method': 'user_verified',
+        'is_ground_truth': true,
+      };
+      
+      // Add document type metadata from additionalMetadata
+      if (additionalMetadata != null) {
+        if (additionalMetadata.containsKey('document_type')) {
+          verifiedMetadata['document_type'] = additionalMetadata['document_type'];
+        }
+        if (additionalMetadata.containsKey('document_type_confidence')) {
+          verifiedMetadata['document_type_confidence'] = additionalMetadata['document_type_confidence'];
+        }
+        if (additionalMetadata.containsKey('document_type_reason')) {
+          verifiedMetadata['document_type_reason'] = additionalMetadata['document_type_reason'];
+        }
+        if (additionalMetadata.containsKey('document_type_receipt_score')) {
+          verifiedMetadata['document_type_receipt_score'] = additionalMetadata['document_type_receipt_score'];
+        }
+        if (additionalMetadata.containsKey('document_type_invoice_score')) {
+          verifiedMetadata['document_type_invoice_score'] = additionalMetadata['document_type_invoice_score'];
+        }
+      }
+      
       final verifiedExtractionResult = ExtractionResult(
         success: true,
         processingTime: 0,
@@ -540,10 +610,7 @@ class TrainingDataCollector {
         confidence: 1.0,
         warnings: [],
         appliedPatterns: [],
-        metadata: {
-          'parsing_method': 'user_verified',
-          'is_ground_truth': true,
-        },
+        metadata: verifiedMetadata,
       );
       
       // Prepare verified training data structure

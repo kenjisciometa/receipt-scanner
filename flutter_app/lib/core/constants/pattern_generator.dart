@@ -8,13 +8,14 @@ class PatternGenerator {
   /// [category] - Category name ('total', 'subtotal', 'tax')
   /// [specificLanguages] - Optional list of language codes to include
   /// [amountPattern] - Pattern for matching amounts
-  /// [currencyPattern] - Pattern for matching currency symbols
+  /// [currencyPattern] - Pattern for matching currency symbols (defaults to LanguageKeywords.currencyPattern)
   static List<RegExp> generateAmountPatterns({
     required String category,
     List<String>? specificLanguages,
     String amountPattern = r'([-]?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|[-]?\d+(?:[.,]\d{2}))', // Match amounts like 12.58, 1,234.56, etc.
-    String currencyPattern = r'[€\$£¥₹kr]?',
+    String? currencyPattern,
   }) {
+    currencyPattern ??= LanguageKeywords.currencyPattern;
     final keywords = specificLanguages != null
         ? LanguageKeywords.getKeywordsForLanguages(category, specificLanguages)
         : LanguageKeywords.getAllKeywords(category);
@@ -69,7 +70,7 @@ class PatternGenerator {
 
     final escapedKeywords = taxKeywords.map((k) => RegExp.escape(k)).join('|');
     final amountPattern = r'([-]?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|[-]?\d+(?:[.,]\d{2}))'; // Match amounts like 3.02, 1,234.56, etc.
-    final currencyPattern = r'[€\$£¥₹kr]?';
+    final currencyPattern = LanguageKeywords.currencyPattern;
 
     return [
       // Pattern 1: "VAT: €3.02" or "ALV: €3.02"

@@ -1,0 +1,763 @@
+/**
+ * Enhanced Receipt Extractor with Evidence-Based Fusion
+ * 
+ * Integrates the new Evidence-Based Fusion system with the existing 
+ * AdvancedReceiptExtractor to provide superior accuracy and robustness
+ */
+
+import { TextLine, OCRResult } from '@/types/ocr';
+import { ExtractionResult, ReceiptItem, DocumentType } from '@/types/extraction';
+import { DocumentTypeClassifier } from '../classification/document-type-classifier';
+import { LanguageKeywords, SupportedLanguage } from '../keywords/language-keywords';
+import { TaxBreakdownFusionEngine } from './tax-breakdown-fusion-engine';
+import { 
+  EvidenceBasedExtractedData, 
+  EvidenceFusionConfig, 
+  DEFAULT_EVIDENCE_FUSION_CONFIG, 
+  TaxBreakdown, 
+  EvidenceSource 
+} from '../../types/evidence';
+
+// Force file change to refresh Turbopack cache
+const TURBOPACK_FIX = true;
+
+/**
+ * Enhanced Receipt Extraction Service
+ * 
+ * Combines traditional pattern-based extraction with Evidence-Based Fusion
+ * for improved accuracy, especially for challenging receipts like Walmart US
+ */
+export class EnhancedReceiptExtractionService {
+  private fusionEngine: TaxBreakdownFusionEngine;
+  private config: EvidenceFusionConfig;
+
+  constructor(config: Partial<EvidenceFusionConfig> = {}) {
+    this.config = { ...DEFAULT_EVIDENCE_FUSION_CONFIG, ...config };
+    this.fusionEngine = new TaxBreakdownFusionEngine(this.config);
+  }
+
+  /**
+   * Main extraction method with Evidence-Based Fusion
+   */
+  async extract(ocrResult: OCRResult, languageHint?: string): Promise<ExtractionResult> {
+    const startTime = Date.now();
+    const language = (languageHint || ocrResult.detected_language || 'en') as SupportedLanguage;
+    const textLines = this.convertOCRToTextLines(ocrResult);
+    const fullText = ocrResult.text;
+    
+    console.log(`🔍 [Enhanced] Starting extraction for language: ${language}`);
+    console.log(`📊 [Enhanced] Processing ${textLines.length} text lines`);
+    
+    // Document type classification
+    const documentTypeResult = DocumentTypeClassifier.classify(textLines, language);
+    console.log(`📋 Document type: ${documentTypeResult.documentType} (confidence: ${documentTypeResult.confidence})`);
+    
+    // Phase 1: Evidence-Based Fusion Extraction (PRIMARY)
+    console.log(`🧠 [Phase 1] Starting Evidence-Based Fusion extraction...`);
+    let evidenceBasedResult: EvidenceBasedExtractedData;
+    
+    try {
+      evidenceBasedResult = await this.fusionEngine.extractWithEvidence(textLines);
+      console.log(`✅ [Phase 1] Evidence-Based extraction completed:`, {
+        evidencePieces: evidenceBasedResult.evidence_summary.totalEvidencePieces,
+        sources: evidenceBasedResult.evidence_summary.sourcesUsed,
+        confidence: evidenceBasedResult.evidence_summary.averageConfidence,
+        processingTime: evidenceBasedResult.processingMetadata.totalProcessingTime
+      });
+    } catch (error) {
+      console.error(`❌ [Phase 1] Evidence-Based extraction failed:`, error);
+      // Fall back to traditional extraction
+      return this.fallbackToTraditionalExtraction(ocrResult, languageHint);
+    }
+    
+    // Phase 2: Traditional Field Extraction (SUPPLEMENTARY)
+    console.log(`🔧 [Phase 2] Extracting supplementary fields...`);
+    const supplementaryData = await this.extractSupplementaryFields(textLines, fullText, language);
+    
+    // Phase 3: Result Fusion and Validation
+    console.log(`🔄 [Phase 3] Fusing results and validating...`);
+    const finalResult = this.fuseResults(evidenceBasedResult, supplementaryData, documentTypeResult);
+    
+    // Phase 4: Confidence Assessment
+    const overallConfidence = this.calculateOverallConfidence(evidenceBasedResult, finalResult);
+    
+    const totalProcessingTime = Date.now() - startTime;
+    
+    console.log(`🎯 [Enhanced] Extraction completed in ${totalProcessingTime}ms:`, {
+      confidence: overallConfidence,
+      subtotal: finalResult.subtotal,
+      tax: finalResult.tax_total,
+      total: finalResult.total,
+      currency: finalResult.currency
+    });
+    
+    return {
+      ...finalResult,
+      confidence: overallConfidence,
+      processedTextLines: textLines  // Include rescued TextLines for training data
+    };
+  }
+
+  /**
+   * Convert OCR result to TextLine format for fusion engine
+   * Enhanced with Y-coordinate based line grouping for better accuracy
+   */
+  private convertOCRToTextLines(ocrResult: OCRResult): TextLine[] {
+    if (ocrResult.textLines && ocrResult.textLines.length > 0) {
+      // Use existing TextLines and apply line grouping
+      return this.groupTextLinesByY(ocrResult.textLines);
+    } else {
+      // Fall back to line-by-line parsing
+      const lines = ocrResult.text.split('\n');
+      return lines.map((text) => ({
+        text: text.trim(),
+        confidence: ocrResult.confidence || 1.0,
+        boundingBox: [0, 0, 0, 0] as [number, number, number, number]
+      }));
+    }
+  }
+
+  /**
+   * Group TextLines by Y-coordinate to reconstruct proper lines
+   * Uses vertical overlap detection for more accurate row separation
+   * This fixes issues where table rows with close Y coordinates get incorrectly merged
+   */
+  private groupTextLinesByY(textLines: TextLine[]): TextLine[] {
+    // Sort by Y coordinate first
+    const sortedLines = [...textLines].sort((a, b) => {
+      const aY = a.boundingBox[1]; // Y coordinate
+      const bY = b.boundingBox[1];
+      return aY - bY;
+    });
+
+    const groupedLines: TextLine[] = [];
+    let currentGroup: TextLine[] = [];
+    let rowMinY: number | null = null;
+    let rowMaxY: number | null = null;
+
+    for (const line of sortedLines) {
+      const lineY = line.boundingBox[1];
+      const lineHeight = line.boundingBox[3];
+      const lineBottomY = lineY + lineHeight;
+
+      if (rowMinY === null) {
+        // First word starts a new row
+        currentGroup.push(line);
+        rowMinY = lineY;
+        rowMaxY = lineBottomY;
+      } else {
+        // Calculate vertical overlap between this word and the current row
+        const overlapTop = Math.max(lineY, rowMinY!);
+        const overlapBottom = Math.min(lineBottomY, rowMaxY!);
+        const overlap = Math.max(0, overlapBottom - overlapTop);
+        const overlapRatio = lineHeight > 0 ? overlap / lineHeight : 0;
+
+        // If more than 30% vertical overlap, word belongs to same row
+        if (overlapRatio > 0.3) {
+          currentGroup.push(line);
+          // Extend row bounds
+          rowMinY = Math.min(rowMinY!, lineY);
+          rowMaxY = Math.max(rowMaxY!, lineBottomY);
+        } else {
+          // Start new row
+          if (currentGroup.length > 0) {
+            groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
+          }
+          currentGroup = [line];
+          rowMinY = lineY;
+          rowMaxY = lineBottomY;
+        }
+      }
+    }
+
+    // Don't forget the last group
+    if (currentGroup.length > 0) {
+      groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
+    }
+
+    console.log(`🔗 [Line Grouping] Merged ${textLines.length} text elements into ${groupedLines.length} lines (vertical overlap method)`);
+
+    // Phase 2: Rescue orphaned financial keywords (selective application)
+    const finalGroups = this.rescueOrphanedFinancialKeywords(groupedLines);
+
+    console.log(`🆘 [Rescue Complete] Final groups count: ${finalGroups.length}`);
+
+    return finalGroups;
+  }
+
+
+  /**
+   * Merge multiple TextLines in the same group into one consolidated line
+   */
+  private mergeTextLinesInGroup(group: TextLine[]): TextLine {
+    if (group.length === 1) {
+      return group[0];
+    }
+
+    // Sort by X coordinate within the group
+    const sortedGroup = group.sort((a, b) => {
+      const aX = a.boundingBox[0]; // X coordinate
+      const bX = b.boundingBox[0];
+      return aX - bX;
+    });
+
+    // Merge text with space separation
+    const mergedText = sortedGroup.map(line => line.text.trim()).filter(text => text.length > 0).join(' ');
+    
+    // Calculate consolidated bounding box
+    const minX = Math.min(...sortedGroup.map(line => line.boundingBox[0]));
+    const minY = Math.min(...sortedGroup.map(line => line.boundingBox[1]));
+    const maxX = Math.max(...sortedGroup.map(line => line.boundingBox[0] + line.boundingBox[2]));
+    const maxY = Math.max(...sortedGroup.map(line => line.boundingBox[1] + line.boundingBox[3]));
+    
+    const consolidatedBoundingBox: [number, number, number, number] = [
+      minX,
+      minY, 
+      maxX - minX, // width
+      maxY - minY  // height
+    ];
+
+    // Average confidence
+    const avgConfidence = sortedGroup.reduce((sum, line) => sum + line.confidence, 0) / sortedGroup.length;
+
+    const merged: TextLine = {
+      text: mergedText,
+      confidence: avgConfidence,
+      boundingBox: consolidatedBoundingBox,
+      merged: group.length > 1 // Set merged flag
+    };
+
+    // Log successful merges for debugging
+    if (group.length > 1) {
+      console.log(`🔗 [Line Merge] "${group.map(g => g.text).join('" + "')}" → "${mergedText}"`);
+    }
+
+    return merged;
+  }
+
+  /**
+   * Phase 2: Selective rescue of orphaned financial keywords
+   * Only triggered when financial keywords are found without corresponding amounts
+   */
+  private rescueOrphanedFinancialKeywords(groups: TextLine[]): TextLine[] {
+    // Step 1: Identify orphaned financial keywords
+    const orphanedKeywords: Array<{group: TextLine, index: number}> = [];
+    
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      const isFinancialKeyword = this.isFinancialKeyword(group.text);
+      const hasAmount = this.hasAmountPattern(group.text);
+      
+      if (isFinancialKeyword && !hasAmount) {
+        orphanedKeywords.push({ group, index: i });
+        console.log(`🆘 [Orphaned Keyword] Found: "${group.text}" at index ${i}`);
+      }
+    }
+    
+    // Step 2: Early exit if no orphaned keywords found
+    if (orphanedKeywords.length === 0) {
+      console.log(`✅ [Phase 2] No orphaned keywords found - skipping rescue phase`);
+      return groups;
+    }
+    
+    console.log(`🔧 [Phase 2] Rescuing ${orphanedKeywords.length} orphaned financial keywords...`);
+    
+    // Step 3: Attempt rescue for each orphaned keyword
+    const rescuedGroups = [...groups];
+    const processedIndices = new Set<number>();
+    
+    for (const orphan of orphanedKeywords) {
+      if (processedIndices.has(orphan.index)) continue;
+      
+      const nearbyAmount = this.findNearbyAmountForOrphan(orphan, rescuedGroups);
+      
+      if (nearbyAmount) {
+        // Merge orphan with nearby amount
+        const mergedGroup = this.mergeOrphanWithAmount(orphan.group, nearbyAmount.group);
+        
+        // Replace both original groups with merged result
+        const minIndex = Math.min(orphan.index, nearbyAmount.index);
+        const maxIndex = Math.max(orphan.index, nearbyAmount.index);
+        
+        // Remove the higher index first to avoid index shifting
+        rescuedGroups.splice(maxIndex, 1);
+        rescuedGroups.splice(minIndex, 1);
+        
+        // Insert merged group at the earlier position
+        rescuedGroups.splice(minIndex, 0, mergedGroup);
+        
+        // Mark as processed
+        processedIndices.add(orphan.index);
+        processedIndices.add(nearbyAmount.index);
+        
+        console.log(`✅ [Rescued] "${orphan.group.text}" + "${nearbyAmount.group.text}" → "${mergedGroup.text}"`);
+      } else {
+        console.log(`⚠️ [No Rescue] Could not find nearby amount for: "${orphan.group.text}"`);
+      }
+    }
+    
+    console.log(`🏁 [Phase 2] Rescue completed: ${groups.length} → ${rescuedGroups.length} groups`);
+    return rescuedGroups;
+  }
+
+  /**
+   * Check if text contains financial keywords (basic patterns)
+   */
+  private isFinancialKeyword(text: string): boolean {
+    const financialPatterns = [
+      /\b(total|sum|summa|yhteensä|总计|合计)\b/i,
+      /\b(tax|vat|moms|alv|vero|税|增值税)\b/i,
+      /\b(subtotal|sub-total|delsumma|välisumma|小计)\b/i
+    ];
+    
+    return financialPatterns.some(pattern => pattern.test(text.toLowerCase()));
+  }
+
+  /**
+   * Check if text contains amount/currency patterns
+   */
+  private hasAmountPattern(text: string): boolean {
+    const amountPatterns = [
+      /[\$€£¥₹₦₽¢]\s*[\d,.\s]+/,  // Currency symbols with numbers
+      /[\d,.\s]+\s*[\$€£¥₹₦₽¢]/,  // Numbers with currency symbols
+      /\b\d+[,.]?\d*\s*kr\b/i,     // Scandinavian kroner
+      /\b\d{1,3}(,\d{3})*\.\d{2}\b/, // Standard decimal amounts
+      /\b\d{1,3}(\s\d{3})*,\d{2}\b/, // European decimal format
+    ];
+    
+    return amountPatterns.some(pattern => pattern.test(text));
+  }
+
+  /**
+   * Find nearby amount for orphaned financial keyword
+   */
+  private findNearbyAmountForOrphan(
+    orphan: {group: TextLine, index: number}, 
+    allGroups: TextLine[]
+  ): {group: TextLine, index: number} | null {
+    const orphanY = orphan.group.boundingBox[1];
+    const searchRadius = 18; // Tight search radius to avoid false positives
+    
+    // Search in nearby positions (±2 lines)
+    for (let offset = -2; offset <= 2; offset++) {
+      if (offset === 0) continue; // Skip self
+      
+      const targetIndex = orphan.index + offset;
+      
+      if (targetIndex < 0 || targetIndex >= allGroups.length) continue;
+      
+      const targetGroup = allGroups[targetIndex];
+      const targetY = targetGroup.boundingBox[1];
+      const yDistance = Math.abs(orphanY - targetY);
+      
+      // Check if target contains amount and is within search radius
+      if (yDistance <= searchRadius && this.hasAmountPattern(targetGroup.text)) {
+        // Avoid merging with items that already have keywords (prevent double-merging)
+        if (!this.isFinancialKeyword(targetGroup.text)) {
+          console.log(`🎯 [Found Match] "${orphan.group.text}" ↔ "${targetGroup.text}" (${yDistance}px apart)`);
+          return { group: targetGroup, index: targetIndex };
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Merge orphaned keyword with found amount
+   */
+  private mergeOrphanWithAmount(keywordGroup: TextLine, amountGroup: TextLine): TextLine {
+    // Determine order by X coordinate (left to right)
+    const keywordX = keywordGroup.boundingBox[0];
+    const amountX = amountGroup.boundingBox[0];
+    
+    const orderedGroups = keywordX <= amountX 
+      ? [keywordGroup, amountGroup] 
+      : [amountGroup, keywordGroup];
+    
+    // Merge text with space
+    const mergedText = orderedGroups.map(g => g.text.trim()).join(' ');
+    
+    // Calculate encompassing bounding box
+    const allBoxes = [keywordGroup, amountGroup];
+    const minX = Math.min(...allBoxes.map(g => g.boundingBox[0]));
+    const minY = Math.min(...allBoxes.map(g => g.boundingBox[1]));
+    const maxX = Math.max(...allBoxes.map(g => g.boundingBox[0] + g.boundingBox[2]));
+    const maxY = Math.max(...allBoxes.map(g => g.boundingBox[1] + g.boundingBox[3]));
+    
+    // Average confidence
+    const avgConfidence = (keywordGroup.confidence + amountGroup.confidence) / 2;
+    
+    return {
+      text: mergedText,
+      confidence: avgConfidence,
+      boundingBox: [minX, minY, maxX - minX, maxY - minY] as [number, number, number, number],
+      merged: true
+    };
+  }
+
+  /**
+   * Extract supplementary fields not handled by fusion engine
+   */
+  private async extractSupplementaryFields(textLines: TextLine[], fullText: string, language: SupportedLanguage) {
+    const result: any = {};
+    
+    // Extract merchant name
+    result.merchant_name = this.extractMerchantName(textLines);
+    
+    // Extract purchase date
+    result.purchase_date = this.extractPurchaseDate(textLines);
+    
+    // Extract purchase time
+    result.purchase_time = this.extractPurchaseTime(textLines);
+    
+    // Extract payment method
+    result.payment_method = this.extractPaymentMethod(textLines);
+    
+    // Extract receipt number
+    result.receipt_number = this.extractReceiptNumber(textLines);
+    
+    return result;
+  }
+
+  /**
+   * Fuse Evidence-Based results with supplementary data
+   */
+  private fuseResults(evidenceResult: EvidenceBasedExtractedData, supplementary: any, documentType: any): ExtractionResult {
+    return {
+      // Core financial data from Evidence-Based Fusion
+      subtotal: evidenceResult.subtotal || null,
+      tax_total: evidenceResult.tax_amount || null,
+      total: evidenceResult.total || 0,
+      currency: evidenceResult.currency || undefined,
+      
+      // Tax breakdown from Evidence-Based analysis
+      tax_breakdown: evidenceResult.tax_breakdown || [],
+      
+      // Supplementary fields
+      merchant_name: evidenceResult.merchant_name || supplementary.merchant_name || null,
+      date: (() => {
+        // Convert Date objects to YYYY-MM-DD string format, preserve strings as-is
+        const purchaseDate = evidenceResult.purchase_date || supplementary.purchase_date;
+        if (!purchaseDate) return null;
+        
+        if (purchaseDate instanceof Date) {
+          // Extract date components without timezone conversion
+          const year = purchaseDate.getFullYear();
+          const month = String(purchaseDate.getMonth() + 1).padStart(2, '0');
+          const day = String(purchaseDate.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        } else if (typeof purchaseDate === 'string') {
+          // If already a string, check if it's UTC format and extract date part only
+          if (purchaseDate.match(/^\d{4}-\d{2}-\d{2}T/)) {
+            return purchaseDate.split('T')[0];
+          }
+          // If already YYYY-MM-DD format, use as-is
+          if (purchaseDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            return purchaseDate;
+          }
+          // Try to extract YYYY-MM-DD from any format
+          const dateMatch = purchaseDate.match(/^(\d{4}-\d{2}-\d{2})/);
+          return dateMatch ? dateMatch[1] : purchaseDate;
+        }
+        return String(purchaseDate);
+      })(),
+      time: supplementary.purchase_time || null,
+      payment_method: evidenceResult.payment_method || supplementary.payment_method || null,
+      receipt_number: supplementary.receipt_number || null,
+      
+      // Document classification
+      document_type: documentType.documentType as DocumentType || 'unknown',
+      document_type_confidence: documentType.confidence || 0,
+      document_type_reason: documentType.factors?.join(', ') || '',
+      
+      // Required fields
+      confidence: 0.5, // Will be overridden by calculateOverallConfidence
+      status: 'completed' as const,
+      
+      // Optional fields
+      items: [],
+      warnings: evidenceResult.evidence_summary.warnings,
+      
+      // Evidence metadata
+      metadata: {
+        extraction_method: 'evidence_based_fusion',
+        evidence_summary: evidenceResult.evidence_summary,
+        processing_times: evidenceResult.processingMetadata,
+        applied_patterns: [],
+        language_detected: 'auto',
+        fusion_config: null
+      }
+    };
+  }
+
+  /**
+   * Calculate overall confidence score
+   */
+  private calculateOverallConfidence(evidenceResult: EvidenceBasedExtractedData, finalResult: ExtractionResult): number {
+    const evidenceConfidence = evidenceResult.evidence_summary.averageConfidence;
+    const consistencyScore = evidenceResult.evidence_summary.consistencyScore;
+    const mathConsistency = evidenceResult.validation.mathematicalConsistency;
+    
+    // Weighted average of different confidence factors
+    return (evidenceConfidence * 0.4 + consistencyScore * 0.3 + mathConsistency * 0.3);
+  }
+
+  /**
+   * Fallback to traditional extraction when Evidence-Based fails
+   */
+  private async fallbackToTraditionalExtraction(ocrResult: OCRResult, languageHint?: string): Promise<ExtractionResult> {
+    console.log(`🔄 [Fallback] Using traditional extraction...`);
+    
+    const { AdvancedReceiptExtractionService } = await import('./advanced-receipt-extractor');
+    const fallbackService = new AdvancedReceiptExtractionService();
+    
+    const result = await fallbackService.extract(ocrResult, languageHint);
+    
+    // Add evidence metadata for consistency
+    if (!result.metadata) {
+      result.metadata = {};
+    }
+    result.metadata.evidence_summary = {
+      totalEvidencePieces: 0,
+      sourcesUsed: ['text'],
+      averageConfidence: result.confidence || 0.5,
+      consistencyScore: 0.5,
+      warnings: ['Fallback to traditional extraction']
+    };
+    result.metadata.fallback_reason = 'Evidence-Based Fusion failed';
+    
+    return result;
+  }
+
+  // Helper extraction methods for supplementary fields
+  private extractMerchantName(textLines: TextLine[]): string | undefined {
+    // Simple heuristic: look for merchant name in first few lines
+    for (let i = 0; i < Math.min(5, textLines.length); i++) {
+      const text = textLines[i].text.trim();
+      
+      // Skip very short lines or lines that look like addresses/numbers
+      if (text.length < 3 || /^\d+$/.test(text) || /^[\d\s\-\.]+$/.test(text)) {
+        continue;
+      }
+      
+      // Skip common receipt headers
+      if (/^(receipt|transaction|order|invoice|bill)/i.test(text)) {
+        continue;
+      }
+      
+      // Return first reasonable line
+      if (text.length >= 3 && text.length <= 50) {
+        return text;
+      }
+    }
+    
+    return undefined;
+  }
+
+  private extractPurchaseDate(textLines: TextLine[]): string | undefined {
+    for (const line of textLines) {
+      const text = line.text.trim();
+      
+      // Various date patterns - including patterns with time components
+      // Note: We extract date part only, ignoring time to avoid timezone issues
+      const datePatterns = [
+        // MM/DD/YYYY with optional time (e.g., "05/30/2020 12:20 AM")
+        /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})(?:\s+\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))?/i,
+        // YYYY/MM/DD format
+        /(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})/,
+        // DD MMM YYYY format
+        /(\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{2,4})/i
+      ];
+      
+      for (const pattern of datePatterns) {
+        const match = text.match(pattern);
+        if (match) {
+          // Extract only the date part (first capture group), ignoring time
+          const dateStr = match[1].trim();
+          
+          // Try to parse date string directly without timezone conversion
+          // First, try to parse common formats manually
+          let year: number, month: number, day: number;
+          
+          // Try YYYY/MM/DD or YYYY-MM-DD format
+          const ymdMatch = dateStr.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+          if (ymdMatch) {
+            year = parseInt(ymdMatch[1], 10);
+            month = parseInt(ymdMatch[2], 10);
+            day = parseInt(ymdMatch[3], 10);
+          } else {
+            // Try MM/DD/YYYY or DD.MM.YY format
+            const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+            if (mdyMatch) {
+              const part1 = parseInt(mdyMatch[1], 10);
+              const part2 = parseInt(mdyMatch[2], 10);
+              const part3 = parseInt(mdyMatch[3], 10);
+              
+              // Determine if it's MM/DD/YYYY or DD/MM/YYYY based on values
+              if (part3 > 31) {
+                // YYYY is in part3, so it's MM/DD/YYYY
+                year = part3;
+                month = part1;
+                day = part2;
+              } else if (part1 > 12) {
+                // Part1 > 12 means it's DD/MM/YYYY
+                year = part3 < 100 ? 2000 + part3 : part3;
+                month = part2;
+                day = part1;
+              } else {
+                // Ambiguous, assume MM/DD/YYYY (US format)
+                year = part3 < 100 ? 2000 + part3 : part3;
+                month = part1;
+                day = part2;
+              }
+            } else {
+              // Try text-based format (DD MMM YYYY)
+              // Extract date components from text format
+              const textMatch = dateStr.match(/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{2,4})/i);
+              if (textMatch) {
+                const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+                const monthName = textMatch[2].toLowerCase();
+                const monthIndex = monthNames.findIndex(m => monthName.startsWith(m));
+                if (monthIndex !== -1) {
+                  day = parseInt(textMatch[1], 10);
+                  month = monthIndex + 1;
+                  const yearStr = textMatch[3];
+                  year = yearStr.length === 2 ? 2000 + parseInt(yearStr, 10) : parseInt(yearStr, 10);
+                } else {
+                  continue; // Skip invalid month names
+                }
+              } else {
+                // Last resort: try parsing with Date object but extract local date components
+                // This should only be used for formats we can't parse manually
+                const parsedDate = new Date(dateStr);
+                if (!isNaN(parsedDate.getTime())) {
+                  // Use local date components to avoid timezone conversion
+                  year = parsedDate.getFullYear();
+                  month = parsedDate.getMonth() + 1;
+                  day = parsedDate.getDate();
+                } else {
+                  continue; // Skip invalid dates
+                }
+              }
+            }
+          }
+          
+          // Validate the date
+          if (year && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            // Format as YYYY-MM-DD string without timezone conversion
+            const formattedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            return formattedDate;
+          }
+        }
+      }
+    }
+    
+    return undefined;
+  }
+
+  private extractPurchaseTime(textLines: TextLine[]): string | undefined {
+    for (const line of textLines) {
+      const text = line.text.trim();
+      
+      // Time patterns - look for HH:MM AM/PM format
+      const timePatterns = [
+        // 12-hour format with AM/PM (e.g., "12:20 AM", "3:45 PM")
+        /\b(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)\b/i,
+        // 24-hour format (e.g., "15:30", "09:45")
+        /\b(\d{1,2}):(\d{2})(?!\s*(?:AM|PM|am|pm))\b/
+      ];
+      
+      for (const pattern of timePatterns) {
+        const match = text.match(pattern);
+        if (match) {
+          let hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          const meridiem = match[3] ? match[3].toUpperCase() : null;
+          
+          // Validate time components
+          if (minutes < 0 || minutes > 59) continue;
+          
+          // Format based on whether it has AM/PM
+          if (meridiem) {
+            // 12-hour format - validate hours and format
+            if (hours < 1 || hours > 12) continue;
+            return `${hours}:${String(minutes).padStart(2, '0')} ${meridiem}`;
+          } else {
+            // 24-hour format - validate hours and convert to 12-hour format for display
+            if (hours < 0 || hours > 23) continue;
+            
+            // Convert 24-hour to 12-hour format for consistency
+            if (hours === 0) {
+              return `12:${String(minutes).padStart(2, '0')} AM`;
+            } else if (hours < 12) {
+              return `${hours}:${String(minutes).padStart(2, '0')} AM`;
+            } else if (hours === 12) {
+              return `12:${String(minutes).padStart(2, '0')} PM`;
+            } else {
+              return `${hours - 12}:${String(minutes).padStart(2, '0')} PM`;
+            }
+          }
+        }
+      }
+    }
+    
+    return undefined;
+  }
+
+  private extractPaymentMethod(textLines: TextLine[]): string | undefined {
+    const paymentPatterns = [
+      /\b(cash|credit|debit|visa|mastercard|amex|american express|discover|paypal|apple pay|google pay)\b/i
+    ];
+    
+    for (const line of textLines) {
+      const text = line.text.trim();
+      
+      for (const pattern of paymentPatterns) {
+        const match = text.match(pattern);
+        if (match) {
+          return match[1].toLowerCase();
+        }
+      }
+    }
+    
+    return undefined;
+  }
+
+  private extractReceiptNumber(textLines: TextLine[]): string | undefined {
+    for (const line of textLines) {
+      const text = line.text.trim();
+      
+      // Look for receipt/transaction/order numbers
+      const patterns = [
+        /(?:receipt|trans|order|ref)\s*#?\s*:?\s*([a-zA-Z0-9\-]+)/i,
+        /(?:invoice|bill)\s*#?\s*:?\s*([a-zA-Z0-9\-]+)/i,
+        /#\s*([a-zA-Z0-9\-]{4,})/i
+      ];
+      
+      for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match) {
+          return match[1];
+        }
+      }
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Update config
+   */
+  setConfig(config: Partial<EvidenceFusionConfig>): void {
+    this.config = { ...this.config, ...config };
+    this.fusionEngine = new TaxBreakdownFusionEngine(this.config);
+  }
+
+  /**
+   * Get current config
+   */
+  getConfig(): EvidenceFusionConfig {
+    return { ...this.config };
+  }
+}

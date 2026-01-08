@@ -109,9 +109,6 @@ flutter:
   # Assets
   assets:
     - assets/images/
-    - assets/icons/
-    - assets/test_data/sample_receipts/
-    - assets/animations/
   
   # Generate localization files
   generate: true
