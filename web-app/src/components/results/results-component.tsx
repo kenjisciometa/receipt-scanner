@@ -233,6 +233,12 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                     </div>
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-gray-500">Time</label>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {job.extraction_result?.time || 'Not found'}
+                    </div>
+                  </div>
+                  <div>
                     <label className="block text-xs font-medium text-gray-500">Currency</label>
                     <div className="mt-1 text-sm text-gray-900">
                       {job.extraction_result?.currency || 'Not found'}
@@ -483,6 +489,16 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                           />
                         </div>
                         <div>
+                          <label className="block text-xs font-medium text-gray-700">Time</label>
+                          <input
+                            type="text"
+                            value={editedData.time || ''}
+                            onChange={(e) => setEditedData({...editedData, time: e.target.value || null})}
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                            placeholder="e.g., 12:20 AM, 3:45 PM"
+                          />
+                        </div>
+                        <div>
                           <label className="block text-xs font-medium text-gray-700">Currency</label>
                           <select
                             value={editedData.currency || 'USD'}
@@ -680,6 +696,12 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
                               const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
                               return dateMatch ? dateMatch[1] : dateStr;
                             })()}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Time</label>
+                          <div className="mt-1 text-sm text-gray-900">
+                            {editedData.time || job.extraction_result?.time || 'Not set'}
                           </div>
                         </div>
                         <div>

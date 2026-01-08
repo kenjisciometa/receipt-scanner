@@ -33,6 +33,12 @@ export class ReceiptExtractionService {
       warnings.push('Date not found');
     }
     
+    // Time
+    const time = this.extractTime(fullText);
+    if (time) {
+      extractedData.time = time;
+    }
+    
     // Currency
     const currency = this.extractCurrency(fullText);
     if (currency) {
@@ -64,6 +70,7 @@ export class ReceiptExtractionService {
     return {
       merchant_name: extractedData.merchant_name || null,
       date: extractedData.date || null,
+      time: extractedData.time || null,
       currency: extractedData.currency || null,
       subtotal: extractedData.subtotal || null,
       tax_breakdown: extractedData.tax_breakdown || [],
@@ -134,6 +141,51 @@ export class ReceiptExtractionService {
           }
         } catch (error) {
           // Continue to next pattern
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  private extractTime(fullText: string): string | null {
+    // Time patterns - look for HH:MM AM/PM format
+    const timePatterns = [
+      // 12-hour format with AM/PM (e.g., "12:20 AM", "3:45 PM")
+      /\b(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)\b/i,
+      // 24-hour format (e.g., "15:30", "09:45")
+      /\b(\d{1,2}):(\d{2})(?!\s*(?:AM|PM|am|pm))\b/
+    ];
+    
+    for (const pattern of timePatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const meridiem = match[3] ? match[3].toUpperCase() : null;
+        
+        // Validate time components
+        if (minutes < 0 || minutes > 59) continue;
+        
+        // Format based on whether it has AM/PM
+        if (meridiem) {
+          // 12-hour format - validate hours and format
+          if (hours < 1 || hours > 12) continue;
+          return `${hours}:${String(minutes).padStart(2, '0')} ${meridiem}`;
+        } else {
+          // 24-hour format - validate hours and convert to 12-hour format for display
+          if (hours < 0 || hours > 23) continue;
+          
+          // Convert 24-hour to 12-hour format for consistency
+          if (hours === 0) {
+            return `12:${String(minutes).padStart(2, '0')} AM`;
+          } else if (hours < 12) {
+            return `${hours}:${String(minutes).padStart(2, '0')} AM`;
+          } else if (hours === 12) {
+            return `12:${String(minutes).padStart(2, '0')} PM`;
+          } else {
+            return `${hours - 12}:${String(minutes).padStart(2, '0')} PM`;
+          }
         }
       }
     }

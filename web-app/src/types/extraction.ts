@@ -22,7 +22,8 @@ export interface ReceiptItem {
 
 export interface ExtractionResult {
   merchant_name: string | null;
-  date: Date | null;             // Date object (changed from string)
+  date: string | null;           // Date string in YYYY-MM-DD format (to avoid timezone issues)
+  time?: string | null;          // Time string in HH:MM AM/PM format
   currency?: string;             // EUR, USD, etc. (made optional)
   subtotal: number | null;
   tax_breakdown: TaxBreakdown[];
@@ -89,7 +90,8 @@ export interface InvoiceData {
 export interface EditableFields {
   // 基本情報
   merchant_name: string;
-  date: string;                    // ISO 8601
+  date: string;                    // YYYY-MM-DD format
+  time?: string;                   // HH:MM AM/PM format
   currency: string;
   
   // 金額情報
