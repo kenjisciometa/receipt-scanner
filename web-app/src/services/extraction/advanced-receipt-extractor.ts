@@ -229,7 +229,7 @@ export class AdvancedReceiptExtractionService {
     const tableResult = this.extractAmountsFromTable(textLines, appliedPatterns);
     if (tableResult && Object.keys(tableResult.amounts).length > 0) {
       console.log(`📊 Table extraction successful: ${JSON.stringify(tableResult.amounts)}`);
-      const result = { ...tableResult.amounts };
+      const result: Record<string, any> = { ...tableResult.amounts };
       if (tableResult.taxBreakdowns) {
         result.tax_breakdown = tableResult.taxBreakdowns;
       }
@@ -377,7 +377,10 @@ export class AdvancedReceiptExtractionService {
       const dataRow = dataRows[rowIndex];
       
       // Extract using bounding box if available
-      const extracted = headerLine.elements && dataRow.elements ? 
+      // Note: elements property is only available on TextLineWithLabels
+      const headerElements = (headerLine as any).elements;
+      const dataElements = (dataRow as any).elements;
+      const extracted = headerElements && dataElements ?
         this.extractTableValuesFromBoundingBox(headerLine, dataRow, appliedPatterns) :
         this.extractTableValuesFromText(headerLine.text, dataRow.text, appliedPatterns);
       
@@ -438,13 +441,17 @@ export class AdvancedReceiptExtractionService {
   ): { amounts?: Record<string, number>; tax_breakdown?: Record<string, number> } {
     const result: { amounts?: Record<string, number>; tax_breakdown?: Record<string, number> } = {};
     
-    if (!headerLine.elements || !dataLine.elements) {
+    // Note: elements property is only available on TextLineWithLabels
+    const headerLineElements = (headerLine as any).elements;
+    const dataLineElements = (dataLine as any).elements;
+
+    if (!headerLineElements || !dataLineElements) {
       return result;
     }
-    
+
     // Sort elements by x position
-    const headerElements = [...headerLine.elements].sort((a, b) => (a.boundingBox?.[0] || 0) - (b.boundingBox?.[0] || 0));
-    const dataElements = [...dataLine.elements].sort((a, b) => (a.boundingBox?.[0] || 0) - (b.boundingBox?.[0] || 0));
+    const headerElements = [...headerLineElements].sort((a: any, b: any) => (a.boundingBox?.[0] || 0) - (b.boundingBox?.[0] || 0));
+    const dataElements = [...dataLineElements].sort((a: any, b: any) => (a.boundingBox?.[0] || 0) - (b.boundingBox?.[0] || 0));
     
     // Map column types based on header
     const columnTypes: Record<number, string> = {};
@@ -546,7 +553,7 @@ export class AdvancedReceiptExtractionService {
     
     if (amountMatches.length >= 3) {
       // Typical order: [Tax Rate %] [Tax Amount] [Subtotal] [Total]
-      const values = amountMatches.map(match => this.parseAmount(match[0])).filter(Boolean);
+      const values = amountMatches.map(match => this.parseAmount(match[0])).filter((v): v is number => v !== null);
       
       if (values.length >= 3) {
         // Extract tax rate
@@ -749,7 +756,7 @@ export class AdvancedReceiptExtractionService {
           label,
           fieldName,
           confidence: score / 10.0,
-          boundingBox: line.elements?.[0]?.boundingBox
+          boundingBox: (line as any).elements?.[0]?.boundingBox
         });
       });
     });

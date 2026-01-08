@@ -33,6 +33,9 @@ export interface TextElement {
   boundingBox: [number, number, number, number];
 }
 
+// Alias for backward compatibility
+export type OCRElement = TextElement;
+
 // Feature vector for ML (Flutter port)
 export interface TextLineFeatures {
   // 位置特徴量 (4)

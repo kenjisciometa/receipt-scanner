@@ -2,6 +2,14 @@
 
 import { useState, useEffect } from 'react';
 
+interface TaxBreakdownItem {
+  rate: number;
+  amount: number;
+  net?: number;
+  gross?: number;
+  category?: string;
+}
+
 interface ProcessingJob {
   job_id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -19,7 +27,7 @@ export function ResultsComponent({ job, onReset }: ResultsComponentProps) {
   const [activeTab, setActiveTab] = useState<'extraction' | 'ocr' | 'verification'>('extraction');
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState(job.extraction_result || {});
-  const [taxBreakdown, setTaxBreakdown] = useState(job.extraction_result?.tax_breakdown || []);
+  const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdownItem[]>(job.extraction_result?.tax_breakdown || []);
 
   // Reset tax breakdown when entering edit mode
   useEffect(() => {

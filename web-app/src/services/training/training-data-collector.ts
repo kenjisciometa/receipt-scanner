@@ -158,7 +158,8 @@ export class TrainingDataCollector {
   }
 
   /**
-   * Apply Y-coordinate based line grouping to OCR result (adaptive threshold)
+   * Apply Y-coordinate based line grouping to OCR result
+   * Uses vertical overlap detection for more accurate row separation
    */
   private groupTextLinesByY(textLines: TextLine[]): TextLine[] {
     // Sort by Y coordinate first
@@ -169,34 +170,42 @@ export class TrainingDataCollector {
     });
 
     const groupedLines: TextLine[] = [];
-
     let currentGroup: TextLine[] = [];
-    let currentY: number | null = null;
+    let rowMinY: number | null = null;
+    let rowMaxY: number | null = null;
 
     for (const line of sortedLines) {
       const lineY = line.boundingBox[1];
-      
-      // Calculate adaptive threshold based on text height
       const lineHeight = line.boundingBox[3];
-      const adaptiveThreshold = lineHeight * 0.4; // 40% of text height
-      const minThreshold = 5; // Minimum 5px
-      const maxThreshold = 20; // Maximum 20px
-      
-      const yTolerance = Math.max(minThreshold, Math.min(adaptiveThreshold, maxThreshold));
-      
-      const yDifference = currentY === null ? 0 : Math.abs(lineY - currentY);
-      const shouldGroup = currentY === null || yDifference <= yTolerance;
-      
-      if (shouldGroup) {
+      const lineBottomY = lineY + lineHeight;
+
+      if (rowMinY === null) {
+        // First word starts a new row
         currentGroup.push(line);
-        currentY = currentY === null ? lineY : (currentY + lineY) / 2; // Average Y
+        rowMinY = lineY;
+        rowMaxY = lineBottomY;
       } else {
-        // Finish current group and start new one
-        if (currentGroup.length > 0) {
-          groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
+        // Calculate vertical overlap between this word and the current row
+        const overlapTop = Math.max(lineY, rowMinY!);
+        const overlapBottom = Math.min(lineBottomY, rowMaxY!);
+        const overlap = Math.max(0, overlapBottom - overlapTop);
+        const overlapRatio = lineHeight > 0 ? overlap / lineHeight : 0;
+
+        // If more than 30% vertical overlap, word belongs to same row
+        if (overlapRatio > 0.3) {
+          currentGroup.push(line);
+          // Extend row bounds
+          rowMinY = Math.min(rowMinY!, lineY);
+          rowMaxY = Math.max(rowMaxY!, lineBottomY);
+        } else {
+          // Start new row
+          if (currentGroup.length > 0) {
+            groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
+          }
+          currentGroup = [line];
+          rowMinY = lineY;
+          rowMaxY = lineBottomY;
         }
-        currentGroup = [line];
-        currentY = lineY;
       }
     }
 
@@ -205,8 +214,8 @@ export class TrainingDataCollector {
       groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
     }
 
-    console.log(`🔗 [Training Data Collection] Merged ${textLines.length} text elements into ${groupedLines.length} lines`);
-    
+    console.log(`🔗 [Training Data Collection] Merged ${textLines.length} text elements into ${groupedLines.length} lines (vertical overlap method)`);
+
     return groupedLines;
   }
 

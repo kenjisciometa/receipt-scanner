@@ -119,7 +119,8 @@ export class EnhancedReceiptExtractionService {
 
   /**
    * Group TextLines by Y-coordinate to reconstruct proper lines
-   * This fixes the issue where "Yhteensä" and "35,62" are separated but should be on same line
+   * Uses vertical overlap detection for more accurate row separation
+   * This fixes issues where table rows with close Y coordinates get incorrectly merged
    */
   private groupTextLinesByY(textLines: TextLine[]): TextLine[] {
     // Sort by Y coordinate first
@@ -130,40 +131,42 @@ export class EnhancedReceiptExtractionService {
     });
 
     const groupedLines: TextLine[] = [];
-
     let currentGroup: TextLine[] = [];
-    let currentY: number | null = null;
+    let rowMinY: number | null = null;
+    let rowMaxY: number | null = null;
 
     for (const line of sortedLines) {
       const lineY = line.boundingBox[1];
-      
-      // Calculate adaptive threshold based on text height
-      const lineHeight = line.boundingBox[3]; // Text height
-      const adaptiveThreshold = lineHeight * 0.4; // 40% of text height
-      const minThreshold = 5; // Minimum 5px
-      const maxThreshold = 20; // Maximum 20px
-      
-      const yTolerance = Math.max(minThreshold, Math.min(adaptiveThreshold, maxThreshold));
-      
-      // Log adaptive threshold for debugging
-      if (textLines.length < 50) { // Only log for smaller receipts to avoid spam
-        console.log(`📏 [Adaptive Threshold] "${line.text}" -> height: ${lineHeight}px, threshold: ${yTolerance.toFixed(1)}px`);
-      }
-      
-      // Start new group or add to current group
-      const yDifference = currentY !== null ? Math.abs(lineY - currentY) : 0;
-      const shouldGroup = currentY === null || yDifference <= yTolerance;
-      
-      if (shouldGroup) {
+      const lineHeight = line.boundingBox[3];
+      const lineBottomY = lineY + lineHeight;
+
+      if (rowMinY === null) {
+        // First word starts a new row
         currentGroup.push(line);
-        currentY = currentY === null ? lineY : (currentY + lineY) / 2; // Average Y
+        rowMinY = lineY;
+        rowMaxY = lineBottomY;
       } else {
-        // Finish current group and start new one
-        if (currentGroup.length > 0) {
-          groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
+        // Calculate vertical overlap between this word and the current row
+        const overlapTop = Math.max(lineY, rowMinY!);
+        const overlapBottom = Math.min(lineBottomY, rowMaxY!);
+        const overlap = Math.max(0, overlapBottom - overlapTop);
+        const overlapRatio = lineHeight > 0 ? overlap / lineHeight : 0;
+
+        // If more than 30% vertical overlap, word belongs to same row
+        if (overlapRatio > 0.3) {
+          currentGroup.push(line);
+          // Extend row bounds
+          rowMinY = Math.min(rowMinY!, lineY);
+          rowMaxY = Math.max(rowMaxY!, lineBottomY);
+        } else {
+          // Start new row
+          if (currentGroup.length > 0) {
+            groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
+          }
+          currentGroup = [line];
+          rowMinY = lineY;
+          rowMaxY = lineBottomY;
         }
-        currentGroup = [line];
-        currentY = lineY;
       }
     }
 
@@ -172,13 +175,13 @@ export class EnhancedReceiptExtractionService {
       groupedLines.push(this.mergeTextLinesInGroup(currentGroup));
     }
 
-    console.log(`🔗 [Line Grouping] Merged ${textLines.length} text elements into ${groupedLines.length} lines`);
-    
+    console.log(`🔗 [Line Grouping] Merged ${textLines.length} text elements into ${groupedLines.length} lines (vertical overlap method)`);
+
     // Phase 2: Rescue orphaned financial keywords (selective application)
     const finalGroups = this.rescueOrphanedFinancialKeywords(groupedLines);
-    
+
     console.log(`🆘 [Rescue Complete] Final groups count: ${finalGroups.length}`);
-    
+
     return finalGroups;
   }
 

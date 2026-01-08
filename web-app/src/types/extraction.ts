@@ -52,6 +52,9 @@ export interface ExtractionResult {
     fusion_config?: any;
     fallback_reason?: string;
   };
+
+  // Processed text lines for training data collection
+  processedTextLines?: any[];
 }
 
 // Document Type Classification

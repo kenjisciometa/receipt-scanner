@@ -1,6 +1,11 @@
 /**
  * Enhanced Tax Table Detector
  * 
+ * Implements the new 3-stage tax table detection strategy:
+ * Stage 1: Enhanced Keyword Detection
+ * Stage 2: Spatial Table Analysis 
+ * Stage 3: Column Type Detection
+ * 
  * Extends TaxTableDetector with header-context detection capabilities
  * for tables where header contains tax rate info but data rows lack % symbols
  */
@@ -19,31 +24,402 @@ import {
 import { TaxBreakdown } from '@/types/extraction';
 import { TaxTableDetector } from './tax-table-detector';
 import { TaxBreakdownLocalizationService } from './tax-breakdown-localization';
+import { EnhancedKeywordDetector, TaxKeywordDetectionResult } from './enhanced-keyword-detector';
+import { SpatialTableAnalyzer, TableStructure } from './spatial-table-analyzer';
+import { ColumnTypeDetector, ColumnTypeMapping } from './column-type-detector';
+import { CentralizedKeywordConfig } from '../keywords/centralized-keyword-config';
+import { LanguageKeywords } from '../keywords/language-keywords';
+import { ProcessedTextLine } from '../../types';
 
 /**
  * Enhanced Tax Table Detector with Header-Context Analysis
  */
 export class EnhancedTaxTableDetector extends TaxTableDetector {
+  private keywordDetector: EnhancedKeywordDetector;
+  private spatialAnalyzer: SpatialTableAnalyzer;
+  private columnTypeDetector: ColumnTypeDetector;
+  
+  constructor() {
+    super();
+    this.keywordDetector = new EnhancedKeywordDetector(
+      CentralizedKeywordConfig,
+      new LanguageKeywords()
+    );
+    this.spatialAnalyzer = new SpatialTableAnalyzer();
+    this.columnTypeDetector = new ColumnTypeDetector();
+  }
 
   /**
-   * Detect tax tables including header-context analysis
+   * Detect tax tables using new 3-stage detection strategy
    */
   async detectTaxTables(textLines: TextLine[]): Promise<TaxTable[]> {
-    console.log(`🧠 [Enhanced] Starting enhanced tax table detection`);
+    console.log(`🧠 [Enhanced] Starting 3-stage tax table detection`);
     
-    // 1. Traditional pattern detection
-    const standardTables = await super.detectTaxTables(textLines);
-    console.log(`📊 [Enhanced] Standard detection found ${standardTables.length} tables`);
+    // Convert TextLine[] to ProcessedTextLine[] format
+    const processedLines = this.convertToProcessedTextLines(textLines);
     
-    // 2. Header-Context detection for missing cases
+    // === 3-STAGE DETECTION STRATEGY ===
+    
+    // Stage 1: Enhanced Keyword Detection
+    console.log(`🔍 [Stage 1] Starting keyword detection on ${processedLines.length} lines`);
+    const keywordResults = this.keywordDetector.detectTaxKeywords(processedLines);
+    console.log(`📝 [Stage 1] Found ${keywordResults.taxKeywords.length} tax keywords, ${keywordResults.numericPatterns.length} numeric patterns`);
+    this.logKeywordDetectionResults(keywordResults);
+    
+    // Stage 2: Spatial Table Analysis
+    console.log(`📐 [Stage 2] Starting spatial analysis`);
+    const tableStructures = this.spatialAnalyzer.analyzeStructure(keywordResults, processedLines);
+    console.log(`🗂️ [Stage 2] Identified ${tableStructures.length} table structures`);
+    this.logTableStructures(tableStructures);
+    
+    // Stage 3: Column Type Detection & Table Building
+    console.log(`🔢 [Stage 3] Starting column type detection`);
+    const detectedTables = await this.buildTablesFromStructures(tableStructures, keywordResults, processedLines);
+    console.log(`✅ [Stage 3] Built ${detectedTables.length} tax tables`);
+    this.logDetectedTables(detectedTables, 'Stage3');
+    
+    // Fallback to traditional detection for missed cases
+    const traditionalTables = await super.detectTaxTables(textLines);
+    console.log(`🔄 [Fallback] Traditional detection found ${traditionalTables.length} additional tables`);
+    
+    // Header-Context detection for edge cases
     const headerContextTables = await this.detectHeaderContextTables(textLines);
-    console.log(`🎯 [Enhanced] Header-context detection found ${headerContextTables.length} tables`);
+    console.log(`🎯 [HeaderContext] Found ${headerContextTables.length} header-context tables`);
     
-    // 3. Merge results (avoiding duplicates)
-    const mergedTables = this.mergeTableDetections(standardTables, headerContextTables);
+    // Merge all results (avoiding duplicates)
+    const allTables = [...detectedTables, ...traditionalTables, ...headerContextTables];
+    const mergedTables = this.deduplicateTables(allTables);
     console.log(`✅ [Enhanced] Total detected tables: ${mergedTables.length}`);
     
+    this.logFinalResults(mergedTables);
     return mergedTables;
+  }
+
+  /**
+   * Convert TextLine[] to ProcessedTextLine[] format
+   */
+  private convertToProcessedTextLines(textLines: TextLine[]): ProcessedTextLine[] {
+    return textLines.map((line, index) => ({
+      text: line.text,
+      confidence: 0.8, // Default confidence for converted lines
+      boundingBox: [0, index * 20, 400, 16], // Estimated bounding box
+      merged: true,
+      line_index: index,
+      elements: [],
+      label: 'OTHER',
+      label_confidence: 0.8,
+      features: {
+        x_center: 0.5,
+        y_center: (index * 20) / 800,
+        width: 0.8,
+        height: 0.02,
+        is_right_side: false,
+        is_bottom_area: false,
+        is_middle_section: false,
+        line_index_norm: index / Math.max(1, textLines.length - 1),
+        has_currency_symbol: /[\$€£¥]/.test(line.text),
+        has_percent: /%/.test(line.text),
+        has_amount_like: /\d+[.,]\d{2}/.test(line.text),
+        has_total_keyword: /total|sum|gesamt/i.test(line.text),
+        has_tax_keyword: /tax|alv|moms|tva|iva|ust/i.test(line.text),
+        has_subtotal_keyword: /subtotal|zwischen/i.test(line.text),
+        has_date_like: /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(line.text),
+        has_quantity_marker: false,
+        has_item_like: true,
+        digit_count: (line.text.match(/\d/g) || []).length,
+        alpha_count: (line.text.match(/[a-zA-Z]/g) || []).length,
+        contains_colon: line.text.includes(':')
+      },
+      feature_vector: [] // Will be populated if needed
+    }));
+  }
+
+  /**
+   * Build tax tables from detected structures
+   */
+  private async buildTablesFromStructures(
+    structures: TableStructure[],
+    keywordResults: TaxKeywordDetectionResult,
+    processedLines: ProcessedTextLine[]
+  ): Promise<TaxTable[]> {
+    const tables: TaxTable[] = [];
+
+    for (const structure of structures) {
+      console.log(`🏗️  [TableBuilder] Building table from ${structure.type} structure with confidence ${structure.confidence}`);
+      
+      // Stage 3: Column Type Detection
+      const columnMapping = await this.columnTypeDetector.detectColumnTypes(structure);
+      this.logColumnTypeMapping(columnMapping, structure.type);
+      
+      // Convert to TaxTable format
+      const table = await this.convertStructureToTaxTable(structure, columnMapping, keywordResults);
+      
+      if (table) {
+        tables.push(table);
+        console.log(`✅ [TableBuilder] Built table with ${table.rows.length} rows, confidence: ${table.confidence}`);
+      }
+    }
+
+    return tables;
+  }
+
+  /**
+   * Convert TableStructure to TaxTable format
+   */
+  private async convertStructureToTaxTable(
+    structure: TableStructure,
+    columnMapping: ColumnTypeMapping,
+    keywordResults: TaxKeywordDetectionResult
+  ): Promise<TaxTable | null> {
+    try {
+      const tableRows: TaxTableRow[] = [];
+      
+      // Extract data based on structure type
+      if (structure.type === 'horizontal_table') {
+        const rows = this.extractHorizontalTableRows(structure, columnMapping);
+        tableRows.push(...rows);
+      } else if (structure.type === 'vertical_list') {
+        const rows = this.extractVerticalListRows(structure, columnMapping);
+        tableRows.push(...rows);
+      } else if (structure.type === 'single_line') {
+        const row = this.extractSingleLineRow(structure, columnMapping);
+        if (row) tableRows.push(row);
+      } else if (structure.type === 'mixed') {
+        const rows = this.extractMixedStructureRows(structure, columnMapping);
+        tableRows.push(...rows);
+      }
+
+      if (tableRows.length === 0) {
+        console.log(`⚠️ [TableBuilder] No valid rows extracted from structure`);
+        return null;
+      }
+
+      // Calculate totals
+      const totals = {
+        totalTax: tableRows.reduce((sum, row) => sum + row.tax, 0),
+        totalNet: tableRows.reduce((sum, row) => sum + row.net, 0),
+        totalGross: tableRows.reduce((sum, row) => sum + row.gross, 0)
+      };
+
+      // Build spatial info
+      const spatialInfo = {
+        region: { 
+          x: structure.boundingBox[0], 
+          y: structure.boundingBox[1], 
+          width: structure.boundingBox[2], 
+          height: structure.boundingBox[3] 
+        },
+        headerLineIndex: structure.elements[0]?.lineIndex || 0,
+        dataLineIndices: structure.elements.map(el => el.lineIndex),
+        columnBoundaries: []
+      };
+
+      // Create header info
+      const headerElement = structure.elements[0];
+      const header = {
+        line: this.createTextLineFromElement(headerElement),
+        index: headerElement.lineIndex,
+        extractedRates: this.extractRatesFromMapping(columnMapping),
+        structure: { columns: [], confidence: structure.confidence },
+        confidence: structure.confidence
+      };
+
+      const table: TaxTable = {
+        id: `enhanced_3stage_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        header,
+        rows: tableRows,
+        totals,
+        confidence: this.calculateOverallTableConfidence(structure, tableRows),
+        spatialInfo
+      };
+
+      return table;
+    } catch (error) {
+      console.error(`❌ [TableBuilder] Error converting structure to table:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract rows from horizontal table structure
+   */
+  private extractHorizontalTableRows(structure: TableStructure, columnMapping: ColumnTypeMapping): TaxTableRow[] {
+    const rows: TaxTableRow[] = [];
+
+    if (!structure.gridInfo || !columnMapping) return rows;
+
+    // Extract data rows (skip header if identified)
+    const dataElements = structure.elements.filter((el, index) => {
+      if (structure.gridInfo?.headerRow !== undefined) {
+        return index !== structure.gridInfo.headerRow;
+      }
+      return el.containsNumericValue; // Only elements with numbers are likely data
+    });
+
+    for (const element of dataElements) {
+      const row = this.extractRowFromElement(element, columnMapping, 'horizontal');
+      if (row) rows.push(row);
+    }
+
+    return rows;
+  }
+
+  /**
+   * Extract rows from vertical list structure
+   */
+  private extractVerticalListRows(structure: TableStructure, columnMapping: ColumnTypeMapping): TaxTableRow[] {
+    const rows: TaxTableRow[] = [];
+
+    for (const element of structure.elements) {
+      if (element.containsTaxKeyword && element.containsNumericValue) {
+        const row = this.extractRowFromElement(element, columnMapping, 'vertical');
+        if (row) rows.push(row);
+      }
+    }
+
+    return rows;
+  }
+
+  /**
+   * Extract single row from single line structure
+   */
+  private extractSingleLineRow(structure: TableStructure, columnMapping: ColumnTypeMapping): TaxTableRow | null {
+    if (structure.elements.length !== 1) return null;
+    
+    const element = structure.elements[0];
+    return this.extractRowFromElement(element, columnMapping, 'single');
+  }
+
+  /**
+   * Extract rows from mixed structure
+   */
+  private extractMixedStructureRows(structure: TableStructure, columnMapping: ColumnTypeMapping): TaxTableRow[] {
+    const rows: TaxTableRow[] = [];
+
+    // Try both horizontal and vertical extraction approaches
+    const horizontalRows = this.extractHorizontalTableRows(structure, columnMapping);
+    const verticalRows = this.extractVerticalListRows(structure, columnMapping);
+
+    // Use the approach that yields more rows, or combine both
+    if (horizontalRows.length >= verticalRows.length) {
+      rows.push(...horizontalRows);
+    } else {
+      rows.push(...verticalRows);
+    }
+
+    return rows;
+  }
+
+  /**
+   * Extract individual row from element based on column mapping
+   */
+  private extractRowFromElement(
+    element: any,
+    columnMapping: ColumnTypeMapping,
+    extractionType: 'horizontal' | 'vertical' | 'single'
+  ): TaxTableRow | null {
+    try {
+      const text = element.text;
+      
+      // Extract values based on extraction type
+      let rate: number = 0;
+      let net: number = 0;
+      let tax: number = 0;
+      let gross: number = 0;
+      let code: string = '';
+
+      if (extractionType === 'vertical' || extractionType === 'single') {
+        // For vertical/single line: extract from single text line
+        const lineData = this.parseLineForTaxData(text);
+        rate = lineData.rate || 0;
+        net = lineData.net || 0;
+        tax = lineData.tax || 0;
+        gross = lineData.gross || net + tax;
+        code = lineData.code || '';
+      } else {
+        // For horizontal: extract from column positions (simplified)
+        const values = this.extractNumericValuesFromText(text);
+        if (values.length >= 3) {
+          // Assume order: net, tax, gross (or gross, net, tax)
+          if (columnMapping.taxRate?.values) {
+            rate = parseFloat(columnMapping.taxRate.values[0]?.replace('%', '') || '0');
+          }
+          net = values[0];
+          tax = values[1];
+          gross = values[2];
+          code = this.extractCodeFromText(text);
+        }
+      }
+
+      // Validate extracted data
+      if (rate <= 0 || (net <= 0 && tax <= 0 && gross <= 0)) {
+        return null;
+      }
+
+      // Auto-correct missing values using mathematical relationships
+      if (net === 0 && tax > 0 && gross > 0) {
+        net = gross - tax;
+      }
+      if (tax === 0 && net > 0 && gross > 0) {
+        tax = gross - net;
+      }
+      if (gross === 0 && net > 0 && tax > 0) {
+        gross = net + tax;
+      }
+
+      // Calculate confidence based on consistency
+      const confidence = this.calculateRowConfidence(rate, net, tax, gross);
+
+      const row: TaxTableRow = {
+        code: code || `${rate}%`,
+        rate,
+        gross,
+        net,
+        tax,
+        confidence,
+        lineIndex: element.lineIndex,
+        validationResults: {
+          mathConsistent: Math.abs((net + tax) - gross) < 0.02,
+          rateConsistent: Math.abs((tax / net * 100) - rate) < 1,
+          isValid: true
+        }
+      };
+
+      console.log(`🔍 [RowExtract] ${code}: ${rate}% | Net: ${net} | Tax: ${tax} | Gross: ${gross} | Confidence: ${confidence}`);
+      return row;
+
+    } catch (error) {
+      console.warn(`⚠️ [RowExtract] Failed to extract row from element:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Deduplicate tables to avoid overlapping results
+   */
+  private deduplicateTables(tables: TaxTable[]): TaxTable[] {
+    const deduplicated: TaxTable[] = [];
+    const processedLines = new Set<number>();
+
+    // Sort by confidence (highest first)
+    const sortedTables = tables.sort((a, b) => b.confidence - a.confidence);
+
+    for (const table of sortedTables) {
+      const tableLines = [table.header.index, ...table.spatialInfo.dataLineIndices];
+      
+      // Check if this table overlaps with already processed lines
+      const hasOverlap = tableLines.some(line => processedLines.has(line));
+      
+      if (!hasOverlap) {
+        deduplicated.push(table);
+        tableLines.forEach(line => processedLines.add(line));
+        console.log(`✅ [Dedupe] Added table with ${table.rows.length} rows (confidence: ${table.confidence})`);
+      } else {
+        console.log(`🔄 [Dedupe] Skipped overlapping table (confidence: ${table.confidence})`);
+      }
+    }
+
+    return deduplicated;
   }
 
   /**
@@ -528,5 +904,436 @@ export class EnhancedTaxTableDetector extends TaxTableDetector {
   private detectLanguageFromTable(table: TaxTable): string {
     const headerText = table.header.line.text;
     return TaxBreakdownLocalizationService.detectLanguageFromTaxKeywords(headerText);
+  }
+
+  // === 3-STAGE DETECTION HELPER METHODS ===
+
+  /**
+   * Parse line text to extract tax data
+   */
+  private parseLineForTaxData(text: string): {
+    rate: number | null;
+    net: number | null;
+    tax: number | null;
+    gross: number | null;
+    code: string | null;
+  } {
+    // Extract percentage
+    const rateMatch = text.match(/(\d+(?:[.,]\d+)?)\s*%/);
+    const rate = rateMatch ? parseFloat(rateMatch[1].replace(',', '.')) : null;
+
+    // Extract numeric values
+    const numbers = this.extractNumericValuesFromText(text);
+    
+    // Extract code
+    const codeMatch = text.match(/^([A-Z])\s/);
+    const code = codeMatch ? codeMatch[1] : null;
+
+    // Simple logic: if we have 3+ numbers, assume they are net, tax, gross
+    let net: number | null = null;
+    let tax: number | null = null;
+    let gross: number | null = null;
+
+    if (numbers.length >= 3) {
+      net = numbers[0];
+      tax = numbers[1]; 
+      gross = numbers[2];
+    } else if (numbers.length === 2) {
+      // Could be tax + total, or net + gross
+      if (rate && numbers[0] * (rate / 100) > numbers[1] * 0.8 && numbers[0] * (rate / 100) < numbers[1] * 1.2) {
+        net = numbers[0];
+        tax = numbers[1];
+        gross = net + tax;
+      } else {
+        tax = numbers[0];
+        gross = numbers[1];
+        net = gross - tax;
+      }
+    } else if (numbers.length === 1) {
+      // Single number, likely tax amount
+      tax = numbers[0];
+    }
+
+    return { rate, net, tax, gross, code };
+  }
+
+  /**
+   * Extract numeric values from text
+   */
+  private extractNumericValuesFromText(text: string): number[] {
+    const numbers: number[] = [];
+    const patterns = [
+      /\b(\d+(?:[.,]\d{2})?)\b/g,
+      /(\d+(?:[.,]\d{3})*(?:[.,]\d{2})?)/g
+    ];
+
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        const numStr = match[1].replace(/,/g, '').replace(',', '.');
+        const num = parseFloat(numStr);
+        if (!isNaN(num) && num > 0) {
+          numbers.push(num);
+        }
+      }
+      pattern.lastIndex = 0; // Reset regex
+    }
+
+    // Remove duplicates and sort
+    return [...new Set(numbers)].sort((a, b) => a - b);
+  }
+
+  /**
+   * Extract code from text
+   */
+  private extractCodeFromText(text: string): string {
+    const codeMatch = text.match(/^([A-Z]+)\s/);
+    return codeMatch ? codeMatch[1] : '';
+  }
+
+  /**
+   * Calculate row confidence
+   */
+  private calculateRowConfidence(rate: number, net: number, tax: number, gross: number): number {
+    let confidence = 0.5;
+
+    // Check mathematical consistency
+    const mathError = Math.abs((net + tax) - gross);
+    if (mathError < 0.01) confidence += 0.3;
+    else if (mathError < 0.1) confidence += 0.2;
+    else if (mathError < 1) confidence += 0.1;
+
+    // Check rate consistency
+    if (net > 0) {
+      const calculatedRate = (tax / net) * 100;
+      const rateError = Math.abs(calculatedRate - rate);
+      if (rateError < 0.1) confidence += 0.2;
+      else if (rateError < 1) confidence += 0.1;
+    }
+
+    return Math.min(confidence, 0.98);
+  }
+
+  /**
+   * Calculate overall table confidence
+   */
+  private calculateOverallTableConfidence(structure: TableStructure, rows: TaxTableRow[]): number {
+    const structureConf = structure.confidence;
+    const avgRowConf = rows.reduce((sum, row) => sum + row.confidence, 0) / Math.max(rows.length, 1);
+    
+    return (structureConf * 0.4 + avgRowConf * 0.6);
+  }
+
+  /**
+   * Create TextLine from SpatialElement
+   */
+  private createTextLineFromElement(element: any): any {
+    return {
+      text: element.text,
+      line_index: element.lineIndex,
+      boundingBox: element.boundingBox
+    };
+  }
+
+  /**
+   * Extract tax rates from column mapping
+   */
+  private extractRatesFromMapping(columnMapping: ColumnTypeMapping): any[] {
+    const rates: any[] = [];
+    
+    if (columnMapping.taxRate) {
+      for (const value of columnMapping.taxRate.values) {
+        const rateMatch = value.match(/(\d+(?:[.,]\d+)?)/);
+        if (rateMatch) {
+          const rate = parseFloat(rateMatch[1].replace(',', '.'));
+          rates.push({
+            rate,
+            category: `${rate}%`,
+            position: 0,
+            confidence: columnMapping.taxRate.confidence
+          });
+        }
+      }
+    }
+
+    return rates;
+  }
+
+  // === DETAILED LOGGING METHODS ===
+
+  /**
+   * Log keyword detection results with details
+   */
+  private logKeywordDetectionResults(results: TaxKeywordDetectionResult): void {
+    console.log(`\n📋 [Stage 1 Details] Keyword Detection Results:`);
+    
+    // Log detected languages
+    console.log(`🌍 Detected Languages:`);
+    results.detectedLanguages.forEach((lang, index) => {
+      console.log(`  ${index + 1}. ${lang.language.toUpperCase()}: confidence ${lang.confidence.toFixed(2)} (${lang.evidenceCount} evidence)`);
+    });
+
+    // Log tax keywords by type
+    const keywordsByType = new Map<string, typeof results.taxKeywords>();
+    results.taxKeywords.forEach(kw => {
+      if (!keywordsByType.has(kw.type)) {
+        keywordsByType.set(kw.type, []);
+      }
+      keywordsByType.get(kw.type)!.push(kw);
+    });
+
+    console.log(`🏷️  Tax Keywords by Type:`);
+    keywordsByType.forEach((keywords, type) => {
+      console.log(`  📌 ${type}: ${keywords.length} keywords`);
+      keywords.forEach(kw => {
+        console.log(`    Line ${kw.lineIndex}: "${kw.keyword}" (${kw.language}, conf: ${kw.confidence.toFixed(2)})`);
+      });
+    });
+
+    // Log numeric patterns by type
+    const numbersByType = new Map<string, typeof results.numericPatterns>();
+    results.numericPatterns.forEach(np => {
+      if (!numbersByType.has(np.type)) {
+        numbersByType.set(np.type, []);
+      }
+      numbersByType.get(np.type)!.push(np);
+    });
+
+    console.log(`🔢 Numeric Patterns by Type:`);
+    numbersByType.forEach((patterns, type) => {
+      console.log(`  📊 ${type}: ${patterns.length} patterns`);
+      patterns.forEach(np => {
+        console.log(`    Line ${np.lineIndex}: "${np.value}" → ${np.normalizedValue} (conf: ${np.confidence.toFixed(2)})`);
+      });
+    });
+
+    // Log structural keywords
+    if (results.structuralKeywords.length > 0) {
+      console.log(`🏗️  Structural Keywords:`);
+      results.structuralKeywords.forEach(sk => {
+        console.log(`    Line ${sk.lineIndex}: "${sk.keyword}" (${sk.type}, conf: ${sk.confidence.toFixed(2)})`);
+      });
+    }
+  }
+
+  /**
+   * Log table structures with details
+   */
+  private logTableStructures(structures: TableStructure[]): void {
+    console.log(`\n🗂️  [Stage 2 Details] Table Structure Analysis:`);
+    
+    if (structures.length === 0) {
+      console.log(`  ⚠️  No table structures detected`);
+      return;
+    }
+
+    structures.forEach((structure, index) => {
+      console.log(`\n  📋 Structure ${index + 1}: ${structure.type.toUpperCase()}`);
+      console.log(`    🎯 Confidence: ${structure.confidence.toFixed(2)}`);
+      console.log(`    📍 Elements: ${structure.elements.length}`);
+      console.log(`    📦 Bounding Box: [${structure.boundingBox.map(n => n.toFixed(1)).join(', ')}]`);
+      
+      // Log grid info if available
+      if (structure.gridInfo) {
+        console.log(`    🔲 Grid: ${structure.gridInfo.rows}×${structure.gridInfo.columns}`);
+        if (structure.gridInfo.headerRow !== undefined) {
+          console.log(`    📄 Header Row: ${structure.gridInfo.headerRow}`);
+        }
+        if (structure.gridInfo.dataRows.length > 0) {
+          console.log(`    📊 Data Rows: [${structure.gridInfo.dataRows.join(', ')}]`);
+        }
+      }
+
+      // Log metadata
+      if (structure.metadata) {
+        console.log(`    🏷️  Language: ${structure.metadata.detectedLanguage || 'unknown'}`);
+        console.log(`    🎯 Primary Keyword: ${structure.metadata.primaryTaxKeyword || 'unknown'}`);
+        console.log(`    📈 Structure Score: ${structure.metadata.structureScore.toFixed(2)}`);
+        console.log(`    📐 Alignment Score: ${structure.metadata.alignmentScore.toFixed(2)}`);
+      }
+
+      // Log elements
+      console.log(`    📝 Elements:`);
+      structure.elements.forEach((element, elemIndex) => {
+        const hasKeyword = element.containsTaxKeyword ? '🏷️ ' : '';
+        const hasNumber = element.containsNumericValue ? '🔢' : '';
+        console.log(`      ${elemIndex + 1}. Line ${element.lineIndex}: ${hasKeyword}${hasNumber}"${element.text.substring(0, 40)}${element.text.length > 40 ? '...' : ''}" (conf: ${element.confidence.toFixed(2)})`);
+      });
+    });
+  }
+
+  /**
+   * Log detected tables with column mapping details
+   */
+  private logDetectedTables(tables: TaxTable[], stage: string): void {
+    console.log(`\n📊 [${stage} Details] Tax Table Detection Results:`);
+    
+    if (tables.length === 0) {
+      console.log(`  ⚠️  No tax tables detected in ${stage}`);
+      return;
+    }
+
+    tables.forEach((table, index) => {
+      console.log(`\n  📋 Table ${index + 1} (ID: ${table.id})`);
+      console.log(`    🎯 Overall Confidence: ${table.confidence.toFixed(2)}`);
+      console.log(`    📄 Header Line ${table.header.index}: "${table.header.line.text}"`);
+      console.log(`    📊 Data Rows: ${table.rows.length}`);
+      
+      // Log totals
+      console.log(`    💰 Totals:`);
+      console.log(`      Net: ${table.totals.totalNet.toFixed(2)}`);
+      console.log(`      Tax: ${table.totals.totalTax.toFixed(2)}`);
+      console.log(`      Gross: ${table.totals.totalGross.toFixed(2)}`);
+
+      // Log each row
+      console.log(`    📝 Tax Breakdown:`);
+      table.rows.forEach((row, rowIndex) => {
+        const mathCheck = Math.abs((row.net + row.tax) - row.gross) < 0.02 ? '✅' : '❌';
+        const rateCheck = Math.abs((row.tax / row.net * 100) - row.rate) < 1 ? '✅' : '❌';
+        console.log(`      Row ${rowIndex + 1}: ${row.code || row.rate + '%'} | Rate: ${row.rate}% | Net: ${row.net} | Tax: ${row.tax} | Gross: ${row.gross} | Conf: ${row.confidence.toFixed(2)} ${mathCheck}${rateCheck}`);
+      });
+    });
+  }
+
+  /**
+   * Log final merged results with deduplication info
+   */
+  private logFinalResults(tables: TaxTable[]): void {
+    console.log(`\n🏁 [Final Results] Merged Tax Table Detection Summary:`);
+    
+    if (tables.length === 0) {
+      console.log(`  ❌ No tax tables detected in entire process`);
+      return;
+    }
+
+    // Group by detection method
+    const byMethod = new Map<string, TaxTable[]>();
+    tables.forEach(table => {
+      const method = table.id.includes('enhanced_3stage') ? '3-Stage' : 
+                    table.id.includes('header_context') ? 'Header-Context' : 
+                    'Traditional';
+      if (!byMethod.has(method)) {
+        byMethod.set(method, []);
+      }
+      byMethod.get(method)!.push(table);
+    });
+
+    console.log(`  📈 Detection Method Summary:`);
+    byMethod.forEach((tables, method) => {
+      const avgConf = tables.reduce((sum, t) => sum + t.confidence, 0) / tables.length;
+      const totalRows = tables.reduce((sum, t) => sum + t.rows.length, 0);
+      console.log(`    ${method}: ${tables.length} tables, ${totalRows} total rows, avg confidence: ${avgConf.toFixed(2)}`);
+    });
+
+    // Overall statistics
+    const totalRows = tables.reduce((sum, t) => sum + t.rows.length, 0);
+    const avgConfidence = tables.reduce((sum, t) => sum + t.confidence, 0) / tables.length;
+    const totalTaxAmount = tables.reduce((sum, t) => sum + t.totals.totalTax, 0);
+    
+    console.log(`\n  📊 Overall Statistics:`);
+    console.log(`    Total Tables: ${tables.length}`);
+    console.log(`    Total Tax Rows: ${totalRows}`);
+    console.log(`    Average Confidence: ${avgConfidence.toFixed(2)}`);
+    console.log(`    Total Tax Amount: ${totalTaxAmount.toFixed(2)}`);
+
+    // Highlight best table
+    const bestTable = tables.reduce((best, current) => 
+      current.confidence > best.confidence ? current : best
+    );
+    console.log(`\n  🏆 Best Table:`);
+    console.log(`    ID: ${bestTable.id}`);
+    console.log(`    Confidence: ${bestTable.confidence.toFixed(2)}`);
+    console.log(`    Rows: ${bestTable.rows.length}`);
+    console.log(`    Method: ${bestTable.id.includes('enhanced_3stage') ? '3-Stage Detection' : bestTable.id.includes('header_context') ? 'Header-Context Detection' : 'Traditional Detection'}`);
+
+    // Show detected patterns
+    console.log(`\n  🔍 Detected Patterns:`);
+    tables.forEach((table, index) => {
+      const patterns = this.analyzeDetectedPatterns(table);
+      console.log(`    Table ${index + 1}: ${patterns.join(', ')}`);
+    });
+  }
+
+  /**
+   * Log column type detection results
+   */
+  private logColumnTypeMapping(mapping: ColumnTypeMapping, structureType: string): void {
+    console.log(`\n🔢 [Column Detection] ${structureType} Column Mapping:`);
+    
+    if (mapping.taxRate) {
+      console.log(`  📊 Tax Rate Column ${mapping.taxRate.columnIndex}: confidence ${mapping.taxRate.confidence.toFixed(2)}`);
+      console.log(`    Values: [${mapping.taxRate.values.join(', ')}]`);
+    }
+    
+    if (mapping.netAmount) {
+      console.log(`  💚 Net Amount Column ${mapping.netAmount.columnIndex}: confidence ${mapping.netAmount.confidence.toFixed(2)}`);
+      console.log(`    Values: [${mapping.netAmount.values.join(', ')}]`);
+    }
+    
+    if (mapping.taxAmount) {
+      console.log(`  🔴 Tax Amount Column ${mapping.taxAmount.columnIndex}: confidence ${mapping.taxAmount.confidence.toFixed(2)}`);
+      console.log(`    Values: [${mapping.taxAmount.values.join(', ')}]`);
+    }
+    
+    if (mapping.grossAmount) {
+      console.log(`  💙 Gross Amount Column ${mapping.grossAmount.columnIndex}: confidence ${mapping.grossAmount.confidence.toFixed(2)}`);
+      console.log(`    Values: [${mapping.grossAmount.values.join(', ')}]`);
+    }
+    
+    if (mapping.description) {
+      console.log(`  📝 Description Column ${mapping.description.columnIndex}: confidence ${mapping.description.confidence.toFixed(2)}`);
+    }
+  }
+
+  /**
+   * Analyze detected patterns for summary
+   */
+  private analyzeDetectedPatterns(table: TaxTable): string[] {
+    const patterns: string[] = [];
+    
+    // Pattern 1: Single line tax
+    if (table.rows.length === 1) {
+      patterns.push('Single Line Tax');
+    }
+    
+    // Pattern 2: Multi-tier tax
+    if (table.rows.length > 1) {
+      patterns.push('Multi-Tier Tax');
+    }
+    
+    // Pattern 3: By language keywords
+    const headerText = table.header.line.text.toLowerCase();
+    if (headerText.includes('alv')) {
+      patterns.push('Finnish ALV Table');
+    } else if (headerText.includes('moms')) {
+      patterns.push('Swedish MOMS Table');
+    } else if (headerText.includes('tva')) {
+      patterns.push('French TVA Table');
+    } else if (headerText.includes('iva')) {
+      patterns.push('Italian/Spanish IVA Table');
+    } else if (headerText.includes('ust') || headerText.includes('mwst')) {
+      patterns.push('German UST/MwSt Table');
+    } else if (headerText.includes('vat') || headerText.includes('tax')) {
+      patterns.push('English VAT/Tax Table');
+    }
+    
+    // Pattern 4: Structure type
+    if (table.id.includes('enhanced_3stage')) {
+      patterns.push('3-Stage Detection');
+    } else if (table.id.includes('header_context')) {
+      patterns.push('Header-Context Detection');
+    } else {
+      patterns.push('Traditional Detection');
+    }
+    
+    // Pattern 5: Mathematical consistency
+    const mathConsistent = table.rows.every(row => 
+      Math.abs((row.net + row.tax) - row.gross) < 0.02
+    );
+    if (mathConsistent) {
+      patterns.push('Math Consistent');
+    }
+    
+    return patterns.length > 0 ? patterns : ['Unknown Pattern'];
   }
 }

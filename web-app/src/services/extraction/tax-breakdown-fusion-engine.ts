@@ -1046,7 +1046,7 @@ export class TaxBreakdownFusionEngine {
       console.log(`📊 [FuseTax] Evidence: ${evidence.rate}% = ${evidence.amount}`);
       
       if (evidence.rate != null && evidence.amount != null) {
-        const roundedRate = Math.round(evidence.rate * 10) / 10;
+        const roundedRate = Math.round(evidence.rate * 100) / 100;
         const key = roundedRate.toString();
         
         if (!breakdownMap.has(key)) {

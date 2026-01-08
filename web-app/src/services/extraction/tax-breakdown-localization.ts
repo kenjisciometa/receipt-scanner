@@ -104,7 +104,7 @@ export const TAX_RATE_DESCRIPTIONS: TaxRateDescription = {
     standard: 'Standard VAT',
     reduced: 'Reduced VAT',
     zero: 'Zero VAT',
-    category: (code: string, rate: number) => `${code} - ${rate}% VAT`
+    category: (code: string, rate: number) => `${code} - ${rate.toFixed(2)}% VAT`
   },
   
   // Finnish
@@ -112,7 +112,7 @@ export const TAX_RATE_DESCRIPTIONS: TaxRateDescription = {
     standard: 'Normaali ALV',
     reduced: 'Alennettu ALV',
     zero: 'Nolla ALV',
-    category: (code: string, rate: number) => `${code} - ${rate}% ALV`
+    category: (code: string, rate: number) => `${code} - ${rate.toFixed(2)}% ALV`
   },
   
   // Swedish
@@ -120,7 +120,7 @@ export const TAX_RATE_DESCRIPTIONS: TaxRateDescription = {
     standard: 'Normal moms',
     reduced: 'Reducerad moms',
     zero: 'Noll moms',
-    category: (code: string, rate: number) => `${code} - ${rate}% moms`
+    category: (code: string, rate: number) => `${code} - ${rate.toFixed(2)}% moms`
   },
   
   // German
@@ -128,7 +128,7 @@ export const TAX_RATE_DESCRIPTIONS: TaxRateDescription = {
     standard: 'Normale MwSt.',
     reduced: 'Ermäßigte MwSt.',
     zero: 'Steuerfreie MwSt.',
-    category: (code: string, rate: number) => `${code} - ${rate}% MwSt.`
+    category: (code: string, rate: number) => `${code} - ${rate.toFixed(2)}% MwSt.`
   },
   
   // French
@@ -136,7 +136,7 @@ export const TAX_RATE_DESCRIPTIONS: TaxRateDescription = {
     standard: 'TVA normale',
     reduced: 'TVA réduite',
     zero: 'TVA zéro',
-    category: (code: string, rate: number) => `${code} - ${rate}% TVA`
+    category: (code: string, rate: number) => `${code} - ${rate.toFixed(2)}% TVA`
   },
   
   // Spanish
@@ -144,7 +144,7 @@ export const TAX_RATE_DESCRIPTIONS: TaxRateDescription = {
     standard: 'IVA general',
     reduced: 'IVA reducido',
     zero: 'IVA cero',
-    category: (code: string, rate: number) => `${code} - ${rate}% IVA`
+    category: (code: string, rate: number) => `${code} - ${rate.toFixed(2)}% IVA`
   },
   
   // Italian
@@ -152,7 +152,7 @@ export const TAX_RATE_DESCRIPTIONS: TaxRateDescription = {
     standard: 'IVA ordinaria',
     reduced: 'IVA ridotta',
     zero: 'IVA zero',
-    category: (code: string, rate: number) => `${code} - ${rate}% IVA`
+    category: (code: string, rate: number) => `${code} - ${rate.toFixed(2)}% IVA`
   }
 };
 
