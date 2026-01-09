@@ -31,3 +31,4 @@ flutter_log.txt
 # Local configuration
 local.properties
 
+.env
