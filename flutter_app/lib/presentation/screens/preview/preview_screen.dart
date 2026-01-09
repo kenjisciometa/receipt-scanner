@@ -3,15 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../data/models/receipt.dart';
+import '../../../data/models/receipt_item.dart';
 import '../../../data/models/tax_breakdown.dart';
-import '../../../data/models/processing_result.dart';
-import '../../../services/image_processing/image_preprocessor.dart';
-import '../../../services/ocr/ml_kit_service.dart';
-import '../../../services/extraction/receipt_parser.dart';
-import '../../../services/training_data/training_data_collector.dart';
+import '../../../services/llm/llama_cpp_service.dart';
 import '../../../main.dart';
 
 /// Preview screen for captured receipt images with processing results
@@ -29,19 +25,13 @@ class PreviewScreen extends ConsumerStatefulWidget {
 
 class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   bool _isProcessing = false;
-  String? _processedImagePath;
-  OCRResult? _ocrResult;
-  ExtractionResult? _extractionResult;
   Receipt? _extractedReceipt;
   String? _errorMessage;
   bool _isEditing = false;
-  
-  // Services
-  late final ImagePreprocessor _imagePreprocessor;
-  late final MLKitService _mlKitService;
-  late final ReceiptParser _receiptParser;
-  late final TrainingDataCollector _trainingDataCollector;
-  
+
+  // LLM Service
+  late final LlamaCppService _llmService;
+
   // Text editing controllers for verified data
   late final TextEditingController _merchantNameController;
   late final TextEditingController _receiptNumberController;
@@ -50,18 +40,15 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   late final TextEditingController _taxController;
   late final TextEditingController _totalController;
   late final TextEditingController _paymentMethodController;
-  
+
   // Tax Breakdown controllers (rate and amount pairs)
   final List<({TextEditingController rate, TextEditingController amount})> _taxBreakdownControllers = [];
 
   @override
   void initState() {
     super.initState();
-    _imagePreprocessor = ImagePreprocessor();
-    _mlKitService = MLKitService();
-    _receiptParser = ReceiptParser();
-    _trainingDataCollector = TrainingDataCollector();
-    
+    _llmService = LlamaCppService();
+
     // Initialize text controllers
     _merchantNameController = TextEditingController();
     _receiptNumberController = TextEditingController();
@@ -70,13 +57,12 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     _taxController = TextEditingController();
     _totalController = TextEditingController();
     _paymentMethodController = TextEditingController();
-    
+
     _startProcessing();
   }
 
   @override
   void dispose() {
-    _mlKitService.dispose();
     _merchantNameController.dispose();
     _receiptNumberController.dispose();
     _dateController.dispose();
@@ -93,7 +79,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     super.dispose();
   }
 
-  /// Start the complete receipt processing pipeline
+  /// Start the receipt processing pipeline using LLM
   Future<void> _startProcessing() async {
     if (_isProcessing) return;
 
@@ -103,134 +89,40 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     });
 
     try {
-      logger.i('Starting receipt processing pipeline for: ${widget.imagePath}');
+      logger.i('Starting LLM processing for: ${widget.imagePath}');
 
-      // Step 1: OCR text recognition (skip preprocessing for test image)
-      String imagePath = widget.imagePath;
-      
-      // Only apply preprocessing to camera-captured images, not test images
-      // Check if image is from assets (test images) by checking:
-      // 1. Contains test_receipt, test_invoice, receipt_*, or invoice_* patterns
-      // 2. Is in temporary directory (assets are copied to temp dir)
-      final isTestImage = widget.imagePath.contains('test_receipt') || 
-                          widget.imagePath.contains('test_invoice') ||
-                          widget.imagePath.contains('receipt_') ||
-                          widget.imagePath.contains('invoice_') ||
-                          widget.imagePath.contains('test_receipt_');
-      logger.d('Image path: ${widget.imagePath}, isTestImage: $isTestImage');
-      
       // Verify file exists
-      final file = File(imagePath);
+      final file = File(widget.imagePath);
       if (!await file.exists()) {
-        throw Exception('Image file does not exist: $imagePath');
+        throw Exception('Image file does not exist: ${widget.imagePath}');
       }
       logger.d('Image file exists: ${await file.length()} bytes');
-      
-      if (!isTestImage) {
-        final preprocessResult = await _imagePreprocessor.processReceiptImage(widget.imagePath);
-        
-        if (!preprocessResult.success) {
-          throw Exception('Image preprocessing failed: ${preprocessResult.errorMessage}');
-        }
 
-        setState(() {
-          _processedImagePath = preprocessResult.outputPath;
-        });
-
-        logger.d('Image preprocessing completed: ${preprocessResult.qualityScore}');
-        imagePath = _processedImagePath!;
-      } else {
-        logger.i('Skipping preprocessing for test image');
+      // Check if LLM server is available
+      final llmAvailable = await _llmService.checkServer();
+      if (!llmAvailable) {
+        throw Exception('LLM server not available. Please start llama-server and run: adb reverse tcp:8080 tcp:8080');
       }
 
-      // Step 2: OCR text recognition
-      final ocrResult = await _mlKitService.recognizeTextFromFile(imagePath);
-      
-      if (!ocrResult.success) {
-        throw Exception('OCR failed: ${ocrResult.errorMessage}');
-      }
+      // Process with LLM
+      logger.i('Processing with LLM (Qwen2.5-VL)...');
+      final result = await _llmService.extractFromFile(file);
 
+      logger.i('LLM extraction completed in ${result.processingTimeMs}ms, confidence: ${result.confidence}');
+
+      // Convert LLM result to Receipt object
+      final receipt = _buildReceiptFromLLM(result);
       setState(() {
-        _ocrResult = ocrResult;
+        _extractedReceipt = receipt;
       });
 
-      logger.d('OCR completed: ${ocrResult.recognizedText?.length} characters');
-
-      // Step 3: Extract receipt data with structured blocks
-      // Prefer textLines over textBlocks for better line structure
-      List<Map<String, dynamic>>? textBlocks;
-      if (ocrResult.textLines.isNotEmpty) {
-        // Use structured lines (preferred)
-        textBlocks = ocrResult.textLines.map((line) => {
-          'text': line.text,
-          'confidence': line.confidence,
-          'boundingBox': line.boundingBox,
-          'elements': line.elements.map((e) => {
-            'text': e.text,
-            'confidence': e.confidence,
-            'boundingBox': e.boundingBox,
-          }).toList(),
-        }).toList();
-        logger.d('Using ${textBlocks.length} structured lines from OCR');
-      } else if (ocrResult.textBlocks.isNotEmpty) {
-        // Fall back to text blocks
-        textBlocks = ocrResult.textBlocks.map((block) => {
-          'text': block.text,
-          'confidence': block.confidence,
-          'boundingBox': block.boundingBox,
-          'language': block.language,
-        }).toList();
-        logger.d('Using ${textBlocks.length} text blocks from OCR');
-      }
-      
-      final extractionResult = await _receiptParser.parseReceiptText(
-        ocrText: ocrResult.recognizedText!,
-        detectedLanguage: ocrResult.detectedLanguage,
-        ocrConfidence: ocrResult.confidence,
-        textBlocks: textBlocks,
-        textLines: ocrResult.textLines.isNotEmpty ? ocrResult.textLines : null,
-      );
-
-      setState(() {
-        _extractionResult = extractionResult;
-      });
-
-      // Step 4: Create Receipt object
-      if (extractionResult.success) {
-        final receipt = _buildReceiptFromExtraction(extractionResult);
-        setState(() {
-          _extractedReceipt = receipt;
-        });
-        
-        // Initialize text controllers with extracted data
-        _initializeTextControllers(receipt);
-        
-        logger.i('Receipt processing completed successfully');
-        
-        // Step 5: Save training data (Step 3 of ML pipeline)
-        // Only save if confidence is high enough
-        if (extractionResult.confidence >= 0.7 && ocrResult.textLines.isNotEmpty) {
-          final receiptId = _generateReceiptId();
-          final savedPath = await _trainingDataCollector.saveTrainingData(
-            receiptId: receiptId,
-            ocrResult: ocrResult,
-            extractionResult: extractionResult,
-            imagePath: widget.imagePath,
-            additionalMetadata: {
-              'is_test_image': widget.imagePath.contains('test_receipt'),
-            },
-          );
-          
-          if (savedPath != null) {
-            logger.i('📚 Training data saved: $savedPath');
-          }
-        }
-      }
+      _initializeTextControllers(receipt);
+      logger.i('Receipt created: ${receipt.merchantName}, ${receipt.totalAmount}');
 
     } catch (e) {
-      logger.e('Receipt processing failed: $e');
+      logger.e('Processing failed: $e');
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = 'Processing failed: $e';
       });
     } finally {
       setState(() {
@@ -239,56 +131,61 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     }
   }
 
-  /// Generate unique receipt ID for training data
-  String _generateReceiptId() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final imageName = widget.imagePath.split('/').last.replaceAll('.png', '').replaceAll('.jpg', '');
-    return '${imageName}_$timestamp';
-  }
-
-  /// Build Receipt object from extraction results
-  Receipt _buildReceiptFromExtraction(ExtractionResult extractionResult) {
-    final data = extractionResult.extractedData;
-    
-    // Extract TaxBreakdown from data
-    List<TaxBreakdown>? taxBreakdown;
-    if (data['tax_breakdown'] != null) {
-      final taxBreakdownList = data['tax_breakdown'] as List;
-      taxBreakdown = taxBreakdownList.map((item) {
-        return TaxBreakdown(
-          rate: (item['rate'] as num).toDouble(),
-          amount: (item['amount'] as num).toDouble(),
-        );
-      }).toList();
+  /// Build Receipt from LLM extraction result
+  Receipt _buildReceiptFromLLM(LLMExtractionResult llmResult) {
+    // Parse date
+    DateTime? purchaseDate;
+    if (llmResult.date != null) {
+      try {
+        purchaseDate = DateTime.parse(llmResult.date!);
+      } catch (e) {
+        logger.w('Failed to parse date: ${llmResult.date}');
+      }
     }
-    
+
+    // Convert tax breakdown
+    final taxBreakdownList = llmResult.taxBreakdown.map((item) => TaxBreakdown(
+      rate: item.rate,
+      amount: item.taxAmount,
+    )).toList();
+
+    // Detect currency
+    Currency currency = Currency.eur;
+    if (llmResult.currency != null) {
+      currency = Currency.fromCode(llmResult.currency!);
+    }
+
+    // Convert items
+    final items = llmResult.items.asMap().entries.map((entry) {
+      final item = entry.value;
+      return ReceiptItem(
+        id: 'item_${entry.key}',
+        name: item.name,
+        quantity: item.quantity,
+        unitPrice: item.price / item.quantity,
+        totalPrice: item.price,
+        taxRate: item.taxRate,
+      );
+    }).toList();
+
     return Receipt.create(
       originalImagePath: widget.imagePath,
-      processedImagePath: _processedImagePath,
-      rawOcrText: _ocrResult?.recognizedText,
-      merchantName: data['merchant_name'] as String?,
-      purchaseDate: data['date'] != null ? DateTime.parse(data['date']) : null,
-      totalAmount: data['total_amount'] as double?,
-      subtotalAmount: data['subtotal_amount'] as double?,
-      taxAmount: data['tax_amount'] as double?,
-      taxBreakdown: taxBreakdown ?? const [],
-      taxTotal: data['tax_total'] as double?,
-      paymentMethod: data['payment_method'] != null 
-          ? PaymentMethod.values.firstWhere(
-              (pm) => pm.name == data['payment_method'],
-              orElse: () => PaymentMethod.unknown,
-            )
+      merchantName: llmResult.merchantName,
+      purchaseDate: purchaseDate,
+      totalAmount: llmResult.total,
+      subtotalAmount: llmResult.subtotal,
+      taxAmount: llmResult.taxTotal,
+      taxBreakdown: taxBreakdownList,
+      taxTotal: llmResult.taxTotal,
+      paymentMethod: llmResult.paymentMethod != null
+          ? PaymentMethod.fromString(llmResult.paymentMethod)
           : null,
-      currency: data['currency'] != null 
-          ? Currency.fromCode(data['currency'])
-          : Currency.eur,
-      confidence: extractionResult.confidence,
-      detectedLanguage: _ocrResult?.detectedLanguage,
-      status: extractionResult.hasUsableResults 
-          ? ReceiptStatus.completed 
-          : ReceiptStatus.needsVerification,
-      receiptNumber: data['receipt_number'] as String?,
-      documentType: data['document_type'] as String?,
+      currency: currency,
+      items: items,
+      confidence: llmResult.confidence,
+      receiptNumber: llmResult.receiptNumber,
+      rawOcrText: llmResult.rawResponse,
+      status: ReceiptStatus.completed,
     );
   }
 
@@ -414,15 +311,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   }
 
   String _getProcessingStepText() {
-    if (_processedImagePath == null) {
-      return 'Enhancing image quality...';
-    } else if (_ocrResult == null) {
-      return 'Reading text...';
-    } else if (_extractionResult == null) {
-      return 'Extracting receipt data...';
-    } else {
-      return 'Finalizing...';
-    }
+    return 'Processing with LLM...';
   }
 
   Widget _buildErrorView() {
@@ -485,13 +374,13 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   }
 
   Widget _buildImagePreview() {
-    final imagePath = _processedImagePath ?? widget.imagePath;
-    
+    final imagePath = widget.imagePath;
+
     return Container(
       color: Colors.black,
       child: Column(
         children: [
-          // Image quality indicator
+          // Image indicator
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(
@@ -499,39 +388,21 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
               vertical: AppConstants.smallPadding,
             ),
             color: Colors.black87,
-            child: Row(
+            child: const Row(
               children: [
                 Icon(
-                  _processedImagePath != null ? Icons.auto_fix_high : Icons.image,
+                  Icons.image,
                   color: Colors.white70,
                   size: 16,
                 ),
-                const SizedBox(width: AppConstants.smallPadding),
+                SizedBox(width: AppConstants.smallPadding),
                 Text(
-                  _processedImagePath != null ? 'Enhanced Image' : 'Original Image',
-                  style: const TextStyle(
+                  'Scanned Image',
+                  style: TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
                   ),
                 ),
-                const Spacer(),
-                if (_processedImagePath != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.green, width: 1),
-                    ),
-                    child: const Text(
-                      'PROCESSED',
-                      style: TextStyle(
-                        color: Colors.green,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -753,12 +624,6 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
                 isHighlighted: true,
               ),
           ]),
-          
-          // Warnings if any (hide in edit mode)
-          if (!_isEditing && _extractionResult?.warnings.isNotEmpty == true) ...[
-            const SizedBox(height: AppConstants.defaultPadding),
-            _buildWarningsSection(),
-          ],
           
           const SizedBox(height: AppConstants.defaultPadding * 2),
         ],
@@ -1106,45 +971,6 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     );
   }
 
-  Widget _buildWarningsSection() {
-    final warnings = _extractionResult!.warnings;
-    
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
-        border: Border.all(color: Colors.orange, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.warning, color: Colors.orange),
-              const SizedBox(width: AppConstants.smallPadding),
-              const Text(
-                'Warnings',
-                style: TextStyle(
-                  color: Colors.orange,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppConstants.smallPadding),
-          ...warnings.map((warning) => Text(
-            '• $warning',
-            style: const TextStyle(
-              color: Colors.orange,
-              fontSize: 12,
-            ),
-          )),
-        ],
-      ),
-    );
-  }
-
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
   }
@@ -1153,9 +979,6 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     return amount.toStringAsFixed(2);
   }
   
-  String _formatAmountWithCurrency(double amount, Currency currency) {
-    return '${currency.symbol}${amount.toStringAsFixed(2)}';
-  }
 
   /// Initialize text controllers with receipt data
   void _initializeTextControllers(Receipt receipt) {
@@ -1231,9 +1054,10 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     });
   }
 
-  /// Save corrected data as verified training data
+  /// Save edited data and update the receipt
   Future<void> _saveAsVerified() async {
-    if (_ocrResult == null || _extractedReceipt == null) {
+    if (_extractedReceipt == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('No data to save'),
@@ -1245,57 +1069,60 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
 
     try {
       // Parse edited values
-      final correctedData = <String, dynamic>{
-        'merchant_name': _merchantNameController.text.trim().isEmpty 
-            ? null 
-            : _merchantNameController.text.trim(),
-        'receipt_number': _receiptNumberController.text.trim().isEmpty
-            ? null
-            : _receiptNumberController.text.trim(),
-        'date': _dateController.text.trim().isEmpty
-            ? null
-            : _dateController.text.trim(),
-        'subtotal_amount': _subtotalController.text.trim().isEmpty
-            ? null
-            : double.tryParse(_subtotalController.text.trim()),
-        'tax_amount': _taxController.text.trim().isEmpty
-            ? null
-            : double.tryParse(_taxController.text.trim()),
-        'total_amount': _totalController.text.trim().isEmpty
-            ? null
-            : double.tryParse(_totalController.text.trim()),
-        'payment_method': _paymentMethodController.text.trim().isEmpty
-            ? null
-            : _paymentMethodController.text.trim(),
-        'currency': _extractedReceipt!.currency.code,
-        // TaxBreakdownを保存（編集された値を使用）
-        'tax_breakdown': _taxBreakdownControllers.isNotEmpty
-            ? _taxBreakdownControllers.map((controllers) {
-                final rate = double.tryParse(controllers.rate.text.trim());
-                final amount = double.tryParse(controllers.amount.text.trim());
-                if (rate != null && amount != null) {
-                  return {
-                    'rate': rate,
-                    'amount': amount,
-                  };
-                }
-                return null;
-              }).where((item) => item != null).cast<Map<String, double>>().toList()
-            : null,
-        // Tax Totalを計算（breakdownの合計、または単一のtax_amount）
-        'tax_total': _taxBreakdownControllers.isNotEmpty
-            ? _taxBreakdownControllers
-                .map((controllers) => double.tryParse(controllers.amount.text.trim()) ?? 0.0)
-                .fold(0.0, (sum, amount) => sum + amount)
-            : (_taxController.text.trim().isNotEmpty
-                ? double.tryParse(_taxController.text.trim())
-                : null),
-        // Document type from original extraction
-        'document_type': _extractedReceipt!.documentType,
-      };
+      final merchantName = _merchantNameController.text.trim().isEmpty
+          ? null
+          : _merchantNameController.text.trim();
+      final receiptNumber = _receiptNumberController.text.trim().isEmpty
+          ? null
+          : _receiptNumberController.text.trim();
+      final subtotal = _subtotalController.text.trim().isEmpty
+          ? null
+          : double.tryParse(_subtotalController.text.trim());
+      final taxAmount = _taxController.text.trim().isEmpty
+          ? null
+          : double.tryParse(_taxController.text.trim());
+      final total = _totalController.text.trim().isEmpty
+          ? null
+          : double.tryParse(_totalController.text.trim());
+      final paymentMethodStr = _paymentMethodController.text.trim().isEmpty
+          ? null
+          : _paymentMethodController.text.trim();
+
+      // Parse date
+      DateTime? purchaseDate;
+      if (_dateController.text.trim().isNotEmpty) {
+        final parts = _dateController.text.trim().split('/');
+        if (parts.length == 3) {
+          try {
+            purchaseDate = DateTime(
+              int.parse(parts[2]),
+              int.parse(parts[1]),
+              int.parse(parts[0]),
+            );
+          } catch (e) {
+            logger.w('Failed to parse date: ${_dateController.text}');
+          }
+        }
+      }
+
+      // Parse tax breakdown
+      final taxBreakdown = _taxBreakdownControllers.map((controllers) {
+        final rate = double.tryParse(controllers.rate.text.trim());
+        final amount = double.tryParse(controllers.amount.text.trim());
+        if (rate != null && amount != null) {
+          return TaxBreakdown(rate: rate, amount: amount);
+        }
+        return null;
+      }).where((item) => item != null).cast<TaxBreakdown>().toList();
+
+      // Calculate tax total
+      final taxTotal = taxBreakdown.isNotEmpty
+          ? taxBreakdown.fold(0.0, (sum, tax) => sum + tax.amount)
+          : taxAmount;
 
       // Validate required fields
-      if (correctedData['total_amount'] == null) {
+      if (total == null) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Total amount is required'),
@@ -1305,67 +1132,39 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         return;
       }
 
-      // Save as verified training data
-      final receiptId = _generateReceiptId();
-      
-      // Preserve document type metadata from original extraction if available
-      final additionalMetadata = <String, dynamic>{
-        'is_test_image': widget.imagePath.contains('test_receipt'),
-        'original_confidence': _extractionResult?.confidence,
-      };
-      
-      // Add document type metadata from original extraction
-      if (_extractionResult?.metadata != null) {
-        final originalMetadata = _extractionResult!.metadata;
-        if (originalMetadata.containsKey('document_type')) {
-          additionalMetadata['document_type'] = originalMetadata['document_type'];
-          if (originalMetadata.containsKey('document_type_confidence')) {
-            additionalMetadata['document_type_confidence'] = originalMetadata['document_type_confidence'];
-          }
-          if (originalMetadata.containsKey('document_type_reason')) {
-            additionalMetadata['document_type_reason'] = originalMetadata['document_type_reason'];
-          }
-          if (originalMetadata.containsKey('document_type_receipt_score')) {
-            additionalMetadata['document_type_receipt_score'] = originalMetadata['document_type_receipt_score'];
-          }
-          if (originalMetadata.containsKey('document_type_invoice_score')) {
-            additionalMetadata['document_type_invoice_score'] = originalMetadata['document_type_invoice_score'];
-          }
-        }
-      }
-      
-      final savedPath = await _trainingDataCollector.saveVerifiedTrainingData(
-        receiptId: receiptId,
-        ocrResult: _ocrResult!,
-        correctedData: correctedData,
-        imagePath: widget.imagePath,
-        additionalMetadata: additionalMetadata,
+      // Update the receipt with edited values
+      final updatedReceipt = _extractedReceipt!.copyWith(
+        merchantName: merchantName,
+        receiptNumber: receiptNumber,
+        purchaseDate: purchaseDate,
+        subtotalAmount: subtotal,
+        taxAmount: taxTotal,
+        totalAmount: total,
+        taxBreakdown: taxBreakdown,
+        taxTotal: taxTotal,
+        paymentMethod: paymentMethodStr != null
+            ? PaymentMethod.fromString(paymentMethodStr)
+            : null,
       );
 
-      if (savedPath != null) {
-        setState(() {
-          _isEditing = false;
-        });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Verified training data saved successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-        
-        logger.i('✅ Verified training data saved: $savedPath');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to save verified data'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      setState(() {
+        _extractedReceipt = updatedReceipt;
+        _isEditing = false;
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Changes saved'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      logger.i('Receipt updated with edited values');
     } catch (e) {
-      logger.e('Failed to save verified training data: $e');
+      logger.e('Failed to save edits: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: ${e.toString()}'),
@@ -1373,11 +1172,6 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         ),
       );
     }
-  }
-
-  void _navigateToEdit() {
-    // TODO: Navigate to edit screen
-    // context.push('/edit', extra: _extractedReceipt);
   }
 
   void _saveReceipt() {

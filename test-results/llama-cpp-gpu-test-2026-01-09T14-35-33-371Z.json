@@ -1,0 +1,1437 @@
+[
+  {
+    "file": "receipt_en_1.png",
+    "country": "English",
+    "success": true,
+    "extracted": {
+      "merchant_name": "MB Opa ikrito",
+      "date": "2019-11-20",
+      "time": "11:05",
+      "items": [
+        {
+          "name": "Americano",
+          "quantity": 1,
+          "price": 2.99
+        },
+        {
+          "name": "Chocolate Cookie",
+          "quantity": 2,
+          "price": 1.98
+        },
+        {
+          "name": "Water bottle",
+          "quantity": 1,
+          "price": 0.5
+        }
+      ],
+      "subtotal": 5.47,
+      "tax_rate": 0,
+      "tax_amount": 0.24,
+      "total": 5.71,
+      "currency": "EUR",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"MB Opa ikrito\",\n  \"date\": \"2019-11-20\",\n  \"time\": \"11:05\",\n  \"items\": [\n    {\n      \"name\": \"Americano\",\n      \"quantity\": 1,\n      \"price\": 2.99\n    },\n    {\n      \"name\": \"Chocolate Cookie\",\n      \"quantity\": 2,\n      \"price\": 1.98\n    },\n    {\n      \"name\": \"Water bottle\",\n      \"quantity\": 1,\n      \"price\": 0.50\n    }\n  ],\n  \"subtotal\": 5.47,\n  \"tax_rate\": 0,\n  \"tax_amount\": 0.24,\n  \"total\": 5.71,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 1357,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_en_2.png",
+    "country": "English",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Walmart",
+      "date": "2017-07-28",
+      "time": "02:39",
+      "items": [
+        {
+          "name": "PET TOY",
+          "quantity": 1,
+          "price": 1.97
+        },
+        {
+          "name": "FLOPPY PUPPY",
+          "quantity": 1,
+          "price": 1.97
+        },
+        {
+          "name": "SSSUPREME S",
+          "quantity": 1,
+          "price": 4.97
+        },
+        {
+          "name": "2.5 SQUEAK",
+          "quantity": 1,
+          "price": 5.92
+        },
+        {
+          "name": "MUNCHY DMBEL",
+          "quantity": 1,
+          "price": 3.77
+        },
+        {
+          "name": "DOG TREAT",
+          "quantity": 1,
+          "price": 2.92
+        },
+        {
+          "name": "PED PCH 1",
+          "quantity": 1,
+          "price": 0.5
+        },
+        {
+          "name": "PED PCH 1",
+          "quantity": 1,
+          "price": 0.5
+        },
+        {
+          "name": "COUPON 23100",
+          "quantity": 1,
+          "price": 1
+        },
+        {
+          "name": "HNYMD SMORES",
+          "quantity": 1,
+          "price": 3.98
+        },
+        {
+          "name": "FRENCH DRSNG",
+          "quantity": 1,
+          "price": 1.98
+        },
+        {
+          "name": "3 ORANGES",
+          "quantity": 1,
+          "price": 5.47
+        },
+        {
+          "name": "BABY CARROTS",
+          "quantity": 1,
+          "price": 1.48
+        },
+        {
+          "name": "COLLARDS",
+          "quantity": 1,
+          "price": 1.24
+        },
+        {
+          "name": "CALZONE",
+          "quantity": 1,
+          "price": 2.5
+        },
+        {
+          "name": "MM RVW MNT",
+          "quantity": 1,
+          "price": 19.77
+        },
+        {
+          "name": "STKOBRLPLABL",
+          "quantity": 1,
+          "price": 1.97
+        },
+        {
+          "name": "STKOBRLPLABL",
+          "quantity": 1,
+          "price": 1.97
+        },
+        {
+          "name": "STKO SUNFLWR",
+          "quantity": 1,
+          "price": 0.97
+        },
+        {
+          "name": "STKO SUNFLWR",
+          "quantity": 1,
+          "price": 0.97
+        },
+        {
+          "name": "STKO SUNFLWR",
+          "quantity": 1,
+          "price": 0.97
+        },
+        {
+          "name": "BLING BEADS",
+          "quantity": 1,
+          "price": 0.97
+        },
+        {
+          "name": "GREAT VALUE",
+          "quantity": 1,
+          "price": 9.97
+        },
+        {
+          "name": "LIPTON",
+          "quantity": 1,
+          "price": 4.48
+        },
+        {
+          "name": "DRY DOG",
+          "quantity": 1,
+          "price": 12.44
+        }
+      ],
+      "subtotal": 93.62,
+      "tax_rate": 6.75,
+      "tax_amount": 4.59,
+      "total": 98.21,
+      "currency": "USD",
+      "payment_method": "VISA"
+    },
+    "raw_response": "```json\n{\n  \"merchant_name\": \"Walmart\",\n  \"date\": \"2017-07-28\",\n  \"time\": \"02:39\",\n  \"items\": [\n    {\n      \"name\": \"PET TOY\",\n      \"quantity\": 1,\n      \"price\": 1.97\n    },\n    {\n      \"name\": \"FLOPPY PUPPY\",\n      \"quantity\": 1,\n      \"price\": 1.97\n    },\n    {\n      \"name\": \"SSSUPREME S\",\n      \"quantity\": 1,\n      \"price\": 4.97\n    },\n    {\n      \"name\": \"2.5 SQUEAK\",\n      \"quantity\": 1,\n      \"price\": 5.92\n    },\n    {\n      \"name\": \"MUNCHY DMBEL\",\n      \"quantity\": 1,\n      \"price\": 3.77\n    },\n    {\n      \"name\": \"DOG TREAT\",\n      \"quantity\": 1,\n      \"price\": 2.92\n    },\n    {\n      \"name\": \"PED PCH 1\",\n      \"quantity\": 1,\n      \"price\": 0.50\n    },\n    {\n      \"name\": \"PED PCH 1\",\n      \"quantity\": 1,\n      \"price\": 0.50\n    },\n    {\n      \"name\": \"COUPON 23100\",\n      \"quantity\": 1,\n      \"price\": 1.00\n    },\n    {\n      \"name\": \"HNYMD SMORES\",\n      \"quantity\": 1,\n      \"price\": 3.98\n    },\n    {\n      \"name\": \"FRENCH DRSNG\",\n      \"quantity\": 1,\n      \"price\": 1.98\n    },\n    {\n      \"name\": \"3 ORANGES\",\n      \"quantity\": 1,\n      \"price\": 5.47\n    },\n    {\n      \"name\": \"BABY CARROTS\",\n      \"quantity\": 1,\n      \"price\": 1.48\n    },\n    {\n      \"name\": \"COLLARDS\",\n      \"quantity\": 1,\n      \"price\": 1.24\n    },\n    {\n      \"name\": \"CALZONE\",\n      \"quantity\": 1,\n      \"price\": 2.50\n    },\n    {\n      \"name\": \"MM RVW MNT\",\n      \"quantity\": 1,\n      \"price\": 19.77\n    },\n    {\n      \"name\": \"STKOBRLPLABL\",\n      \"quantity\": 1,\n      \"price\": 1.97\n    },\n    {\n      \"name\": \"STKOBRLPLABL\",\n      \"quantity\": 1,\n      \"price\": 1.97\n    },\n    {\n      \"name\": \"STKO SUNFLWR\",\n      \"quantity\": 1,\n      \"price\": 0.97\n    },\n    {\n      \"name\": \"STKO SUNFLWR\",\n      \"quantity\": 1,\n      \"price\": 0.97\n    },\n    {\n      \"name\": \"STKO SUNFLWR\",\n      \"quantity\": 1,\n      \"price\": 0.97\n    },\n    {\n      \"name\": \"BLING BEADS\",\n      \"quantity\": 1,\n      \"price\": 0.97\n    },\n    {\n      \"name\": \"GREAT VALUE\",\n      \"quantity\": 1,\n      \"price\": 9.97\n    },\n    {\n      \"name\": \"LIPTON\",\n      \"quantity\": 1,\n      \"price\": 4.48\n    },\n    {\n      \"name\": \"DRY DOG\",\n      \"quantity\": 1,\n      \"price\": 12.44\n    }\n  ],\n  \"subtotal\": 93.62,\n  \"tax_rate\": 6.75,\n  \"tax_amount\": 4.59,\n  \"total\": 98.21,\n  \"currency\": \"USD\",\n  \"payment_method\": \"VISA\"\n}\n```",
+    "processing_time_ms": 6986,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_en_3.png",
+    "country": "English",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Walmart",
+      "date": "2020-05-30",
+      "time": "12:20 AM",
+      "items": [
+        {
+          "name": "HDMI 6FT CABLE",
+          "quantity": 1,
+          "price": 18.99
+        },
+        {
+          "name": "HARMONY UNV REMOTE",
+          "quantity": 1,
+          "price": 189.99
+        }
+      ],
+      "subtotal": 208.98,
+      "tax_rate": 6,
+      "tax_amount": 13.37,
+      "total": 222.35,
+      "currency": "USD",
+      "payment_method": "VISA"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Walmart\",\n  \"date\": \"2020-05-30\",\n  \"time\": \"12:20 AM\",\n  \"items\": [\n    {\n      \"name\": \"HDMI 6FT CABLE\",\n      \"quantity\": 1,\n      \"price\": 18.99\n    },\n    {\n      \"name\": \"HARMONY UNV REMOTE\",\n      \"quantity\": 1,\n      \"price\": 189.99\n    }\n  ],\n  \"subtotal\": 208.98,\n  \"tax_rate\": 6.0,\n  \"tax_amount\": 13.37,\n  \"total\": 222.35,\n  \"currency\": \"USD\",\n  \"payment_method\": \"VISA\"\n}",
+    "processing_time_ms": 1548,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_en_4.png",
+    "country": "English",
+    "success": true,
+    "extracted": {
+      "merchant_name": "WALL-MART-SUPERSTORE",
+      "date": "2020-10-17",
+      "time": "16:12",
+      "items": [
+        {
+          "name": "HAND TOWEL",
+          "quantity": 1,
+          "price": 2.9
+        },
+        {
+          "name": "GATORADE",
+          "quantity": 1,
+          "price": 2
+        },
+        {
+          "name": "T-SHIRT",
+          "quantity": 1,
+          "price": 16.88
+        },
+        {
+          "name": "PUSH PINS",
+          "quantity": 1,
+          "price": 1.24
+        }
+      ],
+      "subtotal": 23.09,
+      "tax_rate": 7.89,
+      "tax_amount": 2.9,
+      "total": 27.27,
+      "currency": "USD",
+      "payment_method": "credit"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"WALL-MART-SUPERSTORE\",\n  \"date\": \"2020-10-17\",\n  \"time\": \"16:12\",\n  \"items\": [\n    {\n      \"name\": \"HAND TOWEL\",\n      \"quantity\": 1,\n      \"price\": 2.90\n    },\n    {\n      \"name\": \"GATORADE\",\n      \"quantity\": 1,\n      \"price\": 2.00\n    },\n    {\n      \"name\": \"T-SHIRT\",\n      \"quantity\": 1,\n      \"price\": 16.88\n    },\n    {\n      \"name\": \"PUSH PINS\",\n      \"quantity\": 1,\n      \"price\": 1.24\n    }\n  ],\n  \"subtotal\": 23.09,\n  \"tax_rate\": 7.89,\n  \"tax_amount\": 2.90,\n  \"total\": 27.27,\n  \"currency\": \"USD\",\n  \"payment_method\": \"credit\"\n}",
+    "processing_time_ms": 1865,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_en_5.png",
+    "country": "English",
+    "success": true,
+    "extracted": {
+      "merchant_name": "BOULEVARD",
+      "date": "2006-02-15",
+      "time": "07:20",
+      "items": [
+        {
+          "name": "HENDRIKS",
+          "quantity": 1,
+          "price": 8
+        },
+        {
+          "name": "BOURBON MANHATN",
+          "quantity": 1,
+          "price": 8.75
+        },
+        {
+          "name": "D SOUP",
+          "quantity": 1,
+          "price": 13.75
+        },
+        {
+          "name": "D ABALONE",
+          "quantity": 1,
+          "price": 19.5
+        },
+        {
+          "name": "D LOBSTER LINGUI",
+          "quantity": 1,
+          "price": 18.75
+        },
+        {
+          "name": "D SHORTRIB",
+          "quantity": 1,
+          "price": 17.5
+        },
+        {
+          "name": "D SWEETBREADS",
+          "quantity": 1,
+          "price": 17.25
+        },
+        {
+          "name": "D LAMB",
+          "quantity": 1,
+          "price": 32
+        },
+        {
+          "name": "D PORK",
+          "quantity": 1,
+          "price": 31
+        },
+        {
+          "name": "1/2 GL-3 SAINTS PN",
+          "quantity": 1,
+          "price": 5.5
+        },
+        {
+          "name": "1/2 GL SAUV BLANC",
+          "quantity": 1,
+          "price": 4.25
+        },
+        {
+          "name": "1/2 GL-BAROLO",
+          "quantity": 1,
+          "price": 9.75
+        },
+        {
+          "name": "1/2 GL- G- UNTI SYRAH",
+          "quantity": 1,
+          "price": 5.5
+        },
+        {
+          "name": "POTRERO",
+          "quantity": 1,
+          "price": 10.5
+        },
+        {
+          "name": "G-CASTELNAU",
+          "quantity": 1,
+          "price": 9
+        },
+        {
+          "name": "D BANANAS FOSTER",
+          "quantity": 1,
+          "price": 9.5
+        },
+        {
+          "name": "D TRIO",
+          "quantity": 1,
+          "price": 9.75
+        }
+      ],
+      "subtotal": 230.25,
+      "tax_rate": 0.08,
+      "tax_amount": 19.57,
+      "total": 249.32,
+      "currency": "USD",
+      "payment_method": "cash/card"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"BOULEVARD\",\n  \"date\": \"2006-02-15\",\n  \"time\": \"07:20\",\n  \"items\": [\n    {\"name\": \"HENDRIKS\", \"quantity\": 1, \"price\": 8.00},\n    {\"name\": \"BOURBON MANHATN\", \"quantity\": 1, \"price\": 8.75},\n    {\"name\": \"D SOUP\", \"quantity\": 1, \"price\": 13.75},\n    {\"name\": \"D ABALONE\", \"quantity\": 1, \"price\": 19.50},\n    {\"name\": \"D LOBSTER LINGUI\", \"quantity\": 1, \"price\": 18.75},\n    {\"name\": \"D SHORTRIB\", \"quantity\": 1, \"price\": 17.50},\n    {\"name\": \"D SWEETBREADS\", \"quantity\": 1, \"price\": 17.25},\n    {\"name\": \"D LAMB\", \"quantity\": 1, \"price\": 32.00},\n    {\"name\": \"D PORK\", \"quantity\": 1, \"price\": 31.00},\n    {\"name\": \"1/2 GL-3 SAINTS PN\", \"quantity\": 1, \"price\": 5.50},\n    {\"name\": \"1/2 GL SAUV BLANC\", \"quantity\": 1, \"price\": 4.25},\n    {\"name\": \"1/2 GL-BAROLO\", \"quantity\": 1, \"price\": 9.75},\n    {\"name\": \"1/2 GL- G- UNTI SYRAH\", \"quantity\": 1, \"price\": 5.50},\n    {\"name\": \"POTRERO\", \"quantity\": 1, \"price\": 10.50},\n    {\"name\": \"G-CASTELNAU\", \"quantity\": 1, \"price\": 9.00},\n    {\"name\": \"D BANANAS FOSTER\", \"quantity\": 1, \"price\": 9.50},\n    {\"name\": \"D TRIO\", \"quantity\": 1, \"price\": 9.75}\n  ],\n  \"subtotal\": 230.25,\n  \"tax_rate\": 0.08,\n  \"tax_amount\": 19.57,\n  \"total\": 249.32,\n  \"currency\": \"USD\",\n  \"payment_method\": \"cash/card\"\n}",
+    "processing_time_ms": 4430,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_fi_1.png",
+    "country": "Finland",
+    "success": true,
+    "extracted": {
+      "merchant_name": "KAUPPA ESIMERKKI Oy",
+      "date": "2014-01-02",
+      "time": "16:04",
+      "items": [
+        {
+          "name": "Tuotemerikki mehu 1 l app",
+          "quantity": 1,
+          "price": 3.08
+        },
+        {
+          "name": "Tuote tee 20ps vihr persik-pa",
+          "quantity": 1,
+          "price": 1.75
+        },
+        {
+          "name": "2 x 15,50 Make up luomivärit",
+          "quantity": 2,
+          "price": 31
+        }
+      ],
+      "subtotal": 35.83,
+      "tax_rate": 24,
+      "tax_amount": 6,
+      "total": 31,
+      "currency": "EUR",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"KAUPPA ESIMERKKI Oy\",\n  \"date\": \"2014-01-02\",\n  \"time\": \"16:04\",\n  \"items\": [\n    {\n      \"name\": \"Tuotemerikki mehu 1 l app\",\n      \"quantity\": 1,\n      \"price\": 3.08\n    },\n    {\n      \"name\": \"Tuote tee 20ps vihr persik-pa\",\n      \"quantity\": 1,\n      \"price\": 1.75\n    },\n    {\n      \"name\": \"2 x 15,50 Make up luomivärit\",\n      \"quantity\": 2,\n      \"price\": 31.00\n    }\n  ],\n  \"subtotal\": 35.83,\n  \"tax_rate\": 24.00,\n  \"tax_amount\": 6.00,\n  \"total\": 31.00,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 2046,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_fi_2.png",
+    "country": "Finland",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Lidl",
+      "date": "20.09.14",
+      "time": "12:05",
+      "items": [
+        {
+          "name": "BakeDreams erikoisvehnäjauho",
+          "quantity": 1,
+          "price": 0.91
+        },
+        {
+          "name": "Freshona grillattu paprika",
+          "quantity": 1,
+          "price": 2.69
+        },
+        {
+          "name": "Harvin ananaspaloja",
+          "quantity": 1,
+          "price": 0.85
+        },
+        {
+          "name": "Freshona herkkusienet viip.",
+          "quantity": 1,
+          "price": 0.65
+        },
+        {
+          "name": "Freeway sitruslimonadi 6x0,331",
+          "quantity": 1,
+          "price": 2.64
+        },
+        {
+          "name": "Pantti 6x0,331",
+          "quantity": 1,
+          "price": 0.9
+        },
+        {
+          "name": "Freeway appels.limonadi6x0,331",
+          "quantity": 1,
+          "price": 2.64
+        },
+        {
+          "name": "Pantti 6x0,331",
+          "quantity": 1,
+          "price": 0.9
+        },
+        {
+          "name": "MisterChoc maapähkinäpatukka",
+          "quantity": 1,
+          "price": 2.19
+        },
+        {
+          "name": "MisterChoc keksi-toffeesuklaa",
+          "quantity": 1,
+          "price": 2.19
+        },
+        {
+          "name": "Fazer Geisha suklaapatukka",
+          "quantity": 5,
+          "price": 2.65
+        },
+        {
+          "name": "Fazer Sininen suklaapatukka",
+          "quantity": 5,
+          "price": 2.65
+        },
+        {
+          "name": "Maxi Tupla",
+          "quantity": 20,
+          "price": 10.6
+        },
+        {
+          "name": "Henkselikassi, uusio",
+          "quantity": 1,
+          "price": 0.17
+        },
+        {
+          "name": "Reilu naudan juuheliha, 10%",
+          "quantity": 1,
+          "price": 2.99
+        }
+      ],
+      "subtotal": 35.62,
+      "tax_rate": 0,
+      "tax_amount": 4.13,
+      "total": 35.62,
+      "currency": "EUR",
+      "payment_method": "Visa Electron"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Lidl\",\n  \"date\": \"20.09.14\",\n  \"time\": \"12:05\",\n  \"items\": [\n    {\"name\": \"BakeDreams erikoisvehnäjauho\", \"quantity\": 1, \"price\": 0.91},\n    {\"name\": \"Freshona grillattu paprika\", \"quantity\": 1, \"price\": 2.69},\n    {\"name\": \"Harvin ananaspaloja\", \"quantity\": 1, \"price\": 0.85},\n    {\"name\": \"Freshona herkkusienet viip.\", \"quantity\": 1, \"price\": 0.65},\n    {\"name\": \"Freeway sitruslimonadi 6x0,331\", \"quantity\": 1, \"price\": 2.64},\n    {\"name\": \"Pantti 6x0,331\", \"quantity\": 1, \"price\": 0.90},\n    {\"name\": \"Freeway appels.limonadi6x0,331\", \"quantity\": 1, \"price\": 2.64},\n    {\"name\": \"Pantti 6x0,331\", \"quantity\": 1, \"price\": 0.90},\n    {\"name\": \"MisterChoc maapähkinäpatukka\", \"quantity\": 1, \"price\": 2.19},\n    {\"name\": \"MisterChoc keksi-toffeesuklaa\", \"quantity\": 1, \"price\": 2.19},\n    {\"name\": \"Fazer Geisha suklaapatukka\", \"quantity\": 5, \"price\": 2.65},\n    {\"name\": \"Fazer Sininen suklaapatukka\", \"quantity\": 5, \"price\": 2.65},\n    {\"name\": \"Maxi Tupla\", \"quantity\": 20, \"price\": 10.60},\n    {\"name\": \"Henkselikassi, uusio\", \"quantity\": 1, \"price\": 0.17},\n    {\"name\": \"Reilu naudan juuheliha, 10%\", \"quantity\": 1, \"price\": 2.99}\n  ],\n  \"subtotal\": 35.62,\n  \"tax_rate\": 0,\n  \"tax_amount\": 4.13,\n  \"total\": 35.62,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"Visa Electron\"\n}",
+    "processing_time_ms": 6989,
+    "field_scores": {
+      "merchant_name": true,
+      "date": false,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_fi_3.png",
+    "country": "Finland",
+    "success": true,
+    "extracted": {
+      "merchant_name": "PUEBLO BAR",
+      "date": "2026-05-31",
+      "time": "18:46",
+      "items": [
+        {
+          "name": "DELUXE MAITO",
+          "quantity": 1,
+          "price": 13
+        },
+        {
+          "name": "SUPER LIMSA",
+          "quantity": 1,
+          "price": 14
+        },
+        {
+          "name": "SUPER LIMSA",
+          "quantity": 1,
+          "price": 14
+        },
+        {
+          "name": "SUPER LIMSA",
+          "quantity": 1,
+          "price": 14
+        },
+        {
+          "name": "ERIKOINEN MEHU",
+          "quantity": 1,
+          "price": 11
+        },
+        {
+          "name": "NACHOS",
+          "quantity": 1,
+          "price": 6.3
+        },
+        {
+          "name": "TINGA 2",
+          "quantity": 1,
+          "price": 10
+        },
+        {
+          "name": "CHORIZO 2",
+          "quantity": 1,
+          "price": 11.6
+        },
+        {
+          "name": "ALAMBRE 2",
+          "quantity": 1,
+          "price": 12
+        },
+        {
+          "name": "BURRITO ALAMBRE",
+          "quantity": 1,
+          "price": 8.5
+        },
+        {
+          "name": "HEDELMÄJUOMA",
+          "quantity": 1,
+          "price": 8.5
+        },
+        {
+          "name": "HEDELMÄJUOMA",
+          "quantity": 1,
+          "price": 14
+        },
+        {
+          "name": "DAIEENSA",
+          "quantity": 1,
+          "price": 155.9
+        },
+        {
+          "name": "KATEINEN",
+          "quantity": 1,
+          "price": 155.9
+        }
+      ],
+      "subtotal": 69,
+      "tax_rate": 24,
+      "tax_amount": 13.35,
+      "total": 86.9,
+      "currency": "EUR",
+      "payment_method": "cash/card/etc"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"PUEBLO BAR\",\n  \"date\": \"2026-05-31\",\n  \"time\": \"18:46\",\n  \"items\": [\n    {\"name\": \"DELUXE MAITO\", \"quantity\": 1, \"price\": 13.00},\n    {\"name\": \"SUPER LIMSA\", \"quantity\": 1, \"price\": 14.00},\n    {\"name\": \"SUPER LIMSA\", \"quantity\": 1, \"price\": 14.00},\n    {\"name\": \"SUPER LIMSA\", \"quantity\": 1, \"price\": 14.00},\n    {\"name\": \"ERIKOINEN MEHU\", \"quantity\": 1, \"price\": 11.00},\n    {\"name\": \"NACHOS\", \"quantity\": 1, \"price\": 6.30},\n    {\"name\": \"TINGA 2\", \"quantity\": 1, \"price\": 10.00},\n    {\"name\": \"CHORIZO 2\", \"quantity\": 1, \"price\": 11.60},\n    {\"name\": \"ALAMBRE 2\", \"quantity\": 1, \"price\": 12.00},\n    {\"name\": \"BURRITO ALAMBRE\", \"quantity\": 1, \"price\": 8.50},\n    {\"name\": \"HEDELMÄJUOMA\", \"quantity\": 1, \"price\": 8.50},\n    {\"name\": \"HEDELMÄJUOMA\", \"quantity\": 1, \"price\": 14.00},\n    {\"name\": \"DAIEENSA\", \"quantity\": 1, \"price\": 155.90},\n    {\"name\": \"KATEINEN\", \"quantity\": 1, \"price\": 155.90}\n  ],\n  \"subtotal\": 69.00,\n  \"tax_rate\": 24.00,\n  \"tax_amount\": 13.35,\n  \"total\": 86.90,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash/card/etc\"\n}",
+    "processing_time_ms": 4261,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_fr_1.png",
+    "country": "France",
+    "success": true,
+    "extracted": {
+      "merchant_name": "LE CASTEL",
+      "date": "2025-05-06",
+      "time": "09:28",
+      "items": [
+        {
+          "name": "CAFÉ AMERICAIN",
+          "quantity": 1,
+          "price": 8
+        },
+        {
+          "name": "CAFÉ CREME",
+          "quantity": 1,
+          "price": 8.4
+        },
+        {
+          "name": "CAPPUCINO",
+          "quantity": 1,
+          "price": 9.5
+        },
+        {
+          "name": "CHOCOLAT CHAUD",
+          "quantity": 4,
+          "price": 8.4
+        },
+        {
+          "name": "VIENNOIS",
+          "quantity": 3,
+          "price": 10
+        }
+      ],
+      "subtotal": 81.36,
+      "tax_rate": 10,
+      "tax_amount": 8.14,
+      "total": 89.5,
+      "currency": "EUR",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"LE CASTEL\",\n  \"date\": \"2025-05-06\",\n  \"time\": \"09:28\",\n  \"items\": [\n    {\"name\": \"CAFÉ AMERICAIN\", \"quantity\": 1, \"price\": 8.00},\n    {\"name\": \"CAFÉ CREME\", \"quantity\": 1, \"price\": 8.40},\n    {\"name\": \"CAPPUCINO\", \"quantity\": 1, \"price\": 9.50},\n    {\"name\": \"CHOCOLAT CHAUD\", \"quantity\": 4, \"price\": 8.40},\n    {\"name\": \"VIENNOIS\", \"quantity\": 3, \"price\": 10.00}\n  ],\n  \"subtotal\": 81.36,\n  \"tax_rate\": 10,\n  \"tax_amount\": 8.14,\n  \"total\": 89.50,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 3166,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_fr_2.png",
+    "country": "France",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Berghotel Grosse Scheidegg",
+      "date": "2007-07-30",
+      "time": "13:29",
+      "items": [
+        {
+          "name": "Latte Macchiato",
+          "quantity": 2,
+          "price": 4.5
+        },
+        {
+          "name": "Gloki",
+          "quantity": 1,
+          "price": 5
+        },
+        {
+          "name": "Schweinschnitzel",
+          "quantity": 1,
+          "price": 22
+        },
+        {
+          "name": "Chässpätzli",
+          "quantity": 1,
+          "price": 18.5
+        }
+      ],
+      "subtotal": 54.5,
+      "tax_rate": 7.6,
+      "tax_amount": 3.85,
+      "total": 58.35,
+      "currency": "CHF",
+      "payment_method": null
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Berghotel Grosse Scheidegg\",\n  \"date\": \"2007-07-30\",\n  \"time\": \"13:29\",\n  \"items\": [\n    {\"name\": \"Latte Macchiato\", \"quantity\": 2, \"price\": 4.50},\n    {\"name\": \"Gloki\", \"quantity\": 1, \"price\": 5.00},\n    {\"name\": \"Schweinschnitzel\", \"quantity\": 1, \"price\": 22.00},\n    {\"name\": \"Chässpätzli\", \"quantity\": 1, \"price\": 18.50}\n  ],\n  \"subtotal\": 54.50,\n  \"tax_rate\": 7.6,\n  \"tax_amount\": 3.85,\n  \"total\": 58.35,\n  \"currency\": \"CHF\",\n  \"payment_method\": null\n}",
+    "processing_time_ms": 4392,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_de_1.png",
+    "country": "Germany",
+    "success": true,
+    "extracted": {
+      "merchant_name": "DOLOMO TN TAB 2751",
+      "date": "2020-09-30",
+      "time": "09:00",
+      "items": [
+        {
+          "name": "Fur Gerborg Sacher",
+          "quantity": 1,
+          "price": 15.11
+        }
+      ],
+      "subtotal": 15.11,
+      "tax_rate": 16,
+      "tax_amount": 2.42,
+      "total": 17.53,
+      "currency": "EUR",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"DOLOMO TN TAB 2751\",\n  \"date\": \"2020-09-30\",\n  \"time\": \"09:00\",\n  \"items\": [\n    {\n      \"name\": \"Fur Gerborg Sacher\",\n      \"quantity\": 1,\n      \"price\": 15.11\n    }\n  ],\n  \"subtotal\": 15.11,\n  \"tax_rate\": 16,\n  \"tax_amount\": 2.42,\n  \"total\": 17.53,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 1315,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_de_2.png",
+    "country": "Germany",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Tal Apotheke Dr. IXOS",
+      "date": "2019-01-30",
+      "time": "14:34",
+      "items": [
+        {
+          "name": "IBEROGAST FLU 50ml",
+          "quantity": 1,
+          "price": 21.9
+        }
+      ],
+      "subtotal": 21.9,
+      "tax_rate": 19,
+      "tax_amount": 3.5,
+      "total": 21.9,
+      "currency": "EUR",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Tal Apotheke Dr. IXOS\",\n  \"date\": \"2019-01-30\",\n  \"time\": \"14:34\",\n  \"items\": [\n    {\n      \"name\": \"IBEROGAST FLU 50ml\",\n      \"quantity\": 1,\n      \"price\": 21.90\n    }\n  ],\n  \"subtotal\": 21.90,\n  \"tax_rate\": 19,\n  \"tax_amount\": 3.50,\n  \"total\": 21.90,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 1533,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_de_3.png",
+    "country": "Germany",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Kassenbon",
+      "date": "2023-04-01",
+      "time": null,
+      "items": [
+        {
+          "name": "ASPIRIN DIRECT KTA 10St",
+          "quantity": 1,
+          "price": 4.95
+        },
+        {
+          "name": "PARACETAMOL BETA 500 TAB 20St",
+          "quantity": 1,
+          "price": 1.48
+        },
+        {
+          "name": "TRAUMEEL T VET TAB 250St",
+          "quantity": 1,
+          "price": 22.9
+        },
+        {
+          "name": "WOBENZYM MONO TMR 100St",
+          "quantity": 1,
+          "price": 48.93
+        }
+      ],
+      "subtotal": 78.26,
+      "tax_rate": 19,
+      "tax_amount": 12.5,
+      "total": 80.76,
+      "currency": "EUR",
+      "payment_method": "cash"
+    },
+    "raw_response": "```json\n{\n  \"merchant_name\": \"Kassenbon\",\n  \"date\": \"2023-04-01\",\n  \"time\": null,\n  \"items\": [\n    {\n      \"name\": \"ASPIRIN DIRECT KTA 10St\",\n      \"quantity\": 1,\n      \"price\": 4.95\n    },\n    {\n      \"name\": \"PARACETAMOL BETA 500 TAB 20St\",\n      \"quantity\": 1,\n      \"price\": 1.48\n    },\n    {\n      \"name\": \"TRAUMEEL T VET TAB 250St\",\n      \"quantity\": 1,\n      \"price\": 22.90\n    },\n    {\n      \"name\": \"WOBENZYM MONO TMR 100St\",\n      \"quantity\": 1,\n      \"price\": 48.93\n    }\n  ],\n  \"subtotal\": 78.26,\n  \"tax_rate\": 19,\n  \"tax_amount\": 12.50,\n  \"total\": 80.76,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash\"\n}\n```",
+    "processing_time_ms": 2340,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_de_4.png",
+    "country": "Germany",
+    "success": true,
+    "extracted": {
+      "merchant_name": "TEST SIG AT",
+      "date": "2021-08-11",
+      "time": "13:43",
+      "items": [
+        {
+          "name": "Artikel",
+          "quantity": 1,
+          "price": 15
+        }
+      ],
+      "subtotal": 15,
+      "tax_rate": 20,
+      "tax_amount": 2.5,
+      "total": 15,
+      "currency": "EUR",
+      "payment_method": "Bar"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"TEST SIG AT\",\n  \"date\": \"2021-08-11\",\n  \"time\": \"13:43\",\n  \"items\": [\n    {\n      \"name\": \"Artikel\",\n      \"quantity\": 1,\n      \"price\": 15.00\n    }\n  ],\n  \"subtotal\": 15.00,\n  \"tax_rate\": 20,\n  \"tax_amount\": 2.50,\n  \"total\": 15.00,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"Bar\"\n}",
+    "processing_time_ms": 1104,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_de_5.png",
+    "country": "Germany",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Tal Apotheke Dr. IXOS",
+      "date": "2019-01-30",
+      "time": "14:34",
+      "items": [
+        {
+          "name": "IBEROGAST FLU 50ml",
+          "quantity": 1,
+          "price": 21.9
+        }
+      ],
+      "subtotal": 21.9,
+      "tax_rate": 19,
+      "tax_amount": 3.5,
+      "total": 21.9,
+      "currency": "EUR",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Tal Apotheke Dr. IXOS\",\n  \"date\": \"2019-01-30\",\n  \"time\": \"14:34\",\n  \"items\": [\n    {\n      \"name\": \"IBEROGAST FLU 50ml\",\n      \"quantity\": 1,\n      \"price\": 21.90\n    }\n  ],\n  \"subtotal\": 21.90,\n  \"tax_rate\": 19,\n  \"tax_amount\": 3.50,\n  \"total\": 21.90,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 1127,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_de_6.png",
+    "country": "Germany",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Firma Till Mustermann",
+      "date": "2020-05-01",
+      "time": "19:10",
+      "items": [
+        {
+          "name": "Grüner Tee",
+          "quantity": 1,
+          "price": 4.95
+        }
+      ],
+      "subtotal": 4.95,
+      "tax_rate": 7,
+      "tax_amount": 0.17,
+      "total": 4.95,
+      "currency": "EUR",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Firma Till Mustermann\",\n  \"date\": \"2020-05-01\",\n  \"time\": \"19:10\",\n  \"items\": [\n    {\n      \"name\": \"Grüner Tee\",\n      \"quantity\": 1,\n      \"price\": 4.95\n    }\n  ],\n  \"subtotal\": 4.95,\n  \"tax_rate\": 7,\n  \"tax_amount\": 0.17,\n  \"total\": 4.95,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 1139,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_de_7.png",
+    "country": "Germany",
+    "success": true,
+    "extracted": {
+      "merchant_name": "COPYSHOP ZENTRALE",
+      "date": "2019-05-06",
+      "time": "13:16",
+      "items": [
+        {
+          "name": "S/W - Kopien T1",
+          "quantity": 1,
+          "price": 1.8
+        }
+      ],
+      "subtotal": 1.8,
+      "tax_rate": 19,
+      "tax_amount": 0.29,
+      "total": 1.8,
+      "currency": "EUR",
+      "payment_method": "BAR"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"COPYSHOP ZENTRALE\",\n  \"date\": \"2019-05-06\",\n  \"time\": \"13:16\",\n  \"items\": [\n    {\n      \"name\": \"S/W - Kopien T1\",\n      \"quantity\": 1,\n      \"price\": 1.80\n    }\n  ],\n  \"subtotal\": 1.80,\n  \"tax_rate\": 19,\n  \"tax_amount\": 0.29,\n  \"total\": 1.80,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"BAR\"\n}",
+    "processing_time_ms": 1098,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_it_1.png",
+    "country": "Italia",
+    "success": true,
+    "extracted": {
+      "merchant_name": "euronics",
+      "date": "2023-10-01",
+      "time": "19:23",
+      "items": [
+        {
+          "name": "ACHSMKITC2C15WK CB K",
+          "quantity": 1,
+          "price": 19.95
+        }
+      ],
+      "subtotal": 19.95,
+      "tax_rate": 22,
+      "tax_amount": 3.6,
+      "total": 19.95,
+      "currency": "EUR",
+      "payment_method": "elettronico"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"euronics\",\n  \"date\": \"2023-10-01\",\n  \"time\": \"19:23\",\n  \"items\": [\n    {\n      \"name\": \"ACHSMKITC2C15WK CB K\",\n      \"quantity\": 1,\n      \"price\": 19.95\n    }\n  ],\n  \"subtotal\": 19.95,\n  \"tax_rate\": 22.00,\n  \"tax_amount\": 3.60,\n  \"total\": 19.95,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"elettronico\"\n}",
+    "processing_time_ms": 3720,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_it_2.png",
+    "country": "Italia",
+    "success": true,
+    "extracted": {
+      "merchant_name": "BAR ACCADEMIA GIANMAICA CAFFE' SRL",
+      "date": "2013-07-11",
+      "time": "18:50",
+      "items": [
+        {
+          "name": "PIZZA MARGHERITA",
+          "quantity": 1,
+          "price": 9
+        },
+        {
+          "name": "MEDIUM LIGHT",
+          "quantity": 1,
+          "price": 9.5
+        },
+        {
+          "name": "MINERALE CL 50",
+          "quantity": 1,
+          "price": 4
+        }
+      ],
+      "subtotal": 22.5,
+      "tax_rate": 0,
+      "tax_amount": 3.83,
+      "total": 26.33,
+      "currency": "EUR",
+      "payment_method": "cash/card/etc"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"BAR ACCADEMIA GIANMAICA CAFFE' SRL\",\n  \"date\": \"2013-07-11\",\n  \"time\": \"18:50\",\n  \"items\": [\n    {\n      \"name\": \"PIZZA MARGHERITA\",\n      \"quantity\": 1,\n      \"price\": 9.00\n    },\n    {\n      \"name\": \"MEDIUM LIGHT\",\n      \"quantity\": 1,\n      \"price\": 9.50\n    },\n    {\n      \"name\": \"MINERALE CL 50\",\n      \"quantity\": 1,\n      \"price\": 4.00\n    }\n  ],\n  \"subtotal\": 22.50,\n  \"tax_rate\": 0,\n  \"tax_amount\": 3.83,\n  \"total\": 26.33,\n  \"currency\": \"EUR\",\n  \"payment_method\": \"cash/card/etc\"\n}",
+    "processing_time_ms": 1762,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_sv_1.png",
+    "country": "Sweden",
+    "success": true,
+    "extracted": {
+      "merchant_name": "IKEA",
+      "date": "2015-03-05",
+      "time": "15:19",
+      "items": [
+        {
+          "name": "Choklad ljus 100g",
+          "quantity": 2,
+          "price": 5
+        },
+        {
+          "name": "Grönsaksmedaljonger",
+          "quantity": 1,
+          "price": 35
+        },
+        {
+          "name": "Marmelad Apelsin Flä",
+          "quantity": 1,
+          "price": 25
+        },
+        {
+          "name": "Pyttipanna kyckling",
+          "quantity": 1,
+          "price": 39
+        },
+        {
+          "name": "SMOOTHIE ÄPPLÉ JORDG",
+          "quantity": 1,
+          "price": 15
+        },
+        {
+          "name": "LÖRDAGSGODIS",
+          "quantity": 1,
+          "price": 59
+        },
+        {
+          "name": "Laxpasttej 150 g",
+          "quantity": 1,
+          "price": 15
+        }
+      ],
+      "subtotal": 150.09,
+      "tax_rate": 12,
+      "tax_amount": 16.08,
+      "total": 134.01,
+      "currency": "SEK",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"IKEA\",\n  \"date\": \"2015-03-05\",\n  \"time\": \"15:19\",\n  \"items\": [\n    {\"name\": \"Choklad ljus 100g\", \"quantity\": 2, \"price\": 5.00},\n    {\"name\": \"Grönsaksmedaljonger\", \"quantity\": 1, \"price\": 35.00},\n    {\"name\": \"Marmelad Apelsin Flä\", \"quantity\": 1, \"price\": 25.00},\n    {\"name\": \"Pyttipanna kyckling\", \"quantity\": 1, \"price\": 39.00},\n    {\"name\": \"SMOOTHIE ÄPPLÉ JORDG\", \"quantity\": 1, \"price\": 15.00},\n    {\"name\": \"LÖRDAGSGODIS\", \"quantity\": 1, \"price\": 59.00},\n    {\"name\": \"Laxpasttej 150 g\", \"quantity\": 1, \"price\": 15.00}\n  ],\n  \"subtotal\": 150.09,\n  \"tax_rate\": 12,\n  \"tax_amount\": 16.08,\n  \"total\": 134.01,\n  \"currency\": \"SEK\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 2752,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_sv_2.png",
+    "country": "Sweden",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Winassist System AB",
+      "date": "2009-12-02",
+      "time": "12:51",
+      "items": [
+        {
+          "name": "EXPRESSEN",
+          "quantity": 1,
+          "price": 10
+        },
+        {
+          "name": "AFTONBLADET",
+          "quantity": 1,
+          "price": 11.79
+        }
+      ],
+      "subtotal": 22,
+      "tax_rate": 25,
+      "tax_amount": 2.36,
+      "total": 21.78,
+      "currency": "SEK",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Winassist System AB\",\n  \"date\": \"2009-12-02\",\n  \"time\": \"12:51\",\n  \"items\": [\n    {\n      \"name\": \"EXPRESSEN\",\n      \"quantity\": 1,\n      \"price\": 10.00\n    },\n    {\n      \"name\": \"AFTONBLADET\",\n      \"quantity\": 1,\n      \"price\": 11.79\n    }\n  ],\n  \"subtotal\": 22.00,\n  \"tax_rate\": 25.00,\n  \"tax_amount\": 2.36,\n  \"total\": 21.78,\n  \"currency\": \"SEK\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 1475,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_sv_3.png",
+    "country": "Sweden",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Göteborgs Orienthus AB",
+      "date": "2013-06-04",
+      "time": "16:45",
+      "items": [
+        {
+          "name": "Al-raii biff martadela",
+          "quantity": 1,
+          "price": 29.98
+        },
+        {
+          "name": "Chtoura fryst falafel 1st",
+          "quantity": 1,
+          "price": 20
+        },
+        {
+          "name": "Clipsys max sour cream",
+          "quantity": 1,
+          "price": 4.98
+        },
+        {
+          "name": "Maggi soppa 110gr",
+          "quantity": 1,
+          "price": 14.98
+        },
+        {
+          "name": "DON tonfisk i tomato saus3",
+          "quantity": 1,
+          "price": 23.1
+        },
+        {
+          "name": "Bär Kasse",
+          "quantity": 2,
+          "price": 2
+        },
+        {
+          "name": "Dobra Grönsaksoppa",
+          "quantity": 1,
+          "price": 6.98
+        },
+        {
+          "name": "Kamchin mirza ghasemi",
+          "quantity": 1,
+          "price": 16.98
+        },
+        {
+          "name": "durra vilda bär marmelad",
+          "quantity": 1,
+          "price": 14.98
+        },
+        {
+          "name": "Hom ajver stark",
+          "quantity": 1,
+          "price": 24.98
+        },
+        {
+          "name": "Shan korma curry",
+          "quantity": 1,
+          "price": 9.9
+        },
+        {
+          "name": "Frutti cherry juice",
+          "quantity": 1,
+          "price": 12.98
+        },
+        {
+          "name": "Foul mamdos",
+          "quantity": 1,
+          "price": 5.98
+        },
+        {
+          "name": "Kiki godis",
+          "quantity": 1,
+          "price": 7.98
+        },
+        {
+          "name": "FAM ghemeh bademjan",
+          "quantity": 1,
+          "price": 18.98
+        },
+        {
+          "name": "ALakssa Kyckling korv",
+          "quantity": 1,
+          "price": 9.9
+        },
+        {
+          "name": "Chtoura makdous",
+          "quantity": 1,
+          "price": 18.9
+        },
+        {
+          "name": "Strudle frukttex",
+          "quantity": 1,
+          "price": 13.98
+        }
+      ],
+      "subtotal": 257.64,
+      "tax_rate": 0,
+      "tax_amount": 0,
+      "total": 257.64,
+      "currency": "SEK",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Göteborgs Orienthus AB\",\n  \"date\": \"2013-06-04\",\n  \"time\": \"16:45\",\n  \"items\": [\n    {\"name\": \"Al-raii biff martadela\", \"quantity\": 1, \"price\": 29.98},\n    {\"name\": \"Chtoura fryst falafel 1st\", \"quantity\": 1, \"price\": 20.00},\n    {\"name\": \"Clipsys max sour cream\", \"quantity\": 1, \"price\": 4.98},\n    {\"name\": \"Maggi soppa 110gr\", \"quantity\": 1, \"price\": 14.98},\n    {\"name\": \"DON tonfisk i tomato saus3\", \"quantity\": 1, \"price\": 23.10},\n    {\"name\": \"Bär Kasse\", \"quantity\": 2, \"price\": 2.00},\n    {\"name\": \"Dobra Grönsaksoppa\", \"quantity\": 1, \"price\": 6.98},\n    {\"name\": \"Kamchin mirza ghasemi\", \"quantity\": 1, \"price\": 16.98},\n    {\"name\": \"durra vilda bär marmelad\", \"quantity\": 1, \"price\": 14.98},\n    {\"name\": \"Hom ajver stark\", \"quantity\": 1, \"price\": 24.98},\n    {\"name\": \"Shan korma curry\", \"quantity\": 1, \"price\": 9.90},\n    {\"name\": \"Frutti cherry juice\", \"quantity\": 1, \"price\": 12.98},\n    {\"name\": \"Foul mamdos\", \"quantity\": 1, \"price\": 5.98},\n    {\"name\": \"Kiki godis\", \"quantity\": 1, \"price\": 7.98},\n    {\"name\": \"FAM ghemeh bademjan\", \"quantity\": 1, \"price\": 18.98},\n    {\"name\": \"ALakssa Kyckling korv\", \"quantity\": 1, \"price\": 9.90},\n    {\"name\": \"Chtoura makdous\", \"quantity\": 1, \"price\": 18.90},\n    {\"name\": \"Strudle frukttex\", \"quantity\": 1, \"price\": 13.98}\n  ],\n  \"subtotal\": 257.64,\n  \"tax_rate\": 0,\n  \"tax_amount\": 0.00,\n  \"total\": 257.64,\n  \"currency\": \"SEK\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 5056,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_sv_4.png",
+    "country": "Sweden",
+    "success": true,
+    "extracted": {
+      "merchant_name": "Saab Car Museum",
+      "date": "2013-07-03",
+      "time": "13:37",
+      "items": [
+        {
+          "name": "Vuxen Tjänst",
+          "quantity": 1,
+          "price": 80
+        }
+      ],
+      "subtotal": 75.47,
+      "tax_rate": 6,
+      "tax_amount": 4.53,
+      "total": 80,
+      "currency": "SEK",
+      "payment_method": "Kontant"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"Saab Car Museum\",\n  \"date\": \"2013-07-03\",\n  \"time\": \"13:37\",\n  \"items\": [\n    {\n      \"name\": \"Vuxen Tjänst\",\n      \"quantity\": 1,\n      \"price\": 80.00\n    }\n  ],\n  \"subtotal\": 75.47,\n  \"tax_rate\": 6.00,\n  \"tax_amount\": 4.53,\n  \"total\": 80.00,\n  \"currency\": \"SEK\",\n  \"payment_method\": \"Kontant\"\n}",
+    "processing_time_ms": 1398,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_sv_5.png",
+    "country": "Sweden",
+    "success": true,
+    "extracted": {
+      "merchant_name": "MOUSSAS Orient LIVS AB",
+      "date": "2013-08-18",
+      "time": "12:28",
+      "items": [
+        {
+          "name": "ULKER MIX FRUKT TL",
+          "quantity": 2,
+          "price": 1
+        },
+        {
+          "name": "TSINGTAO VEGETARISK VARULL",
+          "quantity": 1,
+          "price": 10
+        },
+        {
+          "name": "FLIPS JUMPO 150G",
+          "quantity": 1,
+          "price": 11.9
+        },
+        {
+          "name": "MAURINUS ALPERNRAHM 100G",
+          "quantity": 1,
+          "price": 7.98
+        },
+        {
+          "name": "SHAN FISK BIRJANT",
+          "quantity": 1,
+          "price": 12.9
+        },
+        {
+          "name": "FAMILY MARINERAD KALKONFILE",
+          "quantity": 1,
+          "price": 48.9
+        },
+        {
+          "name": "Dricka",
+          "quantity": 1,
+          "price": 5
+        },
+        {
+          "name": "KARSA CAKE COCOS 2ST 20:",
+          "quantity": 1,
+          "price": 13.9
+        },
+        {
+          "name": "DURRA FIKONSYLT 430G",
+          "quantity": 1,
+          "price": 22.9
+        },
+        {
+          "name": "EL MANAR SARDINER",
+          "quantity": 1,
+          "price": 7.9
+        },
+        {
+          "name": "NIKO FISKFILEER SENAPSSAS",
+          "quantity": 1,
+          "price": 16.9
+        },
+        {
+          "name": "Godis",
+          "quantity": 1,
+          "price": 45
+        },
+        {
+          "name": "LEPINE BRÖD 5-PACK",
+          "quantity": 1,
+          "price": 29.9
+        }
+      ],
+      "subtotal": 265.08,
+      "tax_rate": 12,
+      "tax_amount": 28.4,
+      "total": 265.08,
+      "currency": "SEK",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"MOUSSAS Orient LIVS AB\",\n  \"date\": \"2013-08-18\",\n  \"time\": \"12:28\",\n  \"items\": [\n    {\"name\": \"ULKER MIX FRUKT TL\", \"quantity\": 2, \"price\": 1.00},\n    {\"name\": \"TSINGTAO VEGETARISK VARULL\", \"quantity\": 1, \"price\": 10.00},\n    {\"name\": \"FLIPS JUMPO 150G\", \"quantity\": 1, \"price\": 11.90},\n    {\"name\": \"MAURINUS ALPERNRAHM 100G\", \"quantity\": 1, \"price\": 7.98},\n    {\"name\": \"SHAN FISK BIRJANT\", \"quantity\": 1, \"price\": 12.90},\n    {\"name\": \"FAMILY MARINERAD KALKONFILE\", \"quantity\": 1, \"price\": 48.90},\n    {\"name\": \"Dricka\", \"quantity\": 1, \"price\": 5.00},\n    {\"name\": \"KARSA CAKE COCOS 2ST 20:\", \"quantity\": 1, \"price\": 13.90},\n    {\"name\": \"DURRA FIKONSYLT 430G\", \"quantity\": 1, \"price\": 22.90},\n    {\"name\": \"EL MANAR SARDINER\", \"quantity\": 1, \"price\": 7.90},\n    {\"name\": \"NIKO FISKFILEER SENAPSSAS\", \"quantity\": 1, \"price\": 16.90},\n    {\"name\": \"Godis\", \"quantity\": 1, \"price\": 45.00},\n    {\"name\": \"LEPINE BRÖD 5-PACK\", \"quantity\": 1, \"price\": 29.90}\n  ],\n  \"subtotal\": 265.08,\n  \"tax_rate\": 12.00,\n  \"tax_amount\": 28.40,\n  \"total\": 265.08,\n  \"currency\": \"SEK\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 4211,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  },
+  {
+    "file": "receipt_sv_6.png",
+    "country": "Sweden",
+    "success": true,
+    "extracted": {
+      "merchant_name": "ICA FOCUS",
+      "date": "2015-08-15",
+      "time": "14:31",
+      "items": [
+        {
+          "name": "Bisonmedaljonger",
+          "quantity": 1,
+          "price": 129
+        },
+        {
+          "name": "Plastkasse Focus",
+          "quantity": 1,
+          "price": 1.5
+        },
+        {
+          "name": "Ragbröd",
+          "quantity": 1,
+          "price": 20.95
+        },
+        {
+          "name": "Th. Ch. Salsa Med.",
+          "quantity": 1,
+          "price": 21.95
+        },
+        {
+          "name": "Tort. Chips Cheese",
+          "quantity": 1,
+          "price": 15.95
+        }
+      ],
+      "subtotal": 189,
+      "tax_rate": 12,
+      "tax_amount": 20.12,
+      "total": 187.85,
+      "currency": "SEK",
+      "payment_method": "cash"
+    },
+    "raw_response": "{\n  \"merchant_name\": \"ICA FOCUS\",\n  \"date\": \"2015-08-15\",\n  \"time\": \"14:31\",\n  \"items\": [\n    {\"name\": \"Bisonmedaljonger\", \"quantity\": 1, \"price\": 129.00},\n    {\"name\": \"Plastkasse Focus\", \"quantity\": 1, \"price\": 1.50},\n    {\"name\": \"Ragbröd\", \"quantity\": 1, \"price\": 20.95},\n    {\"name\": \"Th. Ch. Salsa Med.\", \"quantity\": 1, \"price\": 21.95},\n    {\"name\": \"Tort. Chips Cheese\", \"quantity\": 1, \"price\": 15.95}\n  ],\n  \"subtotal\": 189.00,\n  \"tax_rate\": 12.00,\n  \"tax_amount\": 20.12,\n  \"total\": 187.85,\n  \"currency\": \"SEK\",\n  \"payment_method\": \"cash\"\n}",
+    "processing_time_ms": 2147,
+    "field_scores": {
+      "merchant_name": true,
+      "date": true,
+      "total": true,
+      "items": true,
+      "tax": true
+    }
+  }
+]

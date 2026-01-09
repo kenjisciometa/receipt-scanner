@@ -6,10 +6,12 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../main.dart';
+import '../../../services/scanner/document_scanner_service.dart';
 
 /// Camera screen for capturing receipt images
 class CameraScreen extends ConsumerStatefulWidget {
@@ -29,18 +31,187 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   bool _isFlashOn = false;
   int _selectedCameraIndex = 0;
 
+  // Document scanner and image picker
+  final DocumentScannerService _documentScanner = DocumentScannerService();
+  final ImagePicker _imagePicker = ImagePicker();
+  bool _isScanning = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeCamera();
+    // Start document scanner by default
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startDocumentScanner();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _cameraController?.dispose();
+    _documentScanner.dispose();
     super.dispose();
+  }
+
+  /// Start document scanner (default method)
+  Future<void> _startDocumentScanner() async {
+    if (_isScanning) return;
+
+    setState(() {
+      _isScanning = true;
+      _errorMessage = null;
+    });
+
+    try {
+      logger.d('Starting document scanner...');
+      final result = await _documentScanner.scanReceipt();
+
+      if (result != null && result.isSuccess) {
+        logger.i('Document scanned: ${result.firstImagePath}');
+        if (mounted) {
+          context.push('/preview', extra: result.firstImagePath);
+        }
+      } else {
+        logger.w('Document scan cancelled or failed');
+        // Show fallback options if scan was cancelled
+        if (mounted) {
+          _showScanOptions();
+        }
+      }
+    } catch (e) {
+      logger.e('Document scanner error: $e');
+      setState(() {
+        _errorMessage = 'Document scanner not available: $e';
+      });
+      // Fall back to showing options
+      if (mounted) {
+        _showScanOptions();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+      }
+    }
+  }
+
+  /// Show scan options dialog
+  Future<void> _showScanOptions() async {
+    if (!mounted) return;
+
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Scan Receipt',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.document_scanner),
+              title: const Text('Document Scanner'),
+              subtitle: const Text('Auto edge detection & correction'),
+              onTap: () => Navigator.pop(context, 'scanner'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              subtitle: const Text('Take a photo manually'),
+              onTap: () => Navigator.pop(context, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              subtitle: const Text('Choose from gallery'),
+              onTap: () => Navigator.pop(context, 'gallery'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.science),
+              title: const Text('Test Images'),
+              subtitle: const Text('Use sample receipts'),
+              onTap: () => Navigator.pop(context, 'test'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (choice == null) {
+      // User cancelled, go back
+      if (mounted) {
+        context.pop();
+      }
+      return;
+    }
+
+    switch (choice) {
+      case 'scanner':
+        await _startDocumentScanner();
+        break;
+      case 'camera':
+        await _pickFromCamera();
+        break;
+      case 'gallery':
+        await _pickFromGallery();
+        break;
+      case 'test':
+        await _showTestReceiptDialog();
+        break;
+    }
+  }
+
+  /// Pick image from camera using image_picker
+  Future<void> _pickFromCamera() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 90,
+      );
+      if (image != null && mounted) {
+        context.push('/preview', extra: image.path);
+      } else if (mounted) {
+        _showScanOptions();
+      }
+    } catch (e) {
+      logger.e('Camera pick error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera error: $e')),
+        );
+        _showScanOptions();
+      }
+    }
+  }
+
+  /// Pick image from gallery
+  Future<void> _pickFromGallery() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (image != null && mounted) {
+        context.push('/preview', extra: image.path);
+      } else if (mounted) {
+        _showScanOptions();
+      }
+    } catch (e) {
+      logger.e('Gallery pick error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gallery error: $e')),
+        );
+        _showScanOptions();
+      }
+    }
   }
 
   @override
@@ -216,6 +387,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   Widget _buildBody() {
+    // Show loading while document scanner is active
+    if (_isScanning) {
+      return _buildScanningView();
+    }
+
     if (!_isPermissionGranted) {
       return _buildPermissionDeniedView();
     }
@@ -229,6 +405,34 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     }
 
     return _buildCameraView();
+  }
+
+  /// Build scanning view (shown while document scanner is active)
+  Widget _buildScanningView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(color: Colors.white),
+          const SizedBox(height: AppConstants.defaultPadding),
+          const Text(
+            'Opening Document Scanner...',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: AppConstants.defaultPadding * 2),
+          TextButton(
+            onPressed: () {
+              setState(() => _isScanning = false);
+              _showScanOptions();
+            },
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Build permission denied view

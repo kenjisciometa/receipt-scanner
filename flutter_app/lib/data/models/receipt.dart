@@ -2,6 +2,7 @@ import 'package:json_annotation/json_annotation.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/constants/language_keywords.dart';
 import 'receipt_item.dart';
+import 'tax_breakdown.dart';
 
 part 'receipt.g.dart';
 
@@ -156,6 +157,9 @@ class Receipt {
     this.totalAmount,
     this.subtotalAmount,
     this.taxAmount,
+    this.taxBreakdown = const [],
+    this.taxTotal,
+    this.documentType,
     this.paymentMethod,
     this.currency = Currency.eur,
     this.items = const [],
@@ -197,7 +201,16 @@ class Receipt {
   
   /// Tax/VAT amount
   final double? taxAmount;
-  
+
+  /// Tax breakdown for multiple tax rates
+  final List<TaxBreakdown> taxBreakdown;
+
+  /// Total tax amount (sum of all tax breakdown amounts)
+  final double? taxTotal;
+
+  /// Document type (e.g., 'receipt', 'invoice')
+  final String? documentType;
+
   /// Method of payment used
   final PaymentMethod? paymentMethod;
   
@@ -274,6 +287,9 @@ class Receipt {
     double? totalAmount,
     double? subtotalAmount,
     double? taxAmount,
+    List<TaxBreakdown> taxBreakdown = const [],
+    double? taxTotal,
+    String? documentType,
     PaymentMethod? paymentMethod,
     Currency currency = Currency.eur,
     List<ReceiptItem> items = const [],
@@ -295,6 +311,9 @@ class Receipt {
       totalAmount: totalAmount,
       subtotalAmount: subtotalAmount,
       taxAmount: taxAmount,
+      taxBreakdown: taxBreakdown,
+      taxTotal: taxTotal,
+      documentType: documentType,
       paymentMethod: paymentMethod,
       currency: currency,
       items: items,
@@ -328,6 +347,9 @@ class Receipt {
     double? totalAmount,
     double? subtotalAmount,
     double? taxAmount,
+    List<TaxBreakdown>? taxBreakdown,
+    double? taxTotal,
+    String? documentType,
     PaymentMethod? paymentMethod,
     Currency? currency,
     List<ReceiptItem>? items,
@@ -350,6 +372,9 @@ class Receipt {
       totalAmount: totalAmount ?? this.totalAmount,
       subtotalAmount: subtotalAmount ?? this.subtotalAmount,
       taxAmount: taxAmount ?? this.taxAmount,
+      taxBreakdown: taxBreakdown ?? this.taxBreakdown,
+      taxTotal: taxTotal ?? this.taxTotal,
+      documentType: documentType ?? this.documentType,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       currency: currency ?? this.currency,
       items: items ?? this.items,

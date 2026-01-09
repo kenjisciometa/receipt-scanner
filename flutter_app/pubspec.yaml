@@ -49,6 +49,7 @@ dependencies:
   
   # OCR & ML
   google_mlkit_text_recognition: ^0.13.0
+  google_mlkit_document_scanner: ^0.3.0
   
   # Image Processing (OpenCV alternative for now)
   # opencv_dart: ^1.0.4  # Will add when available
@@ -74,6 +75,9 @@ dependencies:
   
   # JSON
   json_annotation: ^4.9.0
+
+  # HTTP Client (for LLM API)
+  http: ^1.2.0
   
   # Local Storage
   shared_preferences: ^2.3.3
