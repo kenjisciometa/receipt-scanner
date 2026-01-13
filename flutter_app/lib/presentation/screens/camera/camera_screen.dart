@@ -12,6 +12,7 @@ import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../main.dart';
 import '../../../services/scanner/document_scanner_service.dart';
+import '../../../services/image/image_stitcher_service.dart';
 
 /// Camera screen for capturing receipt images
 class CameraScreen extends ConsumerStatefulWidget {
@@ -31,9 +32,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   bool _isFlashOn = false;
   int _selectedCameraIndex = 0;
 
-  // Document scanner and image picker
+  // Document scanner, image picker, and image stitcher
   final DocumentScannerService _documentScanner = DocumentScannerService();
   final ImagePicker _imagePicker = ImagePicker();
+  final ImageStitcherService _imageStitcher = ImageStitcherService();
   bool _isScanning = false;
 
   @override
@@ -121,6 +123,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               onTap: () => Navigator.pop(context, 'scanner'),
             ),
             ListTile(
+              leading: const Icon(Icons.receipt_long),
+              title: const Text('Long Receipt'),
+              subtitle: const Text('Scan in multiple parts & combine'),
+              onTap: () => Navigator.pop(context, 'long_receipt'),
+            ),
+            ListTile(
               leading: const Icon(Icons.camera_alt),
               title: const Text('Camera'),
               subtitle: const Text('Take a photo manually'),
@@ -155,6 +163,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     switch (choice) {
       case 'scanner':
         await _startDocumentScanner();
+        break;
+      case 'long_receipt':
+        await _startLongReceiptScanner();
         break;
       case 'camera':
         await _pickFromCamera();
@@ -210,6 +221,133 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           SnackBar(content: Text('Gallery error: $e')),
         );
         _showScanOptions();
+      }
+    }
+  }
+
+  /// Start long receipt scanner (multi-page scan + stitching)
+  Future<void> _startLongReceiptScanner() async {
+    if (_isScanning) return;
+
+    // Show instructions dialog first
+    if (!mounted) return;
+    final shouldProceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.receipt_long, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Long Receipt Mode'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'For long receipts that don\'t fit in one photo:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12),
+            Text('1. Scan the TOP part of the receipt'),
+            SizedBox(height: 4),
+            Text('2. Scan the MIDDLE part (with slight overlap)'),
+            SizedBox(height: 4),
+            Text('3. Scan the BOTTOM part (with slight overlap)'),
+            SizedBox(height: 12),
+            Text(
+              'Tip: Include 10-20% overlap between sections for best results.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Start Scanning'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed != true) {
+      if (mounted) _showScanOptions();
+      return;
+    }
+
+    setState(() {
+      _isScanning = true;
+      _errorMessage = null;
+    });
+
+    try {
+      logger.d('Starting long receipt scanner (multi-page mode)...');
+
+      // Use multi-page scanning (up to 5 pages)
+      final result = await _documentScanner.scanMultiPage(maxPages: 5);
+
+      if (result == null || !result.isSuccess) {
+        logger.w('Long receipt scan cancelled or failed');
+        if (mounted) {
+          _showScanOptions();
+        }
+        return;
+      }
+
+      logger.i('Long receipt scan completed: ${result.pageCount} pages');
+
+      String? finalImagePath;
+
+      if (result.pageCount == 1) {
+        // Only one page, no stitching needed
+        finalImagePath = result.firstImagePath;
+      } else {
+        // Multiple pages, stitch them together
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Combining ${result.pageCount} images...'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+
+        finalImagePath = await _imageStitcher.stitchImagesVertically(
+          result.imagePaths,
+          overlapPercent: 10,
+        );
+
+        if (finalImagePath == null) {
+          throw Exception('Failed to stitch images');
+        }
+
+        logger.i('Images stitched successfully: $finalImagePath');
+      }
+
+      if (mounted && finalImagePath != null) {
+        context.push('/preview', extra: finalImagePath);
+      }
+    } catch (e) {
+      logger.e('Long receipt scanner error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _showScanOptions();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
       }
     }
   }
@@ -571,72 +709,48 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
-  /// Build camera overlay with receipt frame guide
+  /// Build camera overlay with receipt frame guide (minimal, semi-transparent)
   Widget _buildOverlay() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
-      ),
-      child: Center(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.8,
-          height: MediaQuery.of(context).size.width * 0.8 * (4/3), // 4:3 aspect ratio
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Colors.white,
-              width: 2,
-            ),
-            borderRadius: BorderRadius.circular(AppConstants.smallBorderRadius),
+    return Center(
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: MediaQuery.of(context).size.width * 0.9 * (4/3), // 4:3 aspect ratio
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.5),
+            width: 1,
           ),
-          child: Stack(
-            children: [
-              // Corner guides
-              ...List.generate(4, (index) => _buildCornerGuide(index)),
-              
-              // Center guide text
-              const Center(
-                child: Text(
-                  'Position receipt within frame',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    shadows: [
-                      Shadow(
-                        offset: Offset(1, 1),
-                        blurRadius: 3,
-                        color: Colors.black,
-                      ),
-                    ],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
+          borderRadius: BorderRadius.circular(AppConstants.smallBorderRadius),
+        ),
+        child: Stack(
+          children: [
+            // Corner guides only (smaller, semi-transparent)
+            ...List.generate(4, (index) => _buildCornerGuide(index)),
+          ],
         ),
       ),
     );
   }
 
-  /// Build corner guide for overlay
+  /// Build corner guide for overlay (smaller, semi-transparent)
   Widget _buildCornerGuide(int index) {
-    const size = 20.0;
-    const thickness = 3.0;
-    
+    const size = 16.0;
+    const thickness = 2.0;
+    final color = Colors.white.withValues(alpha: 0.7);
+
     late Alignment alignment;
     late Widget child;
-    
+
     switch (index) {
       case 0: // Top-left
         alignment = Alignment.topLeft;
         child = Container(
           width: size,
           height: size,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              top: BorderSide(color: Colors.white, width: thickness),
-              left: BorderSide(color: Colors.white, width: thickness),
+              top: BorderSide(color: color, width: thickness),
+              left: BorderSide(color: color, width: thickness),
             ),
           ),
         );
@@ -646,10 +760,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         child = Container(
           width: size,
           height: size,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              top: BorderSide(color: Colors.white, width: thickness),
-              right: BorderSide(color: Colors.white, width: thickness),
+              top: BorderSide(color: color, width: thickness),
+              right: BorderSide(color: color, width: thickness),
             ),
           ),
         );
@@ -659,10 +773,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         child = Container(
           width: size,
           height: size,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: Colors.white, width: thickness),
-              left: BorderSide(color: Colors.white, width: thickness),
+              bottom: BorderSide(color: color, width: thickness),
+              left: BorderSide(color: color, width: thickness),
             ),
           ),
         );
@@ -672,57 +786,57 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         child = Container(
           width: size,
           height: size,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: Colors.white, width: thickness),
-              right: BorderSide(color: Colors.white, width: thickness),
+              bottom: BorderSide(color: color, width: thickness),
+              right: BorderSide(color: color, width: thickness),
             ),
           ),
         );
         break;
     }
-    
+
     return Align(
       alignment: alignment,
       child: child,
     );
   }
 
-  /// Build top controls
+  /// Build top controls (smaller, semi-transparent)
   Widget _buildTopControls() {
     return Positioned(
-      top: AppConstants.defaultPadding,
+      top: AppConstants.smallPadding,
       left: AppConstants.defaultPadding,
       right: AppConstants.defaultPadding,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // App title
-          const Text(
+          // App title (smaller, semi-transparent)
+          Text(
             AppConfig.appName,
             style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              shadows: [
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              shadows: const [
                 Shadow(
                   offset: Offset(1, 1),
-                  blurRadius: 3,
-                  color: Colors.black,
+                  blurRadius: 2,
+                  color: Colors.black54,
                 ),
               ],
             ),
           ),
-          
-          // Settings button
+
+          // Settings button (smaller)
           IconButton(
             onPressed: () {
               // TODO: Navigate to settings
             },
-            icon: const Icon(
+            icon: Icon(
               Icons.settings,
-              color: Colors.white,
-              size: 28,
+              color: Colors.white.withValues(alpha: 0.7),
+              size: 22,
             ),
           ),
         ],
@@ -730,55 +844,55 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
-  /// Build bottom controls
+  /// Build bottom controls (smaller, semi-transparent)
   Widget _buildBottomControls() {
     return Positioned(
-      bottom: AppConstants.defaultPadding * 2,
+      bottom: AppConstants.defaultPadding,
       left: 0,
       right: 0,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Test image button
+          // Test image button (smaller)
           IconButton(
             onPressed: _showTestReceiptDialog,
             icon: Container(
-              padding: const EdgeInsets.all(AppConstants.smallPadding),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.3),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.receipt,
-                color: Colors.white,
-                size: 32,
+                color: Colors.white.withValues(alpha: 0.8),
+                size: 24,
               ),
             ),
           ),
-          
-          // Capture button
+
+          // Capture button (smaller, semi-transparent)
           GestureDetector(
             onTap: _captureImage,
             child: Container(
-              width: 80,
-              height: 80,
+              width: 64,
+              height: 64,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.white.withValues(alpha: 0.9),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: Colors.grey.shade300,
-                  width: 4,
+                  color: Colors.white.withValues(alpha: 0.5),
+                  width: 3,
                 ),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.camera_alt,
-                color: Colors.black,
-                size: 36,
+                color: Colors.black.withValues(alpha: 0.7),
+                size: 28,
               ),
             ),
           ),
-          
-          // Flash/Switch camera controls
+
+          // Flash/Switch camera controls (smaller)
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -786,33 +900,33 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               IconButton(
                 onPressed: _toggleFlash,
                 icon: Container(
-                  padding: const EdgeInsets.all(AppConstants.smallPadding),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.5),
+                    color: Colors.black.withValues(alpha: 0.3),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     _isFlashOn ? Icons.flash_on : Icons.flash_off,
-                    color: Colors.white,
-                    size: 28,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    size: 20,
                   ),
                 ),
               ),
-              
+
               // Camera switch (if multiple cameras available)
               if (_cameras.length > 1)
                 IconButton(
                   onPressed: _switchCamera,
                   icon: Container(
-                    padding: const EdgeInsets.all(AppConstants.smallPadding),
+                    padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.5),
+                      color: Colors.black.withValues(alpha: 0.3),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.switch_camera,
-                      color: Colors.white,
-                      size: 28,
+                      color: Colors.white.withValues(alpha: 0.8),
+                      size: 20,
                     ),
                   ),
                 ),

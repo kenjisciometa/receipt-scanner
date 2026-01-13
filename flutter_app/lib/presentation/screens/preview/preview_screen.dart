@@ -29,6 +29,12 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   String? _errorMessage;
   bool _isEditing = false;
 
+  // Validation warnings
+  String? _validationWarning;
+
+  // LLM reasoning (debug only)
+  String? _llmReasoning;
+
   // LLM Service
   late final LlamaCppService _llmService;
 
@@ -112,12 +118,21 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
 
       // Convert LLM result to Receipt object
       final receipt = _buildReceiptFromLLM(result);
+
+      // Validate totals
+      final warning = _validateTotals(receipt);
+
       setState(() {
         _extractedReceipt = receipt;
+        _validationWarning = warning;
+        _llmReasoning = result.reasoning;
       });
 
       _initializeTextControllers(receipt);
       logger.i('Receipt created: ${receipt.merchantName}, ${receipt.totalAmount}');
+      if (warning != null) {
+        logger.w('Validation warning: $warning');
+      }
 
     } catch (e) {
       logger.e('Processing failed: $e');
@@ -143,10 +158,12 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       }
     }
 
-    // Convert tax breakdown
+    // Convert tax breakdown with full details
     final taxBreakdownList = llmResult.taxBreakdown.map((item) => TaxBreakdown(
       rate: item.rate,
       amount: item.taxAmount,
+      taxableAmount: item.taxableAmount,
+      grossAmount: item.grossAmount,
     )).toList();
 
     // Detect currency
@@ -187,6 +204,38 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       rawOcrText: llmResult.rawResponse,
       status: ReceiptStatus.completed,
     );
+  }
+
+  /// Validate that total matches sum of gross amounts from tax breakdown
+  String? _validateTotals(Receipt receipt) {
+    if (receipt.taxBreakdown.isEmpty || receipt.totalAmount == null) {
+      return null;
+    }
+
+    // Calculate sum of gross amounts
+    double sumGross = 0;
+    bool hasGrossAmounts = false;
+
+    for (final tax in receipt.taxBreakdown) {
+      if (tax.grossAmount != null) {
+        sumGross += tax.grossAmount!;
+        hasGrossAmounts = true;
+      }
+    }
+
+    if (!hasGrossAmounts) {
+      return null; // No gross amounts to validate
+    }
+
+    final total = receipt.totalAmount!;
+    final difference = (sumGross - total).abs();
+
+    // Allow small rounding differences (0.02 or less)
+    if (difference > 0.02) {
+      return 'Total mismatch: Sum of tax categories (${sumGross.toStringAsFixed(2)}) ≠ Total (${total.toStringAsFixed(2)}). Difference: ${difference.toStringAsFixed(2)}';
+    }
+
+    return null;
   }
 
   @override
@@ -491,7 +540,13 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
             _buildConfidenceIndicator(),
             const SizedBox(height: AppConstants.defaultPadding),
           ],
-          
+
+          // Validation warning (if totals don't match)
+          if (!_isEditing && _validationWarning != null) ...[
+            _buildValidationWarning(),
+            const SizedBox(height: AppConstants.defaultPadding),
+          ],
+
           // Edit mode notice
           if (_isEditing) ...[
             Container(
@@ -569,12 +624,10 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
               _buildEditableDataRow('Subtotal', _subtotalController, hint: '0.00', isAmount: true)
             else if (receipt.subtotalAmount != null)
               _buildDataRow('Subtotal', _formatAmount(receipt.subtotalAmount!)),
-            // TaxBreakdownを表示
+            // TaxBreakdownを表示（詳細版）
             if (!_isEditing && receipt.taxBreakdown.isNotEmpty) ...[
-              ...receipt.taxBreakdown.map((tax) => _buildDataRow(
-                'Tax ${tax.rate}%',
-                _formatAmount(tax.amount),
-              )),
+              ...receipt.taxBreakdown.map((tax) => _buildTaxBreakdownDisplay(tax)),
+              const Divider(),
               if (receipt.taxTotal != null)
                 _buildDataRow('Tax Total', _formatAmount(receipt.taxTotal!), isHighlighted: true),
             ] else if (_isEditing) ...[
@@ -619,12 +672,18 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
               _buildEditableDataRow('Total', _totalController, hint: '0.00', isAmount: true, isHighlighted: true)
             else if (receipt.totalAmount != null)
               _buildDataRow(
-                'Total', 
+                'Total',
                 _formatAmount(receipt.totalAmount!),
                 isHighlighted: true,
               ),
           ]),
-          
+
+          // Debug: LLM Reasoning (開発用 - デバッグモードのみ)
+          if (!_isEditing && _llmReasoning != null) ...[
+            const SizedBox(height: AppConstants.defaultPadding * 2),
+            _buildReasoningSection(),
+          ],
+
           const SizedBox(height: AppConstants.defaultPadding * 2),
         ],
       ),
@@ -680,6 +739,101 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build validation warning indicator when totals don't match
+  Widget _buildValidationWarning() {
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.defaultPadding),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
+        border: Border.all(color: Colors.red, width: 2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.error,
+            color: Colors.red,
+            size: 24,
+          ),
+          const SizedBox(width: AppConstants.smallPadding),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Calculation Error',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _validationWarning!,
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'The tax breakdown values may be incorrect. Please verify manually.',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build reasoning section (開発用 - LLMの解釈過程)
+  Widget _buildReasoningSection() {
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.defaultPadding),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
+        border: Border.all(color: Colors.grey.shade300, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.psychology, size: 18, color: Colors.grey.shade600),
+              const SizedBox(width: 6),
+              Text(
+                'LLM解釈過程（開発用）',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+          const Divider(),
+          Text(
+            _llmReasoning ?? '',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade800,
+              height: 1.4,
             ),
           ),
         ],
@@ -748,12 +902,79 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     );
   }
 
+  /// Build a detailed tax breakdown display for a single tax rate
+  Widget _buildTaxBreakdownDisplay(TaxBreakdown tax) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
+      padding: const EdgeInsets.all(AppConstants.smallPadding),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(AppConstants.smallBorderRadius),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Tax rate header
+          Row(
+            children: [
+              Icon(Icons.percent, size: 16, color: Colors.blue.shade700),
+              const SizedBox(width: 4),
+              Text(
+                'VAT ${tax.rate}%',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+              const Spacer(),
+              if (tax.grossAmount != null)
+                Text(
+                  _formatAmount(tax.grossAmount!),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          // Details row
+          Row(
+            children: [
+              if (tax.taxableAmount != null) ...[
+                Expanded(
+                  child: Text(
+                    'Net: ${_formatAmount(tax.taxableAmount!)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ],
+              Expanded(
+                child: Text(
+                  'Tax: ${_formatAmount(tax.amount)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDocumentTypeRow(String documentType) {
     // Determine icon and color based on document type
     IconData icon;
     Color color;
     String displayText;
-    
+
     switch (documentType.toLowerCase()) {
       case 'receipt':
         icon = Icons.receipt;
