@@ -35,6 +35,9 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   // LLM reasoning (debug only)
   String? _llmReasoning;
 
+  // Step 1 extraction result (debug only)
+  String? _step1Result;
+
   // LLM Service
   late final LlamaCppService _llmService;
 
@@ -126,6 +129,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         _extractedReceipt = receipt;
         _validationWarning = warning;
         _llmReasoning = result.reasoning;
+        _step1Result = result.step1Result;
       });
 
       _initializeTextControllers(receipt);
@@ -678,10 +682,16 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
               ),
           ]),
 
-          // Debug: LLM Reasoning (開発用 - デバッグモードのみ)
+          // Debug: LLM Reasoning (開発用)
           if (!_isEditing && _llmReasoning != null) ...[
             const SizedBox(height: AppConstants.defaultPadding * 2),
             _buildReasoningSection(),
+          ],
+
+          // Debug: Step 1 Extraction Result (開発用)
+          if (!_isEditing && _step1Result != null) ...[
+            const SizedBox(height: AppConstants.defaultPadding),
+            _buildStep1ResultSection(),
           ],
 
           const SizedBox(height: AppConstants.defaultPadding * 2),
@@ -833,6 +843,46 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
             style: TextStyle(
               fontSize: 11,
               color: Colors.grey.shade800,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build Step 1 result section (開発用 - 第一段階の抽出結果)
+  Widget _buildStep1ResultSection() {
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.defaultPadding),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
+        border: Border.all(color: Colors.blue.shade200, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.document_scanner, size: 18, color: Colors.blue.shade600),
+              const SizedBox(width: 6),
+              Text(
+                'Step 1: Raw Extraction (DEBUG)',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+            ],
+          ),
+          const Divider(),
+          Text(
+            _step1Result ?? '',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.blue.shade900,
               height: 1.4,
             ),
           ),

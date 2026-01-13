@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
+import '../../main.dart';
+
 /// LLM Extraction Result
 class LLMExtractionResult {
   final String? merchantName;
@@ -20,6 +22,7 @@ class LLMExtractionResult {
   final int processingTimeMs;
   final double confidence;
   final String? reasoning; // 日本語での解釈過程（開発用）
+  final String? step1Result; // Step 1の抽出結果（開発用）
 
   LLMExtractionResult({
     this.merchantName,
@@ -37,6 +40,7 @@ class LLMExtractionResult {
     required this.processingTimeMs,
     required this.confidence,
     this.reasoning,
+    this.step1Result,
   });
 
   factory LLMExtractionResult.fromJson(Map<String, dynamic> json) {
@@ -60,6 +64,7 @@ class LLMExtractionResult {
       processingTimeMs: (json['processing_time_ms'] as num?)?.toInt() ?? 0,
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0.0,
       reasoning: json['reasoning'],
+      step1Result: json['step1_result'],
     );
   }
 
@@ -79,6 +84,7 @@ class LLMExtractionResult {
         'processing_time_ms': processingTimeMs,
         'confidence': confidence,
         'reasoning': reasoning,
+        'step1_result': step1Result,
       };
 }
 
@@ -157,7 +163,7 @@ class LlamaCppService {
 
   LlamaCppService({
     this.serverUrl = 'http://localhost:8080',
-    this.timeout = const Duration(seconds: 30),
+    this.timeout = const Duration(seconds: 120), // Increased for 2-step processing
   });
 
   /// Check if llama-server is available
@@ -189,12 +195,13 @@ class LlamaCppService {
     return extractFromBase64(base64Image);
   }
 
-  /// Extract receipt data from base64 encoded image
+  /// Extract receipt data from base64 encoded image (2-step approach)
   Future<LLMExtractionResult> extractFromBase64(String base64Image) async {
     final stopwatch = Stopwatch()..start();
 
     try {
-      final response = await http
+      // ===== STEP 1: Extract information naturally =====
+      final step1Response = await http
           .post(
             Uri.parse('$serverUrl/v1/chat/completions'),
             headers: {'Content-Type': 'application/json'},
@@ -208,8 +215,39 @@ class LlamaCppService {
                       'type': 'image_url',
                       'image_url': {'url': 'data:image/png;base64,$base64Image'}
                     },
-                    {'type': 'text', 'text': _extractionPrompt}
+                    {'type': 'text', 'text': _step1ExtractionPrompt}
                   ]
+                }
+              ],
+              'max_tokens': 2048,
+              'temperature': 0.3,
+            }),
+          )
+          .timeout(timeout);
+
+      if (step1Response.statusCode != 200) {
+        throw Exception('LLM API error (step 1): ${step1Response.statusCode}');
+      }
+
+      final step1Data = jsonDecode(step1Response.body);
+      final extractedText = step1Data['choices'][0]['message']['content'] as String;
+
+      // Log Step 1 result for debugging
+      logger.i('===== STEP 1 EXTRACTION RESULT =====');
+      logger.i(extractedText);
+      logger.i('===== END STEP 1 =====');
+
+      // ===== STEP 2: Convert to JSON =====
+      final step2Response = await http
+          .post(
+            Uri.parse('$serverUrl/v1/chat/completions'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'model': 'qwen2.5-vl',
+              'messages': [
+                {
+                  'role': 'user',
+                  'content': '$_step2JsonPrompt\n\n---\nExtracted receipt information:\n$extractedText'
                 }
               ],
               'max_tokens': 2048,
@@ -220,13 +258,16 @@ class LlamaCppService {
 
       stopwatch.stop();
 
-      if (response.statusCode != 200) {
-        throw Exception('LLM API error: ${response.statusCode}');
+      if (step2Response.statusCode != 200) {
+        throw Exception('LLM API error (step 2): ${step2Response.statusCode}');
       }
 
-      final data = jsonDecode(response.body);
-      final rawResponse = data['choices'][0]['message']['content'] as String;
-      final extracted = _parseResponse(rawResponse);
+      final step2Data = jsonDecode(step2Response.body);
+      final jsonResponse = step2Data['choices'][0]['message']['content'] as String;
+      final extracted = _parseResponse(jsonResponse);
+
+      // Combine both responses for debugging
+      final combinedRawResponse = '=== STEP 1 (抽出) ===\n$extractedText\n\n=== STEP 2 (JSON) ===\n$jsonResponse';
 
       return LLMExtractionResult(
         merchantName: extracted['merchant_name'],
@@ -244,10 +285,11 @@ class LlamaCppService {
         currency: extracted['currency'],
         paymentMethod: extracted['payment_method'],
         receiptNumber: extracted['receipt_number'],
-        rawResponse: rawResponse,
+        rawResponse: combinedRawResponse,
         processingTimeMs: stopwatch.elapsedMilliseconds,
         confidence: _calculateConfidence(extracted),
         reasoning: extracted['reasoning'],
+        step1Result: extractedText,
       );
     } catch (e) {
       stopwatch.stop();
@@ -316,79 +358,62 @@ class LlamaCppService {
     return (score / maxScore * 100).round() / 100;
   }
 
-  static const String _extractionPrompt = '''
-You are a receipt OCR system. Extract all information from this receipt image and return ONLY valid JSON.
+  /// Step 1: Natural language extraction (focus on accuracy)
+  static const String _step1ExtractionPrompt = '''
+Please extract the following information from this receipt image:
 
-CRITICAL: Tax Breakdown Table
-The tax summary TABLE is at the BOTTOM of the receipt, near the total.
+1. Store name
+2. Date and time
+3. Purchased items (name, quantity, price)
+4. Tax breakdown table (usually at the bottom of the receipt)
+   - Each tax rate (e.g., 14%, 25.5%)
+   - Tax amount for each rate
+   - Taxable amount (net/before tax) for each rate
+   - Gross amount (including tax) for each rate
+5. Total amount
+6. Payment method (card, cash, etc.)
+7. Receipt number
 
-STEP 1: Identify the table structure by reading the COLUMN HEADERS first.
-Common headers by language:
-- Finnish: Vero (tax), Veroton (net/taxable), Yhteensä (gross/total)
-- German: MwSt (tax), Netto (net), Brutto (gross)
-- Swedish: Moms (tax), Exkl. (net), Inkl. (gross)
-- English: VAT/Tax, Excl./Net, Incl./Gross/Total
+CRITICAL: Tax breakdown accuracy
+- Read the tax breakdown table VERY carefully
+- For EACH tax rate, report the EXACT numbers you see for:
+  * Tax amount (the tax portion)
+  * Taxable amount (net amount before tax)
+  * Gross amount (total including tax for this rate)
+- Read column headers to identify which column is which
+- Double-check each number - accuracy is essential
+''';
 
-STEP 2: The column order varies, but follows this rule:
-IMPORTANT: Tax and Net columns are ALWAYS adjacent!
-- [Rate] [Tax] [Net] [Gross]  OR
-- [Rate] [Net] [Tax] [Gross]
-The Gross column is always at the end (rightmost).
-Tax and Net are never separated by Gross.
-Read the headers to determine which column is which.
+  /// Step 2: Convert to JSON format
+  static const String _step2JsonPrompt = '''
+Convert the extracted receipt information to JSON format.
 
-STEP 3: Example table (Finnish):
-         Vero    Veroton   Yhteensä
-  25.5%  0.16    0.62      0.78
-  14%    8.43    60.21     68.64
-                           69.42
+CRITICAL: Use the EXACT values from the extracted text below. Do NOT re-interpret or recalculate.
+Copy the numbers exactly as they appear in the extraction.
 
-Headers tell us: Vero=tax, Veroton=net, Yhteensä=gross
-So row "25.5%": tax_amount=0.16, taxable_amount=0.62, gross_amount=0.78
-The last line (69.42) alone is the receipt total.
-
-CRITICAL - Reading Gross Values:
-- The RIGHTMOST column contains gross_amount for each tax rate
-- These gross values appear DIRECTLY ABOVE the total line
-- Read each row's rightmost value carefully: 0.78 and 68.64 (NOT the total 69.42)
-- The total (69.42) is on its own line at the bottom
-
-NOTE: There may NOT be a summary row with totals for each column.
-The total may appear alone at the bottom.
-
-VERIFICATION (do this for EVERY tax row):
-1. Check: gross_amount = taxable_amount + tax_amount (must match within 0.01!)
-2. Check: tax_amount = taxable_amount × (rate / 100) (approximately)
-3. Check: sum of all gross_amounts = receipt total
-4. If ANY math doesn't work:
-   - You may have swapped Tax and Net columns - try switching them
-   - You may have misread a digit (e.g., 8 vs 6, 3 vs 8)
-   - Re-read the rightmost column values carefully
-
-Output JSON:
+Output JSON format:
 {
   "merchant_name": "Store name",
   "date": "YYYY-MM-DD",
-  "time": "HH:MM or null",
-  "items": [{"name": "Item", "quantity": 1, "price": 0.00, "tax_rate": 14}],
+  "time": "HH:MM",
+  "items": [{"name": "Item name", "quantity": 1, "price": 0.00, "tax_rate": 14}],
   "subtotal": 0.00,
   "tax_breakdown": [
-    {"rate": 25.5, "tax_amount": 0.16, "taxable_amount": 0.62, "gross_amount": 0.78},
-    {"rate": 14, "tax_amount": 8.43, "taxable_amount": 60.21, "gross_amount": 68.64}
+    {"rate": 14, "tax_amount": 0.00, "taxable_amount": 0.00, "gross_amount": 0.00}
   ],
-  "tax_total": 8.59,
-  "total": 69.42,
+  "tax_total": 0.00,
+  "total": 0.00,
   "currency": "EUR",
-  "payment_method": "card/cash/null",
+  "payment_method": "card/cash",
   "receipt_number": "string or null",
-  "reasoning": "日本語で解釈過程を説明"
+  "reasoning": "日本語で説明"
 }
 
 Rules:
-- Return ONLY JSON, no markdown
-- All amounts are numbers, not strings
-- gross_amount = taxable_amount + tax_amount (verify for each row!)
-- sum of gross_amounts = total (verify!)
-- tax_total = sum of all tax_amounts
-- "reasoning" field MUST be in Japanese: explain (1) what headers you found, (2) how you identified each column, (3) the verification math for each row (gross = net + tax), and (4) if any corrections were made''';
+- Return ONLY JSON (no markdown)
+- All amounts must be numbers, not strings
+- IMPORTANT: Copy values directly from the extracted text - do not recalculate or guess
+- For tax_breakdown: use the exact tax_amount, taxable_amount, and gross_amount from the extraction
+- The "reasoning" field MUST be in Japanese: briefly explain which values you used from the extraction
+''';
 }
