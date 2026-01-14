@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../config/app_config.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../data/models/receipt.dart';
 import '../../../data/models/receipt_item.dart';
@@ -60,7 +61,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _llmService = LlamaCppService();
+    _llmService = LlamaCppService(serverUrl: AppConfig.llmServerUrl);
 
     // Initialize text controllers
     _merchantNameController = TextEditingController();

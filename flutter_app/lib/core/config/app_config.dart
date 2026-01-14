@@ -1,3 +1,5 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 /// Application configuration constants and settings
 class AppConfig {
   static const String appName = 'Receipt Scanner';
@@ -71,12 +73,13 @@ enum Environment {
 }
 
 class EnvironmentConfig {
-  static const Environment currentEnvironment = Environment.development;
-  
-  static bool get isDevelopment => currentEnvironment == Environment.development;
-  static bool get isStaging => currentEnvironment == Environment.staging;
-  static bool get isProduction => currentEnvironment == Environment.production;
-  
+  // Read from .env file
+  static String get currentEnvironment => dotenv.env['FLUTTER_ENV'] ?? 'development';
+
+  static bool get isDevelopment => currentEnvironment.toLowerCase() == 'development';
+  static bool get isStaging => currentEnvironment.toLowerCase() == 'staging';
+  static bool get isProduction => currentEnvironment.toLowerCase() == 'production';
+
   // Logging configuration
   static bool get enableLogging => !isProduction;
   static bool get enableVerboseLogging => isDevelopment;
