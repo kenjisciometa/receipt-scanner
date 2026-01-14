@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_config.dart';
+import 'config/app_config.dart' as new_config;
 import 'app/app.dart';
 
 /// Global logger instance
@@ -21,13 +24,22 @@ final logger = Logger(
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // Load environment variables
+  await dotenv.load(fileName: ".env");
+
+  // Initialize Supabase
+  await Supabase.initialize(
+    url: new_config.AppConfig.supabaseUrl,
+    anonKey: new_config.AppConfig.supabaseAnonKey,
+  );
+
   // Configure system UI
   await _configureSystemUI();
-  
+
   // Initialize logging
   _initializeLogging();
-  
+
   // Run the app with Riverpod
   runApp(
     const ProviderScope(

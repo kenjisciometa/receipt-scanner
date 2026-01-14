@@ -6,6 +6,7 @@ import '../core/config/app_config.dart';
 import '../core/constants/app_constants.dart';
 import '../presentation/screens/camera/camera_screen.dart';
 import '../presentation/screens/preview/preview_screen.dart';
+import '../screens/auth/auth_wrapper.dart';
 
 /// Main application widget
 class ReceiptScannerApp extends ConsumerWidget {
@@ -52,11 +53,11 @@ class ReceiptScannerApp extends ConsumerWidget {
     return GoRouter(
       initialLocation: '/',
       routes: [
-        // Camera/Home screen
+        // Auth wrapper (home screen with authentication)
         GoRoute(
           path: '/',
-          name: 'camera',
-          builder: (context, state) => const CameraScreen(),
+          name: 'home',
+          builder: (context, state) => const AuthWrapper(),
         ),
         
         // Preview screen
