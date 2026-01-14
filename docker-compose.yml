@@ -7,8 +7,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount actual models directory (symlinks don't work inside container)
-      - /home/authori/Keisuke/llama.cpp/models:/models:ro
+      - ./models:/models:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
