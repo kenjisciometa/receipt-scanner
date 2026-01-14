@@ -1,0 +1,29 @@
+services:
+  llama-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: receipt-llama-server
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount actual models directory (symlinks don't work inside container)
+      - /home/authori/Keisuke/llama.cpp/models:/models:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

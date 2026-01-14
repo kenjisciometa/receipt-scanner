@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +38,9 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
 
   // Step 1 extraction result (debug only)
   String? _step1Result;
+
+  // Simple test result (for web vs app comparison)
+  String? _simpleTestResult;
 
   // LLM Service
   late final LlamaCppService _llmService;
@@ -113,7 +117,17 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         throw Exception('LLM server not available. Please start llama-server and run: adb reverse tcp:8080 tcp:8080');
       }
 
-      // Process with LLM
+      // === SIMPLE TEST FIRST (for web vs app comparison) ===
+      logger.i('Running simple test prompt first...');
+      final imageBytes = await file.readAsBytes();
+      final base64Image = base64Encode(imageBytes);
+      final simpleTestResult = await _llmService.testSimplePrompt(base64Image);
+      setState(() {
+        _simpleTestResult = simpleTestResult;
+      });
+      logger.i('Simple test completed');
+
+      // Process with LLM (3-stage extraction)
       logger.i('Processing with LLM (Qwen2.5-VL)...');
       final result = await _llmService.extractFromFile(file);
 
@@ -252,7 +266,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         title: const Text('Receipt Preview'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+          onPressed: () => context.go('/'),
         ),
         actions: [
           if (_extractedReceipt != null && !_isEditing)
@@ -413,7 +427,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
               ),
               
               ElevatedButton(
-                onPressed: () => context.pop(),
+                onPressed: () => context.go('/'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.grey.shade700,
                 ),
@@ -694,6 +708,12 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
             _buildStep1ResultSection(),
           ],
 
+          // Debug: Simple Test Result (WEB比較用)
+          if (!_isEditing && _simpleTestResult != null) ...[
+            const SizedBox(height: AppConstants.defaultPadding),
+            _buildSimpleTestResultSection(),
+          ],
+
           const SizedBox(height: AppConstants.defaultPadding * 2),
         ],
       ),
@@ -883,6 +903,57 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
             style: TextStyle(
               fontSize: 11,
               color: Colors.blue.shade900,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build Simple Test result section (WEB比較用)
+  Widget _buildSimpleTestResultSection() {
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.defaultPadding),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
+        border: Border.all(color: Colors.green.shade400, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.science, size: 18, color: Colors.green.shade700),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Simple Test (WEB比較用)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Prompt: このレシートからTAXテーブルを読み取り合計金額と各税率いくらか調べてください',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.green.shade600,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const Divider(),
+          Text(
+            _simpleTestResult ?? '',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.green.shade900,
               height: 1.4,
             ),
           ),
@@ -1453,6 +1524,6 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         backgroundColor: Colors.green,
       ),
     );
-    context.pop();
+    context.go('/');
   }
 }

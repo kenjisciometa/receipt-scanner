@@ -3,7 +3,35 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
-import '../../main.dart';
+/// Helper function to print long strings without truncation
+void _printLong(String text, {int chunkSize = 800}) {
+  for (var i = 0; i < text.length; i += chunkSize) {
+    final end = (i + chunkSize < text.length) ? i + chunkSize : text.length;
+    print(text.substring(i, end));
+  }
+}
+
+/// Helper function to parse a value that might be num or String to double
+double? _parseDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) {
+    final parsed = double.tryParse(value);
+    return parsed;
+  }
+  return null;
+}
+
+/// Helper function to parse a value that might be num or String to int
+int? _parseInt(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toInt();
+  if (value is String) {
+    final parsed = int.tryParse(value);
+    return parsed;
+  }
+  return null;
+}
 
 /// LLM Extraction Result
 class LLMExtractionResult {
@@ -51,18 +79,18 @@ class LLMExtractionResult {
       items: (json['items'] as List? ?? [])
           .map((e) => ExtractedItem.fromJson(e))
           .toList(),
-      subtotal: (json['subtotal'] as num?)?.toDouble(),
+      subtotal: _parseDouble(json['subtotal']),
       taxBreakdown: (json['tax_breakdown'] as List? ?? [])
           .map((e) => TaxBreakdownItem.fromJson(e))
           .toList(),
-      taxTotal: (json['tax_total'] as num?)?.toDouble(),
-      total: (json['total'] as num?)?.toDouble(),
+      taxTotal: _parseDouble(json['tax_total']),
+      total: _parseDouble(json['total']),
       currency: json['currency'],
       paymentMethod: json['payment_method'],
       receiptNumber: json['receipt_number'],
       rawResponse: json['raw_response'] ?? '',
-      processingTimeMs: (json['processing_time_ms'] as num?)?.toInt() ?? 0,
-      confidence: (json['confidence'] as num?)?.toDouble() ?? 0.0,
+      processingTimeMs: _parseInt(json['processing_time_ms']) ?? 0,
+      confidence: _parseDouble(json['confidence']) ?? 0.0,
       reasoning: json['reasoning'],
       step1Result: json['step1_result'],
     );
@@ -104,9 +132,9 @@ class ExtractedItem {
   factory ExtractedItem.fromJson(Map<String, dynamic> json) {
     return ExtractedItem(
       name: json['name'] ?? '',
-      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
-      price: (json['price'] as num?)?.toDouble() ?? 0.0,
-      taxRate: (json['tax_rate'] as num?)?.toDouble(),
+      quantity: _parseInt(json['quantity']) ?? 1,
+      price: _parseDouble(json['price']) ?? 0.0,
+      taxRate: _parseDouble(json['tax_rate']),
     );
   }
 
@@ -132,14 +160,14 @@ class TaxBreakdownItem {
   });
 
   factory TaxBreakdownItem.fromJson(Map<String, dynamic> json) {
-    final taxableAmount = (json['taxable_amount'] as num?)?.toDouble() ?? 0.0;
-    final taxAmount = (json['tax_amount'] as num?)?.toDouble() ?? 0.0;
+    final taxableAmount = _parseDouble(json['taxable_amount']) ?? 0.0;
+    final taxAmount = _parseDouble(json['tax_amount']) ?? 0.0;
     // Use provided gross_amount or calculate it
-    final grossAmount = (json['gross_amount'] as num?)?.toDouble()
+    final grossAmount = _parseDouble(json['gross_amount'])
         ?? (taxableAmount + taxAmount);
 
     return TaxBreakdownItem(
-      rate: (json['rate'] as num?)?.toDouble() ?? 0.0,
+      rate: _parseDouble(json['rate']) ?? 0.0,
       taxableAmount: taxableAmount,
       taxAmount: taxAmount,
       grossAmount: grossAmount,
@@ -195,13 +223,18 @@ class LlamaCppService {
     return extractFromBase64(base64Image);
   }
 
-  /// Extract receipt data from base64 encoded image (2-step approach)
+  /// Extract receipt data from base64 encoded image (3-step approach)
   Future<LLMExtractionResult> extractFromBase64(String base64Image) async {
     final stopwatch = Stopwatch()..start();
 
     try {
-      // ===== STEP 1: Extract information naturally =====
-      final step1Response = await http
+      // ===== STAGE 1: Tax Table Extraction (focused task) =====
+      print('');
+      print('########################################');
+      print('######## STAGE 1: TAX TABLE ########');
+      print('########################################');
+
+      final stage1Response = await http
           .post(
             Uri.parse('$serverUrl/v1/chat/completions'),
             headers: {'Content-Type': 'application/json'},
@@ -215,7 +248,49 @@ class LlamaCppService {
                       'type': 'image_url',
                       'image_url': {'url': 'data:image/png;base64,$base64Image'}
                     },
-                    {'type': 'text', 'text': _step1ExtractionPrompt}
+                    {'type': 'text', 'text': _stage1TaxTablePrompt}
+                  ]
+                }
+              ],
+              'max_tokens': 1024,
+              'temperature': 0.1,
+            }),
+          )
+          .timeout(timeout);
+
+      if (stage1Response.statusCode != 200) {
+        throw Exception('LLM API error (stage 1): ${stage1Response.statusCode}');
+      }
+
+      final stage1Data = jsonDecode(stage1Response.body);
+      final taxTableText = stage1Data['choices'][0]['message']['content'] as String;
+
+      print('');
+      _printLong(taxTableText);
+      print('');
+      print('######## END STAGE 1 ########');
+      print('');
+
+      // ===== STAGE 2: Other Information Extraction =====
+      print('########################################');
+      print('######## STAGE 2: OTHER INFO ########');
+      print('########################################');
+
+      final stage2Response = await http
+          .post(
+            Uri.parse('$serverUrl/v1/chat/completions'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'model': 'qwen2.5-vl',
+              'messages': [
+                {
+                  'role': 'user',
+                  'content': [
+                    {
+                      'type': 'image_url',
+                      'image_url': {'url': 'data:image/png;base64,$base64Image'}
+                    },
+                    {'type': 'text', 'text': _stage2OtherInfoPrompt}
                   ]
                 }
               ],
@@ -225,20 +300,25 @@ class LlamaCppService {
           )
           .timeout(timeout);
 
-      if (step1Response.statusCode != 200) {
-        throw Exception('LLM API error (step 1): ${step1Response.statusCode}');
+      if (stage2Response.statusCode != 200) {
+        throw Exception('LLM API error (stage 2): ${stage2Response.statusCode}');
       }
 
-      final step1Data = jsonDecode(step1Response.body);
-      final extractedText = step1Data['choices'][0]['message']['content'] as String;
+      final stage2Data = jsonDecode(stage2Response.body);
+      final otherInfoText = stage2Data['choices'][0]['message']['content'] as String;
 
-      // Log Step 1 result for debugging
-      logger.i('===== STEP 1 EXTRACTION RESULT =====');
-      logger.i(extractedText);
-      logger.i('===== END STEP 1 =====');
+      print('');
+      _printLong(otherInfoText);
+      print('');
+      print('######## END STAGE 2 ########');
+      print('');
 
-      // ===== STEP 2: Convert to JSON =====
-      final step2Response = await http
+      // ===== STAGE 3: JSON Conversion (text only, no image) =====
+      print('########################################');
+      print('######## STAGE 3: JSON OUTPUT ########');
+      print('########################################');
+
+      final stage3Response = await http
           .post(
             Uri.parse('$serverUrl/v1/chat/completions'),
             headers: {'Content-Type': 'application/json'},
@@ -247,7 +327,14 @@ class LlamaCppService {
               'messages': [
                 {
                   'role': 'user',
-                  'content': '$_step2JsonPrompt\n\n---\nExtracted receipt information:\n$extractedText'
+                  'content': '''$_stage3JsonPrompt
+
+=== TAX TABLE DATA (from Stage 1) ===
+$taxTableText
+
+=== OTHER RECEIPT INFO (from Stage 2) ===
+$otherInfoText
+'''
                 }
               ],
               'max_tokens': 2048,
@@ -258,16 +345,38 @@ class LlamaCppService {
 
       stopwatch.stop();
 
-      if (step2Response.statusCode != 200) {
-        throw Exception('LLM API error (step 2): ${step2Response.statusCode}');
+      if (stage3Response.statusCode != 200) {
+        throw Exception('LLM API error (stage 3): ${stage3Response.statusCode}');
       }
 
-      final step2Data = jsonDecode(step2Response.body);
-      final jsonResponse = step2Data['choices'][0]['message']['content'] as String;
+      final stage3Data = jsonDecode(stage3Response.body);
+      final jsonResponse = stage3Data['choices'][0]['message']['content'] as String;
       final extracted = _parseResponse(jsonResponse);
 
-      // Combine both responses for debugging
-      final combinedRawResponse = '=== STEP 1 (抽出) ===\n$extractedText\n\n=== STEP 2 (JSON) ===\n$jsonResponse';
+      print('');
+      _printLong(jsonResponse);
+      print('');
+      print('######## END STAGE 3 ########');
+      print('');
+
+      // Log Amount Breakdown
+      print('========================================');
+      print('===== FINAL AMOUNT BREAKDOWN =====');
+      print('========================================');
+      final taxBreakdown = extracted['tax_breakdown'] as List? ?? [];
+      for (int i = 0; i < taxBreakdown.length; i++) {
+        final tax = taxBreakdown[i];
+        print('Tax Rate ${i + 1}: ${tax['rate']}%');
+        print('  - Tax Amount: ${tax['tax_amount']}');
+        print('  - Taxable Amount: ${tax['taxable_amount']}');
+        print('  - Gross Amount: ${tax['gross_amount']}');
+      }
+      print('Total: ${extracted['total']}');
+      print('========================================');
+      print('');
+
+      // Combine all responses for debugging
+      final combinedRawResponse = '=== STAGE 1 (税金テーブル) ===\n$taxTableText\n\n=== STAGE 2 (その他情報) ===\n$otherInfoText\n\n=== STAGE 3 (JSON) ===\n$jsonResponse';
 
       return LLMExtractionResult(
         merchantName: extracted['merchant_name'],
@@ -276,12 +385,17 @@ class LlamaCppService {
         items: (extracted['items'] as List? ?? [])
             .map((e) => ExtractedItem.fromJson(e as Map<String, dynamic>))
             .toList(),
-        subtotal: (extracted['subtotal'] as num?)?.toDouble(),
+        subtotal: _parseDouble(extracted['subtotal']),
         taxBreakdown: (extracted['tax_breakdown'] as List? ?? [])
+            .where((e) {
+              // Filter out non-numeric rates (e.g., "YHTEENSÄ", "TOTAL")
+              final rate = e['rate'];
+              return rate is num || (rate is String && double.tryParse(rate) != null);
+            })
             .map((e) => TaxBreakdownItem.fromJson(e as Map<String, dynamic>))
             .toList(),
-        taxTotal: (extracted['tax_total'] as num?)?.toDouble(),
-        total: (extracted['total'] as num?)?.toDouble(),
+        taxTotal: _parseDouble(extracted['tax_total']),
+        total: _parseDouble(extracted['total']),
         currency: extracted['currency'],
         paymentMethod: extracted['payment_method'],
         receiptNumber: extracted['receipt_number'],
@@ -289,7 +403,7 @@ class LlamaCppService {
         processingTimeMs: stopwatch.elapsedMilliseconds,
         confidence: _calculateConfidence(extracted),
         reasoning: extracted['reasoning'],
-        step1Result: extractedText,
+        step1Result: taxTableText,
       );
     } catch (e) {
       stopwatch.stop();
@@ -358,62 +472,128 @@ class LlamaCppService {
     return (score / maxScore * 100).round() / 100;
   }
 
-  /// Step 1: Natural language extraction (focus on accuracy)
-  static const String _step1ExtractionPrompt = '''
-Please extract the following information from this receipt image:
+  /// Simple test with exact same prompt as web UI for comparison
+  Future<String> testSimplePrompt(String base64Image) async {
+    const testPrompt = 'このレシートからTAXテーブルを読み取り合計金額と各税率いくらか調べてください';
 
-1. Store name
-2. Date and time
-3. Purchased items (name, quantity, price)
-4. Tax breakdown table (usually at the bottom of the receipt)
-   - Each tax rate (e.g., 14%, 25.5%)
-   - Tax amount for each rate
-   - Taxable amount (net/before tax) for each rate
-   - Gross amount (including tax) for each rate
-5. Total amount
-6. Payment method (card, cash, etc.)
-7. Receipt number
+    print('');
+    print('########################################');
+    print('######## SIMPLE TEST PROMPT ########');
+    print('########################################');
+    print('Prompt: $testPrompt');
+    print('########################################');
 
-CRITICAL: Tax breakdown accuracy
-- Read the tax breakdown table VERY carefully
-- For EACH tax rate, report the EXACT numbers you see for:
-  * Tax amount (the tax portion)
-  * Taxable amount (net amount before tax)
-  * Gross amount (total including tax for this rate)
-- Read column headers to identify which column is which
-- Double-check each number - accuracy is essential
+    final response = await http
+        .post(
+          Uri.parse('$serverUrl/v1/chat/completions'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'model': 'qwen2.5-vl',
+            'messages': [
+              {
+                'role': 'user',
+                'content': [
+                  {
+                    'type': 'image_url',
+                    'image_url': {'url': 'data:image/png;base64,$base64Image'}
+                  },
+                  {'type': 'text', 'text': testPrompt}
+                ]
+              }
+            ],
+            'max_tokens': 1024,
+            'temperature': 0.1,
+          }),
+        )
+        .timeout(timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception('LLM API error (test): ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body);
+    final result = data['choices'][0]['message']['content'] as String;
+
+    print('');
+    print('######## TEST RESULT ########');
+    _printLong(result);
+    print('');
+    print('######## END TEST ########');
+    print('');
+
+    return result;
+  }
+
+  /// Stage 1: Tax table extraction ONLY (simple prompt for better accuracy)
+  static const String _stage1TaxTablePrompt = '''
+Read the TAX table from this receipt and find out the total amount and how much each tax rate is.
+
+For each tax rate, report:
+- Tax rate (%)
+- Tax amount
+- Taxable amount (net, before tax)
+- Gross amount (total including tax)
+
+Also report the TOTAL amount of the receipt.
 ''';
 
-  /// Step 2: Convert to JSON format
-  static const String _step2JsonPrompt = '''
-Convert the extracted receipt information to JSON format.
+  /// Stage 2: Other receipt information (excluding tax table)
+  static const String _stage2OtherInfoPrompt = '''
+Extract the following information from this receipt (DO NOT extract tax table - that's done separately):
 
-CRITICAL: Use the EXACT values from the extracted text below. Do NOT re-interpret or recalculate.
-Copy the numbers exactly as they appear in the extraction.
+1. Store/Merchant name
+2. Date (format: YYYY-MM-DD)
+3. Time (format: HH:MM)
+4. Receipt number
+5. Payment method (card, cash, etc.)
+6. Currency (EUR, USD, etc.)
+7. List of purchased items with:
+   - Item name
+   - Quantity
+   - Unit price or total price
+
+Output format:
+STORE: [name]
+DATE: [YYYY-MM-DD]
+TIME: [HH:MM]
+RECEIPT#: [number]
+PAYMENT: [method]
+CURRENCY: [code]
+ITEMS:
+- [name], qty: [X], price: [XX.XX]
+- [name], qty: [X], price: [XX.XX]
+''';
+
+  /// Stage 3: JSON conversion (text only, combine Stage 1 & 2 results)
+  static const String _stage3JsonPrompt = '''
+Convert the extracted receipt data to JSON format.
+
+CRITICAL RULES:
+- Use ONLY the values provided below from Stage 1 and Stage 2
+- Do NOT recalculate or modify any numbers
+- Copy values EXACTLY as provided
 
 Output JSON format:
 {
-  "merchant_name": "Store name",
+  "merchant_name": "string",
   "date": "YYYY-MM-DD",
   "time": "HH:MM",
-  "items": [{"name": "Item name", "quantity": 1, "price": 0.00, "tax_rate": 14}],
-  "subtotal": 0.00,
+  "items": [{"name": "string", "quantity": 1, "price": 0.00, "tax_rate": null}],
+  "subtotal": null,
   "tax_breakdown": [
     {"rate": 14, "tax_amount": 0.00, "taxable_amount": 0.00, "gross_amount": 0.00}
   ],
   "tax_total": 0.00,
   "total": 0.00,
   "currency": "EUR",
-  "payment_method": "card/cash",
-  "receipt_number": "string or null",
-  "reasoning": "日本語で説明"
+  "payment_method": "string",
+  "receipt_number": "string or null"
 }
 
 Rules:
-- Return ONLY JSON (no markdown)
-- All amounts must be numbers, not strings
-- IMPORTANT: Copy values directly from the extracted text - do not recalculate or guess
-- For tax_breakdown: use the exact tax_amount, taxable_amount, and gross_amount from the extraction
-- The "reasoning" field MUST be in Japanese: briefly explain which values you used from the extraction
+- Return ONLY valid JSON (no markdown code blocks)
+- All amounts as numbers, not strings
+- "rate" must be a number
+- Use null for unknown values
 ''';
 }

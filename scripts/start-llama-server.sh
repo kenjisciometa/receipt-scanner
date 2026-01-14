@@ -37,18 +37,26 @@ case "$MODEL_CHOICE" in
         GPU_LAYERS=99
         CONTEXT_SIZE=16384  # Reduced for 14B model to fit in VRAM
         ;;
+    internvl38b|internvl38)
+        MODEL_NAME="InternVL3-38B"
+        MODEL_PATH="$LLAMA_CPP_DIR/models/InternVL3-38B-Q4_K_M.gguf"
+        MMPROJ_PATH="$LLAMA_CPP_DIR/models/mmproj-InternVL3-38B-F16.gguf"
+        GPU_LAYERS=99
+        CONTEXT_SIZE=8192  # Reduced for 38B model to fit in VRAM
+        ;;
     list)
         echo "Available models:"
         echo "  qwen      - Qwen2.5-VL-7B (current stable)"
         echo "  qwen3     - Qwen3-VL-8B (latest, recommended)"
         echo "  internvl  - InternVL3-14B-Instruct"
+        echo "  internvl38b - InternVL3-38B (large, 2GPU)"
         echo ""
         echo "Usage: ./start-llama-server.sh [model]"
         exit 0
         ;;
     *)
         echo "Unknown model: $MODEL_CHOICE"
-        echo "Available options: qwen, qwen3, internvl, list"
+        echo "Available options: qwen, qwen3, internvl, internvl38b, list"
         exit 1
         ;;
 esac
