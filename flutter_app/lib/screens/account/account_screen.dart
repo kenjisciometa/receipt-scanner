@@ -178,23 +178,37 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _ReceiptCard extends StatelessWidget {
+class _ReceiptCard extends ConsumerWidget {
   final Map<String, dynamic> receipt;
 
   const _ReceiptCard({required this.receipt});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final merchantName = receipt['merchant_name'] ?? 'Unknown';
     final total = receipt['total_amount'] as num?;
     final subtotal = receipt['subtotal_amount'] as num?;
     final tax = receipt['tax_amount'] as num?;
     final currency = receipt['currency'] ?? 'EUR';
+    final taxBreakdown = receipt['tax_breakdown'] as List<dynamic>?;
+    final purchaseDate = receipt['purchase_date'] != null
+        ? DateTime.tryParse(receipt['purchase_date'])
+        : null;
     final createdAt = receipt['created_at'] != null
         ? DateTime.parse(receipt['created_at'])
         : null;
 
     String currencySymbol = currency == 'EUR' ? '€' : currency;
+
+    String formatDate(DateTime? date) {
+      if (date == null) return 'Unknown date';
+      return '${date.day}.${date.month}.${date.year}';
+    }
+
+    String formatTime(DateTime? date) {
+      if (date == null) return '';
+      return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -203,10 +217,16 @@ class _ReceiptCard extends StatelessWidget {
           child: Icon(Icons.receipt),
         ),
         title: Text(merchantName),
-        subtitle: Text(
-          createdAt != null
-              ? '${createdAt.day}.${createdAt.month}.${createdAt.year}'
-              : 'Unknown date',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(formatDate(purchaseDate ?? createdAt)),
+            if (createdAt != null)
+              Text(
+                'Added: ${formatDate(createdAt)} ${formatTime(createdAt)}',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+          ],
         ),
         trailing: Text(
           '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}',
@@ -218,13 +238,62 @@ class _ReceiptCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _DetailRow(label: 'Subtotal', value: '$currencySymbol${subtotal?.toStringAsFixed(2) ?? '0.00'}'),
+                if (subtotal != null)
+                  _DetailRow(label: 'Subtotal', value: '$currencySymbol${subtotal.toStringAsFixed(2)}'),
                 _DetailRow(label: 'Tax', value: '$currencySymbol${tax?.toStringAsFixed(2) ?? '0.00'}'),
                 _DetailRow(
                   label: 'Total',
                   value: '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}',
                   isBold: true,
+                ),
+
+                // Tax breakdown
+                if (taxBreakdown != null && taxBreakdown.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const Text('Tax Breakdown:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  ...taxBreakdown.map((tax) {
+                    final rate = tax['rate'];
+                    final taxAmount = (tax['tax_amount'] as num?)?.toDouble();
+                    final grossAmount = (tax['gross_amount'] as num?)?.toDouble();
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('$rate%', style: const TextStyle(fontSize: 13)),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (grossAmount != null)
+                                Text('Gross: $currencySymbol${grossAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13)),
+                              Text(
+                                'Tax: $currencySymbol${taxAmount?.toStringAsFixed(2) ?? '0.00'}',
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+
+                // Delete button
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _confirmDelete(context, ref),
+                    icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                    label: const Text('Delete', style: TextStyle(color: Colors.red)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -232,6 +301,46 @@ class _ReceiptCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Receipt?'),
+        content: const Text('Are you sure you want to delete this receipt? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final repository = ref.read(receiptRepositoryProvider);
+        await repository.deleteReceipt(receipt['id']);
+        ref.invalidate(receiptsProvider);
+        ref.invalidate(statisticsProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Receipt deleted'), backgroundColor: Colors.orange),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    }
   }
 }
 
