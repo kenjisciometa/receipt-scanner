@@ -26,11 +26,9 @@ class ScannerService {
 
       print('[ScannerService] Response status: ${response.statusCode}');
 
-      // Log preview of response
-      final bodyPreview = response.body.length > 300
-          ? response.body.substring(0, 300)
-          : response.body;
-      print('[ScannerService] Response preview: $bodyPreview');
+      // Log full response
+      print('[ScannerService] Response body:');
+      print(response.body);
 
       if (response.statusCode == 401) {
         throw Exception('Authentication required. Please login again.');
