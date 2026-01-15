@@ -8,6 +8,7 @@ import '../presentation/screens/camera/camera_screen.dart';
 import '../presentation/screens/preview/preview_screen.dart';
 import '../screens/auth/auth_wrapper.dart';
 import '../screens/account/account_screen.dart';
+import '../screens/history/history_screen.dart';
 
 /// Main application widget
 class ReceiptScannerApp extends ConsumerWidget {
@@ -77,16 +78,13 @@ class ReceiptScannerApp extends ConsumerWidget {
           name: 'account',
           builder: (context, state) => const AccountScreen(),
         ),
-        // GoRoute(
-        //   path: '/edit',
-        //   name: 'edit',
-        //   builder: (context, state) => const EditScreen(),
-        // ),
-        // GoRoute(
-        //   path: '/history',
-        //   name: 'history',
-        //   builder: (context, state) => const HistoryScreen(),
-        // ),
+
+        // History screen
+        GoRoute(
+          path: '/history',
+          name: 'history',
+          builder: (context, state) => const HistoryScreen(),
+        ),
         // GoRoute(
         //   path: '/settings',
         //   name: 'settings',

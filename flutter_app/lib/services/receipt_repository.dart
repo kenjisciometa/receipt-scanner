@@ -108,6 +108,41 @@ class ReceiptRepository {
     };
   }
 
+  /// Update receipt
+  Future<Map<String, dynamic>?> updateReceipt({
+    required String id,
+    String? merchantName,
+    DateTime? purchaseDate,
+    double? subtotalAmount,
+    double? taxAmount,
+    double? totalAmount,
+    String? currency,
+    String? paymentMethod,
+    List<Map<String, dynamic>>? taxBreakdown,
+  }) async {
+    final data = <String, dynamic>{};
+
+    if (merchantName != null) data['merchant_name'] = merchantName;
+    if (purchaseDate != null) data['purchase_date'] = purchaseDate.toIso8601String();
+    if (subtotalAmount != null) data['subtotal_amount'] = subtotalAmount;
+    if (taxAmount != null) data['tax_amount'] = taxAmount;
+    if (totalAmount != null) data['total_amount'] = totalAmount;
+    if (currency != null) data['currency'] = currency;
+    if (paymentMethod != null) data['payment_method'] = paymentMethod;
+    if (taxBreakdown != null) data['tax_breakdown'] = taxBreakdown;
+
+    if (data.isEmpty) return null;
+
+    final response = await _client
+        .from('receipts')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+
+    return response;
+  }
+
   /// Delete receipt
   Future<void> deleteReceipt(String id) async {
     await _client.from('receipts').delete().eq('id', id);

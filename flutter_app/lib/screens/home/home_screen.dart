@@ -7,6 +7,7 @@ import 'dart:io';
 import '../../services/auth_service.dart';
 import '../../services/scanner_service.dart';
 import '../../services/receipt_repository.dart';
+import '../../services/image_storage_service.dart';
 import '../../config/app_config.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -22,6 +23,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isScanning = false;
   bool _isSaving = false;
   Map<String, dynamic>? _lastScanResult;
+  String? _lastImagePath;
 
   Future<void> _pickAndScanImage() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
@@ -41,6 +43,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() {
       _isScanning = true;
       _lastScanResult = null;
+      _lastImagePath = imageFile.path;
     });
 
     try {
@@ -82,11 +85,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _saveReceipt() async {
     if (_lastScanResult == null || _lastScanResult!['success'] != true) return;
 
+    // Check for validation errors
+    final taxBreakdown = _lastScanResult!['tax_breakdown'] as List?;
+    if (taxBreakdown != null && taxBreakdown.isNotEmpty) {
+      final total = (_lastScanResult!['total'] as num?)?.toDouble();
+      final taxTotal = (_lastScanResult!['tax_total'] as num?)?.toDouble();
+      final errors = _validateTaxBreakdown(taxBreakdown, total, taxTotal);
+
+      if (errors.isNotEmpty) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('Validation Warning'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Tax calculations do not match:'),
+                const SizedBox(height: 8),
+                ...errors.map((e) => Padding(
+                  padding: const EdgeInsets.only(left: 8, bottom: 4),
+                  child: Text('• $e', style: const TextStyle(fontSize: 13)),
+                )),
+                const SizedBox(height: 12),
+                const Text('Save anyway?'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('Save Anyway'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed != true) return;
+      }
+    }
+
     setState(() {
       _isSaving = true;
     });
 
     try {
+      // Upload image to Wasabi if configured
+      String? imageUrl;
+      if (_lastImagePath != null && ImageStorageService.isConfigured) {
+        imageUrl = await ImageStorageService.uploadReceiptImage(_lastImagePath!);
+      }
+
       // Parse date
       DateTime? purchaseDate;
       if (_lastScanResult!['date'] != null) {
@@ -104,6 +163,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         currency: _lastScanResult!['currency'],
         paymentMethod: _lastScanResult!['payment_method'],
         confidence: (_lastScanResult!['confidence'] as num?)?.toDouble(),
+        originalImageUrl: imageUrl,
         taxBreakdown: _lastScanResult!['tax_breakdown'] != null
             ? List<Map<String, dynamic>>.from(_lastScanResult!['tax_breakdown'])
             : null,
@@ -111,11 +171,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Receipt saved!'),
+        SnackBar(
+          content: Text(imageUrl != null ? 'Receipt saved with image!' : 'Receipt saved!'),
           backgroundColor: Colors.green,
         ),
       );
+
+      // Clear after save
+      setState(() {
+        _lastScanResult = null;
+        _lastImagePath = null;
+      });
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -160,6 +226,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: AppBar(
         title: Text(AppConfig.appName),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () => context.push('/history'),
+            tooltip: 'History',
+          ),
           IconButton(
             icon: const Icon(Icons.account_circle),
             onPressed: () => context.push('/account'),
@@ -263,41 +334,74 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    _lastScanResult!['merchant_name'] ?? 'Unknown Store',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                                  GestureDetector(
+                                    onTap: _editMerchantName,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: Colors.grey.shade300),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              _lastScanResult!['merchant_name'] ?? 'Unknown Store',
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Icon(Icons.edit, size: 16, color: Colors.grey.shade500),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${_lastScanResult!['date'] ?? ''} ${_lastScanResult!['time'] ?? ''}',
-                                    style: TextStyle(color: Colors.grey.shade700),
+                                  const SizedBox(height: 8),
+                                  GestureDetector(
+                                    onTap: _editDateTime,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: Colors.grey.shade300),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            '${_lastScanResult!['date'] ?? ''} ${_lastScanResult!['time'] ?? ''}',
+                                            style: TextStyle(color: Colors.grey.shade700),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Icon(Icons.edit, size: 14, color: Colors.grey.shade500),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                   if (_lastScanResult!['receipt_number'] != null)
-                                    Text(
-                                      'Receipt #${_lastScanResult!['receipt_number']}',
-                                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        'Receipt #${_lastScanResult!['receipt_number']}',
+                                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                      ),
                                     ),
                                 ],
                               ),
                             ),
                             const SizedBox(height: 16),
 
-                            // Items list
-                            if (_lastScanResult!['items'] != null && (_lastScanResult!['items'] as List).isNotEmpty) ...[
-                              const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              const Divider(),
-                              ..._buildItemsList(_lastScanResult!['items']),
-                              const Divider(),
-                            ],
-
                             // Tax breakdown
                             if (_lastScanResult!['tax_breakdown'] != null && (_lastScanResult!['tax_breakdown'] as List).isNotEmpty) ...[
                               const SizedBox(height: 8),
                               const Text('Tax Breakdown:', style: TextStyle(fontWeight: FontWeight.bold)),
-                              ...(_lastScanResult!['tax_breakdown'] as List).map((tax) {
+                              ...(_lastScanResult!['tax_breakdown'] as List).asMap().entries.map((entry) {
+                                final index = entry.key;
+                                final tax = entry.value;
                                 final currency = _lastScanResult!['currency'] ?? '€';
                                 final rate = tax['rate'];
                                 final taxAmount = (tax['tax_amount'] as num?)?.toDouble();
@@ -307,15 +411,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('$rate%'),
+                                      GestureDetector(
+                                        onTap: () => _editTaxBreakdownItem(index, 'rate', rate),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(color: Colors.grey.shade300),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text('$rate%'),
+                                              const SizedBox(width: 4),
+                                              Icon(Icons.edit, size: 12, color: Colors.grey.shade500),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
                                       Column(
                                         crossAxisAlignment: CrossAxisAlignment.end,
                                         children: [
                                           if (grossAmount != null)
-                                            Text('Gross: $currency ${grossAmount.toStringAsFixed(2)}'),
-                                          Text(
-                                            'Tax: $currency ${taxAmount?.toStringAsFixed(2) ?? '0.00'}',
-                                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                            GestureDetector(
+                                              onTap: () => _editTaxBreakdownItem(index, 'gross_amount', grossAmount),
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey.shade300),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Text('Gross: $currency ${grossAmount.toStringAsFixed(2)}'),
+                                                    const SizedBox(width: 4),
+                                                    Icon(Icons.edit, size: 12, color: Colors.grey.shade500),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          const SizedBox(height: 2),
+                                          GestureDetector(
+                                            onTap: () => _editTaxBreakdownItem(index, 'tax_amount', taxAmount),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                border: Border.all(color: Colors.grey.shade300),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    'Tax: $currency ${taxAmount?.toStringAsFixed(2) ?? '0.00'}',
+                                                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Icon(Icons.edit, size: 10, color: Colors.grey.shade500),
+                                                ],
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -324,6 +480,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 );
                               }),
                               const SizedBox(height: 8),
+                              // Tax validation
+                              Builder(
+                                builder: (context) {
+                                  final taxBreakdown = _lastScanResult!['tax_breakdown'] as List;
+                                  final total = (_lastScanResult!['total'] as num?)?.toDouble();
+                                  final taxTotal = (_lastScanResult!['tax_total'] as num?)?.toDouble();
+                                  final errors = _validateTaxBreakdown(taxBreakdown, total, taxTotal);
+                                  if (errors.isEmpty) return const SizedBox.shrink();
+                                  return Container(
+                                    padding: const EdgeInsets.all(8),
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.orange.shade200),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 16),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Tax calculation warnings:',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.orange.shade700,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        ...errors.map((e) => Padding(
+                                          padding: const EdgeInsets.only(left: 20),
+                                          child: Text(
+                                            '• $e',
+                                            style: TextStyle(color: Colors.orange.shade800, fontSize: 11),
+                                          ),
+                                        )),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                             ],
 
                             // Totals
@@ -336,11 +538,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               child: Column(
                                 children: [
                                   if (_lastScanResult!['subtotal'] != null)
-                                    _buildTotalRow('Subtotal', _lastScanResult!['subtotal'], _lastScanResult!['currency']),
+                                    _buildTotalRow('Subtotal', _lastScanResult!['subtotal'], _lastScanResult!['currency'], fieldKey: 'subtotal'),
                                   if (_lastScanResult!['tax_total'] != null)
-                                    _buildTotalRow('Tax Total', _lastScanResult!['tax_total'], _lastScanResult!['currency']),
+                                    _buildTotalRow('Tax Total', _lastScanResult!['tax_total'], _lastScanResult!['currency'], fieldKey: 'tax_total'),
                                   const Divider(),
-                                  _buildTotalRow('Total', _lastScanResult!['total'], _lastScanResult!['currency'], isBold: true),
+                                  _buildTotalRow('Total', _lastScanResult!['total'], _lastScanResult!['currency'], isBold: true, fieldKey: 'total'),
                                 ],
                               ),
                             ),
@@ -350,11 +552,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                if (_lastScanResult!['payment_method'] != null)
-                                  Chip(
-                                    label: Text(_lastScanResult!['payment_method']),
+                                GestureDetector(
+                                  onTap: _editPaymentMethod,
+                                  child: Chip(
+                                    label: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(_lastScanResult!['payment_method'] ?? 'Set payment'),
+                                        const SizedBox(width: 4),
+                                        Icon(Icons.edit, size: 14, color: Colors.grey.shade600),
+                                      ],
+                                    ),
                                     avatar: const Icon(Icons.payment, size: 16),
                                   ),
+                                ),
                                 Text(
                                   'Confidence: ${((_lastScanResult!['confidence'] ?? 0) * 100).toInt()}%',
                                   style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
@@ -378,7 +589,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         child: CircularProgressIndicator(strokeWidth: 2),
                                       )
                                     : const Icon(Icons.save),
-                                label: Text(_isSaving ? 'Saving...' : 'Save to Account'),
+                                label: Text(_isSaving ? 'Saving...' : 'Save'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.green,
                                   foregroundColor: Colors.white,
@@ -421,7 +632,291 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildTotalRow(String label, dynamic value, String? currency, {bool isBold = false}) {
+  Future<void> _editSingleValue(String fieldKey, String label, double? currentValue) async {
+    String textValue = currentValue?.toString() ?? '';
+
+    final result = await showDialog<double?>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('Edit $label'),
+          content: TextFormField(
+            initialValue: textValue,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: label,
+              border: const OutlineInputBorder(),
+              prefixText: '€ ',
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (value) => textValue = value,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(double.tryParse(textValue));
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _lastScanResult![fieldKey] = result;
+      });
+    }
+  }
+
+  Future<void> _editMerchantName() async {
+    String textValue = _lastScanResult!['merchant_name'] ?? '';
+
+    final result = await showDialog<String?>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Edit Merchant Name'),
+          content: TextFormField(
+            initialValue: textValue,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Merchant Name',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) => textValue = value,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(textValue),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      setState(() {
+        _lastScanResult!['merchant_name'] = result;
+      });
+    }
+  }
+
+  Future<void> _editDateTime() async {
+    String dateValue = _lastScanResult!['date'] ?? '';
+    String timeValue = _lastScanResult!['time'] ?? '';
+
+    final result = await showDialog<Map<String, String>?>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Edit Date & Time'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  initialValue: dateValue,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Date (YYYY-MM-DD)',
+                    border: OutlineInputBorder(),
+                    hintText: '2025-01-15',
+                  ),
+                  onChanged: (value) => dateValue = value,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  initialValue: timeValue,
+                  decoration: const InputDecoration(
+                    labelText: 'Time (HH:MM)',
+                    border: OutlineInputBorder(),
+                    hintText: '14:30',
+                  ),
+                  onChanged: (value) => timeValue = value,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop({
+                'date': dateValue,
+                'time': timeValue,
+              }),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _lastScanResult!['date'] = result['date'];
+        _lastScanResult!['time'] = result['time'];
+      });
+    }
+  }
+
+  Future<void> _editPaymentMethod() async {
+    String textValue = _lastScanResult!['payment_method'] ?? '';
+    final commonMethods = ['Card', 'Cash', 'Debit', 'Credit', 'Mobile'];
+
+    final result = await showDialog<String?>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Edit Payment Method'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  initialValue: textValue,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Payment Method',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) => textValue = value,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: commonMethods.map((method) => ActionChip(
+                    label: Text(method),
+                    onPressed: () => Navigator.of(dialogContext).pop(method),
+                  )).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(textValue),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      setState(() {
+        _lastScanResult!['payment_method'] = result;
+      });
+    }
+  }
+
+  Future<void> _editTaxBreakdownItem(int index, String field, dynamic currentValue) async {
+    String textValue = currentValue?.toString() ?? '';
+    final isPercent = field == 'rate';
+
+    final result = await showDialog<double?>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('Edit ${field == 'rate' ? 'Tax Rate' : field == 'gross_amount' ? 'Gross Amount' : 'Tax Amount'}'),
+          content: TextFormField(
+            initialValue: textValue,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: field == 'rate' ? 'Rate' : field == 'gross_amount' ? 'Gross' : 'Tax',
+              border: const OutlineInputBorder(),
+              prefixText: isPercent ? null : '€ ',
+              suffixText: isPercent ? '%' : null,
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (value) => textValue = value,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final value = double.tryParse(textValue);
+                Navigator.of(dialogContext).pop(value);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        final taxBreakdown = _lastScanResult!['tax_breakdown'] as List;
+        taxBreakdown[index][field] = result;
+      });
+    }
+  }
+
+  List<String> _validateTaxBreakdown(List<dynamic> taxBreakdown, double? total, double? taxTotal) {
+    final errors = <String>[];
+    double grossSum = 0;
+    double taxSum = 0;
+
+    for (final item in taxBreakdown) {
+      final rate = (item['rate'] as num?)?.toDouble() ?? 0;
+      final taxAmount = (item['tax_amount'] as num?)?.toDouble() ?? 0;
+      final grossAmount = (item['gross_amount'] as num?)?.toDouble() ?? 0;
+      grossSum += grossAmount;
+      taxSum += taxAmount;
+
+      // Validate individual item: tax = gross * rate / (100 + rate)
+      if (grossAmount > 0 && rate > 0) {
+        final expectedTax = grossAmount * rate / (100 + rate);
+        if ((taxAmount - expectedTax).abs() > 0.02) {
+          errors.add('${rate}%: tax ${taxAmount.toStringAsFixed(2)} != expected ${expectedTax.toStringAsFixed(2)}');
+        }
+      }
+    }
+
+    // Validate gross sum equals total
+    if (total != null && grossSum > 0) {
+      if ((grossSum - total).abs() > 0.02) {
+        errors.add('Gross sum ${grossSum.toStringAsFixed(2)} != Total ${total.toStringAsFixed(2)}');
+      }
+    }
+
+    // Validate tax sum equals tax total
+    if (taxTotal != null && taxSum > 0) {
+      if ((taxSum - taxTotal).abs() > 0.02) {
+        errors.add('Tax sum ${taxSum.toStringAsFixed(2)} != Tax ${taxTotal.toStringAsFixed(2)}');
+      }
+    }
+
+    return errors;
+  }
+
+  Widget _buildTotalRow(String label, dynamic value, String? currency, {bool isBold = false, String? fieldKey}) {
     final currencySymbol = currency ?? '€';
     final displayValue = value is num ? value.toStringAsFixed(2) : (value?.toString() ?? '0.00');
     return Padding(
@@ -436,11 +931,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               fontSize: isBold ? 16 : 14,
             ),
           ),
-          Text(
-            '$currencySymbol $displayValue',
-            style: TextStyle(
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              fontSize: isBold ? 16 : 14,
+          GestureDetector(
+            onTap: fieldKey != null
+                ? () => _editSingleValue(fieldKey, label, (value as num?)?.toDouble())
+                : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: fieldKey != null
+                  ? BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(4),
+                    )
+                  : null,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$currencySymbol $displayValue',
+                    style: TextStyle(
+                      fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+                      fontSize: isBold ? 16 : 14,
+                    ),
+                  ),
+                  if (fieldKey != null) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.edit, size: 14, color: Colors.grey.shade500),
+                  ],
+                ],
+              ),
             ),
           ),
         ],
@@ -448,39 +966,4 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  List<Widget> _buildItemsList(List<dynamic> items) {
-    return items.map((item) {
-      final quantity = item['quantity'] ?? 1;
-      final price = item['price'];
-      final priceStr = price is num ? price.toStringAsFixed(2) : (price?.toString() ?? '0.00');
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item['name'] ?? 'Unknown item',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                  if (quantity > 1)
-                    Text(
-                      'x$quantity',
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                    ),
-                ],
-              ),
-            ),
-            Text(
-              priceStr,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-      );
-    }).toList();
-  }
 }

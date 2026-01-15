@@ -17,6 +17,13 @@ class AppConfig {
   static String get accountAppSupabaseUrl => dotenv.env['ACCOUNTAPP_SUPABASE_URL'] ?? '';
   static String get accountAppSupabaseAnonKey => dotenv.env['ACCOUNTAPP_SUPABASE_ANON_KEY'] ?? '';
 
+  // Wasabi S3 Storage
+  static String get wasabiAccessKey => dotenv.env['WASABI_ACCESS_KEY'] ?? '';
+  static String get wasabiSecretKey => dotenv.env['WASABI_SECRET_KEY'] ?? '';
+  static String get wasabiBucket => dotenv.env['WASABI_BUCKET'] ?? 'receipt-images';
+  static String get wasabiRegion => dotenv.env['WASABI_REGION'] ?? 'eu-central-1';
+  static String get wasabiEndpoint => dotenv.env['WASABI_ENDPOINT'] ?? 'https://s3.eu-central-1.wasabisys.com';
+
   // App info
   static String get appName => 'Receipt Scanner';
 
