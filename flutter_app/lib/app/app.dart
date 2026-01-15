@@ -7,6 +7,7 @@ import '../core/constants/app_constants.dart';
 import '../presentation/screens/camera/camera_screen.dart';
 import '../presentation/screens/preview/preview_screen.dart';
 import '../screens/auth/auth_wrapper.dart';
+import '../screens/account/account_screen.dart';
 
 /// Main application widget
 class ReceiptScannerApp extends ConsumerWidget {
@@ -68,6 +69,13 @@ class ReceiptScannerApp extends ConsumerWidget {
             final imagePath = state.extra as String;
             return PreviewScreen(imagePath: imagePath);
           },
+        ),
+
+        // Account screen
+        GoRoute(
+          path: '/account',
+          name: 'account',
+          builder: (context, state) => const AccountScreen(),
         ),
         // GoRoute(
         //   path: '/edit',

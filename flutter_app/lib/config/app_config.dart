@@ -9,9 +9,13 @@ class AppConfig {
   // POS API
   static String get apiBaseUrl => dotenv.env['API_BASE_URL'] ?? 'https://pos.sciometa.com';
 
-  // Supabase
+  // Supabase - Auth (sciometa-pos)
   static String get supabaseUrl => dotenv.env['SUPABASE_URL'] ?? '';
   static String get supabaseAnonKey => dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+
+  // Supabase - AccountApp (receipts storage)
+  static String get accountAppSupabaseUrl => dotenv.env['ACCOUNTAPP_SUPABASE_URL'] ?? '';
+  static String get accountAppSupabaseAnonKey => dotenv.env['ACCOUNTAPP_SUPABASE_ANON_KEY'] ?? '';
 
   // App info
   static String get appName => 'Receipt Scanner';

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'dart:io';
 import '../../services/auth_service.dart';
 import '../../services/scanner_service.dart';
+import '../../services/receipt_repository.dart';
 import '../../config/app_config.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -16,7 +18,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ImagePicker _picker = ImagePicker();
+  final ReceiptRepository _receiptRepository = ReceiptRepository();
   bool _isScanning = false;
+  bool _isSaving = false;
   Map<String, dynamic>? _lastScanResult;
 
   Future<void> _pickAndScanImage() async {
@@ -75,6 +79,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  Future<void> _saveReceipt() async {
+    if (_lastScanResult == null || _lastScanResult!['success'] != true) return;
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Parse date
+      DateTime? purchaseDate;
+      if (_lastScanResult!['date'] != null) {
+        try {
+          purchaseDate = DateTime.tryParse(_lastScanResult!['date']);
+        } catch (_) {}
+      }
+
+      await _receiptRepository.saveReceipt(
+        merchantName: _lastScanResult!['merchant_name'],
+        purchaseDate: purchaseDate,
+        subtotalAmount: (_lastScanResult!['subtotal'] as num?)?.toDouble(),
+        taxAmount: (_lastScanResult!['tax_total'] as num?)?.toDouble(),
+        totalAmount: (_lastScanResult!['total'] as num?)?.toDouble(),
+        currency: _lastScanResult!['currency'],
+        paymentMethod: _lastScanResult!['payment_method'],
+        confidence: (_lastScanResult!['confidence'] as num?)?.toDouble(),
+        taxBreakdown: _lastScanResult!['tax_breakdown'] != null
+            ? List<Map<String, dynamic>>.from(_lastScanResult!['tax_breakdown'])
+            : null,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Receipt saved!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Save error: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isSaving = false;
+      });
+    }
+  }
+
   Future<void> _logout() async {
     try {
       await AuthService.signOut();
@@ -104,6 +160,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: AppBar(
         title: Text(AppConfig.appName),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.account_circle),
+            onPressed: () => context.push('/account'),
+            tooltip: 'Account',
+          ),
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'logout') {
@@ -236,16 +297,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             if (_lastScanResult!['tax_breakdown'] != null && (_lastScanResult!['tax_breakdown'] as List).isNotEmpty) ...[
                               const SizedBox(height: 8),
                               const Text('Tax Breakdown:', style: TextStyle(fontWeight: FontWeight.bold)),
-                              ...(_lastScanResult!['tax_breakdown'] as List).map((tax) => Padding(
-                                padding: const EdgeInsets.only(left: 16, top: 4),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('${tax['rate']}%'),
-                                    Text('${_lastScanResult!['currency'] ?? '€'} ${tax['tax_amount']?.toStringAsFixed(2) ?? '0.00'}'),
-                                  ],
-                                ),
-                              )),
+                              ...(_lastScanResult!['tax_breakdown'] as List).map((tax) {
+                                final currency = _lastScanResult!['currency'] ?? '€';
+                                final rate = tax['rate'];
+                                final taxAmount = (tax['tax_amount'] as num?)?.toDouble();
+                                final grossAmount = (tax['gross_amount'] as num?)?.toDouble();
+                                return Padding(
+                                  padding: const EdgeInsets.only(left: 16, top: 4),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('$rate%'),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          if (grossAmount != null)
+                                            Text('Gross: $currency ${grossAmount.toStringAsFixed(2)}'),
+                                          Text(
+                                            'Tax: $currency ${taxAmount?.toStringAsFixed(2) ?? '0.00'}',
+                                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
                               const SizedBox(height: 8),
                             ],
 
@@ -287,6 +364,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             Text(
                               'Processing: ${_lastScanResult!['processing_time_ms']}ms',
                               style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                            ),
+                            const SizedBox(height: 16),
+                            // Save button
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _isSaving ? null : _saveReceipt,
+                                icon: _isSaving
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : const Icon(Icons.save),
+                                label: Text(_isSaving ? 'Saving...' : 'Save to Account'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
                             ),
                           ] else ...[
                             Text(
