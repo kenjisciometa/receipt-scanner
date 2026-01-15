@@ -1,8 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../services/receipt_repository.dart';
 import '../../services/auth_service.dart';
+import '../../services/image_storage_service.dart';
 
 final receiptRepositoryProvider = Provider((ref) => ReceiptRepository());
 
@@ -282,18 +287,33 @@ class _ReceiptCard extends ConsumerWidget {
                   }),
                 ],
 
-                // Delete button
+                // Action buttons
                 const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _confirmDelete(context, ref),
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                    label: const Text('Delete', style: TextStyle(color: Colors.red)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.red),
+                Row(
+                  children: [
+                    // View image button (only if image exists)
+                    if (receipt['original_image_url'] != null) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showImageDialog(context, receipt['original_image_url']),
+                          icon: const Icon(Icons.image, size: 18),
+                          label: const Text('View Image'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    // Delete button
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _confirmDelete(context, ref),
+                        icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                        label: const Text('Delete', style: TextStyle(color: Colors.red)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.red),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
@@ -301,6 +321,112 @@ class _ReceiptCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  void _showImageDialog(BuildContext context, String imageUrl) {
+    // Generate presigned URL for secure access
+    final presignedUrl = ImageStorageService.getPresignedUrl(imageUrl);
+    final urlToLoad = presignedUrl ?? imageUrl;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              title: const Text('Receipt Image'),
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              ),
+              automaticallyImplyLeading: false,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.save_alt),
+                  tooltip: 'Save to device',
+                  onPressed: () => _saveImageToDevice(context, urlToLoad),
+                ),
+              ],
+            ),
+            Flexible(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.network(
+                  urlToLoad,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.error, size: 48, color: Colors.red),
+                          const SizedBox(height: 8),
+                          Text('Failed to load image:\n$error', textAlign: TextAlign.center),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveImageToDevice(BuildContext context, String imageUrl) async {
+    try {
+      // Show loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Downloading image...'), duration: Duration(seconds: 1)),
+      );
+
+      // Download image
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download image');
+      }
+
+      // Get downloads directory
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final filePath = '${directory.path}/receipt_$timestamp.jpg';
+
+      // Save file
+      final file = File(filePath);
+      await file.writeAsBytes(response.bodyBytes);
+
+      if (!context.mounted) return;
+
+      // Share the file (allows saving to gallery or sharing)
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        text: 'Receipt image',
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {

@@ -7,6 +7,7 @@ import 'dart:io';
 import '../../services/auth_service.dart';
 import '../../services/scanner_service.dart';
 import '../../services/receipt_repository.dart';
+import '../../services/image_storage_service.dart';
 import '../../config/app_config.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -22,6 +23,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isScanning = false;
   bool _isSaving = false;
   Map<String, dynamic>? _lastScanResult;
+  String? _lastImagePath;
 
   Future<void> _pickAndScanImage() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
@@ -41,6 +43,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() {
       _isScanning = true;
       _lastScanResult = null;
+      _lastImagePath = imageFile.path;
     });
 
     try {
@@ -87,6 +90,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     try {
+      // Upload image to Wasabi if configured
+      String? imageUrl;
+      if (_lastImagePath != null && ImageStorageService.isConfigured) {
+        imageUrl = await ImageStorageService.uploadReceiptImage(_lastImagePath!);
+      }
+
       // Parse date
       DateTime? purchaseDate;
       if (_lastScanResult!['date'] != null) {
@@ -104,6 +113,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         currency: _lastScanResult!['currency'],
         paymentMethod: _lastScanResult!['payment_method'],
         confidence: (_lastScanResult!['confidence'] as num?)?.toDouble(),
+        originalImageUrl: imageUrl,
         taxBreakdown: _lastScanResult!['tax_breakdown'] != null
             ? List<Map<String, dynamic>>.from(_lastScanResult!['tax_breakdown'])
             : null,
@@ -111,11 +121,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Receipt saved!'),
+        SnackBar(
+          content: Text(imageUrl != null ? 'Receipt saved with image!' : 'Receipt saved!'),
           backgroundColor: Colors.green,
         ),
       );
+
+      // Clear after save
+      setState(() {
+        _lastScanResult = null;
+        _lastImagePath = null;
+      });
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
