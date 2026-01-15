@@ -27,6 +27,9 @@ class HistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  String _selectedFilter = 'All';
+  DateTimeRange? _customDateRange;
+
   @override
   void initState() {
     super.initState();
@@ -101,7 +104,66 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 'Receipt History',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
+              const SizedBox(height: 8),
+
+              // Filter chips
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ...['All', 'Today', 'Yesterday', 'Last 7 days', 'This month'].map((filter) {
+                      final isSelected = _selectedFilter == filter;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(filter),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedFilter = filter;
+                              _customDateRange = null;
+                            });
+                          },
+                          selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+                          checkmarkColor: Theme.of(context).primaryColor,
+                        ),
+                      );
+                    }),
+                    // Custom date range chip
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: Text(_customDateRange != null
+                            ? '${_customDateRange!.start.day}.${_customDateRange!.start.month} - ${_customDateRange!.end.day}.${_customDateRange!.end.month}'
+                            : 'Custom'),
+                        selected: _selectedFilter == 'Custom',
+                        onSelected: (selected) async {
+                          final range = await showDateRangePicker(
+                            context: context,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                            initialDateRange: _customDateRange,
+                            helpText: 'Select date range',
+                            cancelText: 'Cancel',
+                            confirmText: 'OK',
+                            saveText: 'OK',
+                          );
+                          if (range != null) {
+                            setState(() {
+                              _selectedFilter = 'Custom';
+                              _customDateRange = range;
+                            });
+                          }
+                        },
+                        selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+                        checkmarkColor: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 12),
+
               receiptsAsync.when(
                 data: (receipts) {
                   if (receipts.isEmpty) {
@@ -114,14 +176,20 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       ),
                     );
                   }
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: receipts.length,
-                    itemBuilder: (context, index) {
-                      final receipt = receipts[index];
-                      return _ReceiptCard(receipt: receipt);
-                    },
+                  // Filter receipts by added date
+                  final filtered = _filterReceiptsByAddedDate(receipts, _selectedFilter);
+                  if (filtered.isEmpty) {
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Center(
+                          child: Text('No receipts added $_selectedFilter'.toLowerCase()),
+                        ),
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: filtered.map((receipt) => _ReceiptCard(receipt: receipt)).toList(),
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -132,6 +200,46 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         ),
       ),
     );
+  }
+
+  List<Map<String, dynamic>> _filterReceiptsByAddedDate(List<Map<String, dynamic>> receipts, String filter) {
+    if (filter == 'All') return receipts;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final last7Days = today.subtract(const Duration(days: 7));
+    final thisMonthStart = DateTime(now.year, now.month, 1);
+
+    return receipts.where((receipt) {
+      // Use created_at (added date)
+      final createdAt = receipt['created_at'] != null
+          ? DateTime.tryParse(receipt['created_at'])
+          : null;
+
+      if (createdAt == null) return false;
+
+      final addedDay = DateTime(createdAt.year, createdAt.month, createdAt.day);
+
+      switch (filter) {
+        case 'Today':
+          return addedDay == today;
+        case 'Yesterday':
+          return addedDay == yesterday;
+        case 'Last 7 days':
+          return addedDay.isAfter(last7Days) || addedDay == last7Days;
+        case 'This month':
+          return addedDay.isAfter(thisMonthStart) || addedDay == thisMonthStart;
+        case 'Custom':
+          if (_customDateRange == null) return true;
+          final rangeStart = DateTime(_customDateRange!.start.year, _customDateRange!.start.month, _customDateRange!.start.day);
+          final rangeEnd = DateTime(_customDateRange!.end.year, _customDateRange!.end.month, _customDateRange!.end.day);
+          return (addedDay.isAfter(rangeStart) || addedDay == rangeStart) &&
+                 (addedDay.isBefore(rangeEnd) || addedDay == rangeEnd);
+        default:
+          return true;
+      }
+    }).toList();
   }
 }
 
