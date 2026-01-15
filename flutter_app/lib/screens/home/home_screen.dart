@@ -297,16 +297,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             if (_lastScanResult!['tax_breakdown'] != null && (_lastScanResult!['tax_breakdown'] as List).isNotEmpty) ...[
                               const SizedBox(height: 8),
                               const Text('Tax Breakdown:', style: TextStyle(fontWeight: FontWeight.bold)),
-                              ...(_lastScanResult!['tax_breakdown'] as List).map((tax) => Padding(
-                                padding: const EdgeInsets.only(left: 16, top: 4),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('${tax['rate']}%'),
-                                    Text('${_lastScanResult!['currency'] ?? '€'} ${tax['tax_amount']?.toStringAsFixed(2) ?? '0.00'}'),
-                                  ],
-                                ),
-                              )),
+                              ...(_lastScanResult!['tax_breakdown'] as List).map((tax) {
+                                final currency = _lastScanResult!['currency'] ?? '€';
+                                final rate = tax['rate'];
+                                final taxAmount = (tax['tax_amount'] as num?)?.toDouble();
+                                final grossAmount = (tax['gross_amount'] as num?)?.toDouble();
+                                return Padding(
+                                  padding: const EdgeInsets.only(left: 16, top: 4),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('$rate%'),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          if (grossAmount != null)
+                                            Text('Gross: $currency ${grossAmount.toStringAsFixed(2)}'),
+                                          Text(
+                                            'Tax: $currency ${taxAmount?.toStringAsFixed(2) ?? '0.00'}',
+                                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
                               const SizedBox(height: 8),
                             ],
 
