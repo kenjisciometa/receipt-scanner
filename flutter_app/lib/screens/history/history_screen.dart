@@ -19,11 +19,26 @@ final statisticsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   return repository.getStatistics();
 });
 
-class HistoryScreen extends ConsumerWidget {
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Refresh data when screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(receiptsProvider);
+      ref.invalidate(statisticsProvider);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final receiptsAsync = ref.watch(receiptsProvider);
     final statsAsync = ref.watch(statisticsProvider);
 

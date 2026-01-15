@@ -85,6 +85,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _saveReceipt() async {
     if (_lastScanResult == null || _lastScanResult!['success'] != true) return;
 
+    // Check for validation errors
+    final taxBreakdown = _lastScanResult!['tax_breakdown'] as List?;
+    if (taxBreakdown != null && taxBreakdown.isNotEmpty) {
+      final total = (_lastScanResult!['total'] as num?)?.toDouble();
+      final taxTotal = (_lastScanResult!['tax_total'] as num?)?.toDouble();
+      final errors = _validateTaxBreakdown(taxBreakdown, total, taxTotal);
+
+      if (errors.isNotEmpty) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('Validation Warning'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Tax calculations do not match:'),
+                const SizedBox(height: 8),
+                ...errors.map((e) => Padding(
+                  padding: const EdgeInsets.only(left: 8, bottom: 4),
+                  child: Text('• $e', style: const TextStyle(fontSize: 13)),
+                )),
+                const SizedBox(height: 12),
+                const Text('Save anyway?'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('Save Anyway'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed != true) return;
+      }
+    }
+
     setState(() {
       _isSaving = true;
     });
