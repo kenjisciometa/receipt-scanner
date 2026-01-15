@@ -315,16 +315,32 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                     const Divider(),
                     const Text('Tax Breakdown:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 4),
-                    ...taxBreakdown.map((tax) {
-                      final rate = tax['rate'];
-                      final taxAmount = (tax['tax_amount'] as num?)?.toDouble();
-                      final grossAmount = (tax['gross_amount'] as num?)?.toDouble();
+                    ...taxBreakdown.map((taxItem) {
+                      final rate = (taxItem['rate'] as num?)?.toDouble() ?? 0;
+                      final taxAmount = (taxItem['tax_amount'] as num?)?.toDouble();
+                      final grossAmount = (taxItem['gross_amount'] as num?)?.toDouble();
+
+                      // Validate: tax_amount should equal gross_amount * rate / (100 + rate)
+                      bool isItemValid = true;
+                      if (grossAmount != null && taxAmount != null && rate > 0) {
+                        final expectedTax = grossAmount * rate / (100 + rate);
+                        isItemValid = (taxAmount - expectedTax).abs() < 0.02; // 2 cent tolerance
+                      }
+
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('$rate%', style: const TextStyle(fontSize: 13)),
+                            Row(
+                              children: [
+                                Text('$rate%', style: const TextStyle(fontSize: 13)),
+                                if (!isItemValid) ...[
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.warning, size: 14, color: Colors.orange),
+                                ],
+                              ],
+                            ),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
@@ -340,6 +356,36 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                         ),
                       );
                     }),
+                    // Validation summary
+                    Builder(
+                      builder: (context) {
+                        final validation = _validateTaxBreakdown(taxBreakdown, total?.toDouble(), tax?.toDouble());
+                        if (validation.isNotEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.orange.shade200),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: validation.map((msg) => Row(
+                                  children: [
+                                    const Icon(Icons.warning, size: 14, color: Colors.orange),
+                                    const SizedBox(width: 4),
+                                    Expanded(child: Text(msg, style: const TextStyle(fontSize: 12, color: Colors.orange))),
+                                  ],
+                                )).toList(),
+                              ),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
                   ],
                 ],
 
@@ -391,6 +437,48 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
         ],
       ),
     );
+  }
+
+  /// Validate tax breakdown against totals
+  /// Returns list of validation error messages (empty if valid)
+  List<String> _validateTaxBreakdown(List<dynamic> taxBreakdown, double? total, double? taxTotal) {
+    final errors = <String>[];
+
+    double grossSum = 0;
+    double taxSum = 0;
+
+    for (final item in taxBreakdown) {
+      final rate = (item['rate'] as num?)?.toDouble() ?? 0;
+      final taxAmount = (item['tax_amount'] as num?)?.toDouble() ?? 0;
+      final grossAmount = (item['gross_amount'] as num?)?.toDouble() ?? 0;
+
+      grossSum += grossAmount;
+      taxSum += taxAmount;
+
+      // Validate individual item: tax = gross * rate / (100 + rate)
+      if (grossAmount > 0 && rate > 0) {
+        final expectedTax = grossAmount * rate / (100 + rate);
+        if ((taxAmount - expectedTax).abs() > 0.02) {
+          errors.add('${rate}%: tax ${taxAmount.toStringAsFixed(2)} != expected ${expectedTax.toStringAsFixed(2)}');
+        }
+      }
+    }
+
+    // Validate gross sum equals total
+    if (total != null && grossSum > 0) {
+      if ((grossSum - total).abs() > 0.02) {
+        errors.add('Gross sum ${grossSum.toStringAsFixed(2)} != Total ${total.toStringAsFixed(2)}');
+      }
+    }
+
+    // Validate tax sum equals tax total
+    if (taxTotal != null && taxSum > 0) {
+      if ((taxSum - taxTotal).abs() > 0.02) {
+        errors.add('Tax sum ${taxSum.toStringAsFixed(2)} != Tax ${taxTotal.toStringAsFixed(2)}');
+      }
+    }
+
+    return errors;
   }
 
   Future<void> _editMerchantName(BuildContext context, WidgetRef ref, String currentValue) async {
