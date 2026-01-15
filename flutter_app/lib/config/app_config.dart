@@ -9,14 +9,6 @@ class AppConfig {
   // POS API
   static String get apiBaseUrl => dotenv.env['API_BASE_URL'] ?? 'https://pos.sciometa.com';
 
-  // LLM Server URL (environment-based)
-  static String get llmServerUrl {
-    if (isProduction) {
-      return dotenv.env['LLM_PROD_SERVER_URL'] ?? 'http://localhost:8080';
-    }
-    return dotenv.env['LLM_DEV_SERVER_URL'] ?? 'http://localhost:8080';
-  }
-
   // Supabase
   static String get supabaseUrl => dotenv.env['SUPABASE_URL'] ?? '';
   static String get supabaseAnonKey => dotenv.env['SUPABASE_ANON_KEY'] ?? '';
@@ -26,5 +18,4 @@ class AppConfig {
 
   // Scanner API endpoints
   static String get scannerExtractUrl => '$apiBaseUrl/api/scanner/extract';
-  static String get scannerStatusUrl => '$apiBaseUrl/api/scanner/extract';
 }

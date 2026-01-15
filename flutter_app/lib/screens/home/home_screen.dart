@@ -78,6 +78,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _logout() async {
     try {
       await AuthService.signOut();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Logged out successfully'),
@@ -85,6 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       );
     } catch (error) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Logout error: $error'),
@@ -190,17 +192,102 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (_lastScanResult!['success'] == true) ...[
-                            _buildResultField('Merchant', _lastScanResult!['data']?['merchant_name']),
-                            _buildResultField('Date', _lastScanResult!['data']?['date']),
-                            _buildResultField('Total', _lastScanResult!['data']?['total']),
-                            _buildResultField('Currency', _lastScanResult!['data']?['currency']),
-                            if (_lastScanResult!['data']?['items'] != null) ...[
-                              const SizedBox(height: 16),
-                              const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold)),
-                              ..._buildItemsList(_lastScanResult!['data']['items']),
-                            ],
+                            // Header with merchant info
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _lastScanResult!['merchant_name'] ?? 'Unknown Store',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${_lastScanResult!['date'] ?? ''} ${_lastScanResult!['time'] ?? ''}',
+                                    style: TextStyle(color: Colors.grey.shade700),
+                                  ),
+                                  if (_lastScanResult!['receipt_number'] != null)
+                                    Text(
+                                      'Receipt #${_lastScanResult!['receipt_number']}',
+                                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                    ),
+                                ],
+                              ),
+                            ),
                             const SizedBox(height: 16),
-                            Text('Processing time: ${_lastScanResult!['processing_time_ms']}ms'),
+
+                            // Items list
+                            if (_lastScanResult!['items'] != null && (_lastScanResult!['items'] as List).isNotEmpty) ...[
+                              const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              const Divider(),
+                              ..._buildItemsList(_lastScanResult!['items']),
+                              const Divider(),
+                            ],
+
+                            // Tax breakdown
+                            if (_lastScanResult!['tax_breakdown'] != null && (_lastScanResult!['tax_breakdown'] as List).isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              const Text('Tax Breakdown:', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ...(_lastScanResult!['tax_breakdown'] as List).map((tax) => Padding(
+                                padding: const EdgeInsets.only(left: 16, top: 4),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('${tax['rate']}%'),
+                                    Text('${_lastScanResult!['currency'] ?? '€'} ${tax['tax_amount']?.toStringAsFixed(2) ?? '0.00'}'),
+                                  ],
+                                ),
+                              )),
+                              const SizedBox(height: 8),
+                            ],
+
+                            // Totals
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                children: [
+                                  if (_lastScanResult!['subtotal'] != null)
+                                    _buildTotalRow('Subtotal', _lastScanResult!['subtotal'], _lastScanResult!['currency']),
+                                  if (_lastScanResult!['tax_total'] != null)
+                                    _buildTotalRow('Tax Total', _lastScanResult!['tax_total'], _lastScanResult!['currency']),
+                                  const Divider(),
+                                  _buildTotalRow('Total', _lastScanResult!['total'], _lastScanResult!['currency'], isBold: true),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+                            // Footer info
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                if (_lastScanResult!['payment_method'] != null)
+                                  Chip(
+                                    label: Text(_lastScanResult!['payment_method']),
+                                    avatar: const Icon(Icons.payment, size: 16),
+                                  ),
+                                Text(
+                                  'Confidence: ${((_lastScanResult!['confidence'] ?? 0) * 100).toInt()}%',
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              'Processing: ${_lastScanResult!['processing_time_ms']}ms',
+                              style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                            ),
                           ] else ...[
                             Text(
                               'Error: ${_lastScanResult!['error']}',
@@ -237,21 +324,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildResultField(String label, dynamic value) {
+  Widget _buildTotalRow(String label, dynamic value, String? currency, {bool isBold = false}) {
+    final currencySymbol = currency ?? '€';
+    final displayValue = value is num ? value.toStringAsFixed(2) : (value?.toString() ?? '0.00');
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              fontSize: isBold ? 16 : 14,
             ),
           ),
-          Expanded(
-            child: Text(value?.toString() ?? 'None'),
+          Text(
+            '$currencySymbol $displayValue',
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              fontSize: isBold ? 16 : 14,
+            ),
           ),
         ],
       ),
@@ -260,10 +353,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   List<Widget> _buildItemsList(List<dynamic> items) {
     return items.map((item) {
+      final quantity = item['quantity'] ?? 1;
+      final price = item['price'];
+      final priceStr = price is num ? price.toStringAsFixed(2) : (price?.toString() ?? '0.00');
       return Padding(
-        padding: const EdgeInsets.only(left: 16.0, bottom: 4.0),
-        child: Text(
-          '• ${item['name']} x${item['quantity']} - ${item['price']}',
+        padding: const EdgeInsets.symmetric(vertical: 4.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item['name'] ?? 'Unknown item',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  if (quantity > 1)
+                    Text(
+                      'x$quantity',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    ),
+                ],
+              ),
+            ),
+            Text(
+              priceStr,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
       );
     }).toList();

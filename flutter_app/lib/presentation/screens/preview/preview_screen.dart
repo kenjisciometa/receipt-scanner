@@ -1,14 +1,13 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../config/app_config.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../data/models/receipt.dart';
 import '../../../data/models/receipt_item.dart';
 import '../../../data/models/tax_breakdown.dart';
+import '../../../services/api/scanner_api_service.dart';
 import '../../../services/llm/llama_cpp_service.dart';
 import '../../../main.dart';
 
@@ -43,8 +42,8 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   // Simple test result (for web vs app comparison)
   String? _simpleTestResult;
 
-  // LLM Service
-  late final LlamaCppService _llmService;
+  // Scanner API Service
+  late final ScannerApiService _scannerService;
 
   // Text editing controllers for verified data
   late final TextEditingController _merchantNameController;
@@ -61,7 +60,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _llmService = LlamaCppService(serverUrl: AppConfig.llmServerUrl);
+    _scannerService = ScannerApiService();
 
     // Initialize text controllers
     _merchantNameController = TextEditingController();
@@ -93,7 +92,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     super.dispose();
   }
 
-  /// Start the receipt processing pipeline using LLM
+  /// Start the receipt processing pipeline using POS API
   Future<void> _startProcessing() async {
     if (_isProcessing) return;
 
@@ -103,7 +102,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     });
 
     try {
-      logger.i('Starting LLM processing for: ${widget.imagePath}');
+      logger.i('Starting receipt processing for: ${widget.imagePath}');
 
       // Verify file exists
       final file = File(widget.imagePath);
@@ -112,25 +111,15 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       }
       logger.d('Image file exists: ${await file.length()} bytes');
 
-      // Check if LLM server is available
-      final llmAvailable = await _llmService.checkServer();
-      if (!llmAvailable) {
-        throw Exception('LLM server not available. Please start llama-server and run: adb reverse tcp:8080 tcp:8080');
+      // Check if Scanner API is available
+      final apiAvailable = await _scannerService.checkServer();
+      if (!apiAvailable) {
+        throw Exception('Scanner API not available. Please check API server connection.');
       }
 
-      // === SIMPLE TEST FIRST (for web vs app comparison) ===
-      logger.i('Running simple test prompt first...');
-      final imageBytes = await file.readAsBytes();
-      final base64Image = base64Encode(imageBytes);
-      final simpleTestResult = await _llmService.testSimplePrompt(base64Image);
-      setState(() {
-        _simpleTestResult = simpleTestResult;
-      });
-      logger.i('Simple test completed');
-
-      // Process with LLM (3-stage extraction)
-      logger.i('Processing with LLM (Qwen2.5-VL)...');
-      final result = await _llmService.extractFromFile(file);
+      // Process with Scanner API
+      logger.i('Processing with Scanner API...');
+      final result = await _scannerService.extractFromFile(file);
 
       logger.i('LLM extraction completed in ${result.processingTimeMs}ms, confidence: ${result.confidence}');
 
