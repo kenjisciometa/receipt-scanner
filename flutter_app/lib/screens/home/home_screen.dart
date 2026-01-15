@@ -140,7 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     try {
-      // Upload image to Wasabi if configured
+      // Upload image to NAS via ReactPOS API
       String? imageUrl;
       if (_lastImagePath != null && ImageStorageService.isConfigured) {
         imageUrl = await ImageStorageService.uploadReceiptImage(_lastImagePath!);

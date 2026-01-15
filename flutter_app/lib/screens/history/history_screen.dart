@@ -1,7 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/receipt_repository.dart';
@@ -830,9 +830,6 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
   }
 
   void _showImageDialog(BuildContext context, String imageUrl) {
-    final presignedUrl = ImageStorageService.getPresignedUrl(imageUrl);
-    final urlToLoad = presignedUrl ?? imageUrl;
-
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -850,32 +847,23 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                 IconButton(
                   icon: const Icon(Icons.save_alt),
                   tooltip: 'Save to device',
-                  onPressed: () => _saveImageToDevice(context, urlToLoad),
+                  onPressed: () => _saveImageToDevice(context, imageUrl),
                 ),
               ],
             ),
             Flexible(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 4.0,
-                child: Image.network(
-                  urlToLoad,
-                  fit: BoxFit.contain,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(
+              child: FutureBuilder<Uint8List?>(
+                future: ImageStorageService.getImage(imageUrl),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
                       child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                              : null,
-                        ),
+                        padding: EdgeInsets.all(32),
+                        child: CircularProgressIndicator(),
                       ),
                     );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
+                  }
+                  if (snapshot.hasError || snapshot.data == null) {
                     return Padding(
                       padding: const EdgeInsets.all(32),
                       child: Column(
@@ -883,12 +871,20 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                         children: [
                           const Icon(Icons.error, size: 48, color: Colors.red),
                           const SizedBox(height: 8),
-                          Text('Failed to load image:\n$error', textAlign: TextAlign.center),
+                          Text('Failed to load image:\n${snapshot.error ?? "Unknown error"}', textAlign: TextAlign.center),
                         ],
                       ),
                     );
-                  },
-                ),
+                  }
+                  return InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Image.memory(
+                      snapshot.data!,
+                      fit: BoxFit.contain,
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -903,8 +899,8 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
         const SnackBar(content: Text('Downloading image...'), duration: Duration(seconds: 1)),
       );
 
-      final response = await http.get(Uri.parse(imageUrl));
-      if (response.statusCode != 200) {
+      final imageBytes = await ImageStorageService.getImage(imageUrl);
+      if (imageBytes == null) {
         throw Exception('Failed to download image');
       }
 
@@ -913,7 +909,7 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
       final filePath = '${directory.path}/receipt_$timestamp.jpg';
 
       final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes);
+      await file.writeAsBytes(imageBytes);
 
       if (!context.mounted) return;
 
