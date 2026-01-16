@@ -10,6 +10,7 @@ import '../../services/image_storage_service.dart';
 import '../../services/scanner/document_scanner_service.dart';
 import '../../config/app_config.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
+import '../../services/receipt_validation_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -118,7 +119,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (taxBreakdown != null && taxBreakdown.isNotEmpty) {
       final total = (_lastScanResult!['total'] as num?)?.toDouble();
       final taxTotal = (_lastScanResult!['tax_total'] as num?)?.toDouble();
-      final errors = _validateTaxBreakdown(taxBreakdown, total, taxTotal);
+      final errors = ReceiptValidationService.validateTaxBreakdown(taxBreakdown, total, taxTotal);
 
       if (errors.isNotEmpty) {
         final confirmed = await showDialog<bool>(
@@ -522,7 +523,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   final taxBreakdown = _lastScanResult!['tax_breakdown'] as List;
                                   final total = (_lastScanResult!['total'] as num?)?.toDouble();
                                   final taxTotal = (_lastScanResult!['tax_total'] as num?)?.toDouble();
-                                  final errors = _validateTaxBreakdown(taxBreakdown, total, taxTotal);
+                                  final errors = ReceiptValidationService.validateTaxBreakdown(taxBreakdown, total, taxTotal);
                                   if (errors.isEmpty) return const SizedBox.shrink();
                                   return Container(
                                     padding: const EdgeInsets.all(8),
@@ -745,44 +746,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         taxBreakdown[index][field] = result;
       });
     }
-  }
-
-  List<String> _validateTaxBreakdown(List<dynamic> taxBreakdown, double? total, double? taxTotal) {
-    final errors = <String>[];
-    double grossSum = 0;
-    double taxSum = 0;
-
-    for (final item in taxBreakdown) {
-      final rate = (item['rate'] as num?)?.toDouble() ?? 0;
-      final taxAmount = (item['tax_amount'] as num?)?.toDouble() ?? 0;
-      final grossAmount = (item['gross_amount'] as num?)?.toDouble() ?? 0;
-      grossSum += grossAmount;
-      taxSum += taxAmount;
-
-      // Validate individual item: tax = gross * rate / (100 + rate)
-      if (grossAmount > 0 && rate > 0) {
-        final expectedTax = grossAmount * rate / (100 + rate);
-        if ((taxAmount - expectedTax).abs() > 0.02) {
-          errors.add('${rate}%: tax ${taxAmount.toStringAsFixed(2)} != expected ${expectedTax.toStringAsFixed(2)}');
-        }
-      }
-    }
-
-    // Validate gross sum equals total
-    if (total != null && grossSum > 0) {
-      if ((grossSum - total).abs() > 0.02) {
-        errors.add('Gross sum ${grossSum.toStringAsFixed(2)} != Total ${total.toStringAsFixed(2)}');
-      }
-    }
-
-    // Validate tax sum equals tax total
-    if (taxTotal != null && taxSum > 0) {
-      if ((taxSum - taxTotal).abs() > 0.02) {
-        errors.add('Tax sum ${taxSum.toStringAsFixed(2)} != Tax ${taxTotal.toStringAsFixed(2)}');
-      }
-    }
-
-    return errors;
   }
 
   Widget _buildTotalRow(String label, dynamic value, String? currency, {bool isBold = false, String? fieldKey}) {

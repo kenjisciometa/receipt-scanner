@@ -7,6 +7,8 @@ import 'package:share_plus/share_plus.dart';
 import '../../services/receipt_repository.dart';
 import '../../services/image_storage_service.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
+import '../../presentation/widgets/common_widgets.dart';
+import '../../services/receipt_validation_service.dart';
 
 final receiptRepositoryProvider = Provider((ref) => ReceiptRepository());
 
@@ -71,7 +73,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 data: (stats) => Row(
                   children: [
                     Expanded(
-                      child: _StatCard(
+                      child: StatCard(
                         title: 'Total Spent',
                         value: '€${stats['total_spent']?.toStringAsFixed(2) ?? '0.00'}',
                         icon: Icons.shopping_cart,
@@ -79,7 +81,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _StatCard(
+                      child: StatCard(
                         title: 'Total Tax',
                         value: '€${stats['total_tax']?.toStringAsFixed(2) ?? '0.00'}',
                         icon: Icons.receipt_long,
@@ -87,7 +89,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _StatCard(
+                      child: StatCard(
                         title: 'Receipts',
                         value: '${stats['receipt_count'] ?? 0}',
                         icon: Icons.format_list_numbered,
@@ -244,44 +246,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-
-  const _StatCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Icon(icon, size: 28, color: Theme.of(context).primaryColor),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _ReceiptCard extends ConsumerStatefulWidget {
   final Map<String, dynamic> receipt;
 
@@ -369,7 +333,7 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                   const SizedBox(height: 12),
 
                   // Merchant name
-                  _EditableField(
+                  EditableField(
                     label: 'Merchant',
                     value: merchantName,
                     icon: Icons.store,
@@ -378,7 +342,7 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                   const SizedBox(height: 8),
 
                   // Date
-                  _EditableField(
+                  EditableField(
                     label: 'Date',
                     value: formatDate(purchaseDate ?? createdAt),
                     icon: Icons.calendar_today,
@@ -387,7 +351,7 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                   const SizedBox(height: 8),
 
                   // Subtotal
-                  _EditableField(
+                  EditableField(
                     label: 'Subtotal',
                     value: '$currencySymbol${subtotal?.toStringAsFixed(2) ?? '0.00'}',
                     icon: Icons.receipt_long,
@@ -396,7 +360,7 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                   const SizedBox(height: 8),
 
                   // Tax
-                  _EditableField(
+                  EditableField(
                     label: 'Tax',
                     value: '$currencySymbol${tax?.toStringAsFixed(2) ?? '0.00'}',
                     icon: Icons.percent,
@@ -405,7 +369,7 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                   const SizedBox(height: 8),
 
                   // Total
-                  _EditableField(
+                  EditableField(
                     label: 'Total',
                     value: '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}',
                     icon: Icons.payments,
@@ -418,7 +382,7 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                     const SizedBox(height: 16),
                     const Divider(),
                     const SizedBox(height: 8),
-                    _EditableField(
+                    EditableField(
                       label: 'Tax Breakdown',
                       value: '${taxBreakdown.length} tax rate(s)',
                       icon: Icons.list_alt,
@@ -429,9 +393,9 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                   // Normal view - read-only display
                   // Amounts
                   if (subtotal != null)
-                    _DetailRow(label: 'Subtotal', value: '$currencySymbol${subtotal.toStringAsFixed(2)}'),
-                  _DetailRow(label: 'Tax', value: '$currencySymbol${tax?.toStringAsFixed(2) ?? '0.00'}'),
-                  _DetailRow(label: 'Total', value: '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}', isBold: true),
+                    DetailRow(label: 'Subtotal', value: '$currencySymbol${subtotal.toStringAsFixed(2)}'),
+                  DetailRow(label: 'Tax', value: '$currencySymbol${tax?.toStringAsFixed(2) ?? '0.00'}'),
+                  DetailRow(label: 'Total', value: '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}', isBold: true),
 
                   // Tax breakdown
                   if (taxBreakdown != null && taxBreakdown.isNotEmpty) ...[
@@ -444,12 +408,10 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                       final taxAmount = (taxItem['tax_amount'] as num?)?.toDouble();
                       final grossAmount = (taxItem['gross_amount'] as num?)?.toDouble();
 
-                      // Validate: tax_amount should equal gross_amount * rate / (100 + rate)
-                      bool isItemValid = true;
-                      if (grossAmount != null && taxAmount != null && rate > 0) {
-                        final expectedTax = grossAmount * rate / (100 + rate);
-                        isItemValid = (taxAmount - expectedTax).abs() < 0.02; // 2 cent tolerance
-                      }
+                      // Validate using service
+                      final isItemValid = ReceiptValidationService.validateTaxItem(
+                        Map<String, dynamic>.from(taxItem),
+                      );
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 2),
@@ -483,7 +445,7 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
                     // Validation summary
                     Builder(
                       builder: (context) {
-                        final validation = _validateTaxBreakdown(taxBreakdown, total?.toDouble(), tax?.toDouble());
+                        final validation = ReceiptValidationService.validateTaxBreakdown(taxBreakdown, total?.toDouble(), tax?.toDouble());
                         if (validation.isNotEmpty) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
@@ -561,48 +523,6 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
         ],
       ),
     );
-  }
-
-  /// Validate tax breakdown against totals
-  /// Returns list of validation error messages (empty if valid)
-  List<String> _validateTaxBreakdown(List<dynamic> taxBreakdown, double? total, double? taxTotal) {
-    final errors = <String>[];
-
-    double grossSum = 0;
-    double taxSum = 0;
-
-    for (final item in taxBreakdown) {
-      final rate = (item['rate'] as num?)?.toDouble() ?? 0;
-      final taxAmount = (item['tax_amount'] as num?)?.toDouble() ?? 0;
-      final grossAmount = (item['gross_amount'] as num?)?.toDouble() ?? 0;
-
-      grossSum += grossAmount;
-      taxSum += taxAmount;
-
-      // Validate individual item: tax = gross * rate / (100 + rate)
-      if (grossAmount > 0 && rate > 0) {
-        final expectedTax = grossAmount * rate / (100 + rate);
-        if ((taxAmount - expectedTax).abs() > 0.02) {
-          errors.add('${rate}%: tax ${taxAmount.toStringAsFixed(2)} != expected ${expectedTax.toStringAsFixed(2)}');
-        }
-      }
-    }
-
-    // Validate gross sum equals total
-    if (total != null && grossSum > 0) {
-      if ((grossSum - total).abs() > 0.02) {
-        errors.add('Gross sum ${grossSum.toStringAsFixed(2)} != Total ${total.toStringAsFixed(2)}');
-      }
-    }
-
-    // Validate tax sum equals tax total
-    if (taxTotal != null && taxSum > 0) {
-      if ((taxSum - taxTotal).abs() > 0.02) {
-        errors.add('Tax sum ${taxSum.toStringAsFixed(2)} != Tax ${taxTotal.toStringAsFixed(2)}');
-      }
-    }
-
-    return errors;
   }
 
   Future<void> _editMerchantName(BuildContext context, WidgetRef ref, String currentValue) async {
@@ -826,95 +746,5 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
         }
       }
     }
-  }
-}
-
-class _EditableField extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool isBold;
-
-  const _EditableField({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.onTap,
-    this.isBold = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: Colors.grey.shade600),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.edit, size: 20, color: Theme.of(context).primaryColor),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool isBold;
-
-  const _DetailRow({
-    required this.label,
-    required this.value,
-    this.isBold = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label),
-          Text(
-            value,
-            style: isBold ? const TextStyle(fontWeight: FontWeight.bold) : null,
-          ),
-        ],
-      ),
-    );
   }
 }

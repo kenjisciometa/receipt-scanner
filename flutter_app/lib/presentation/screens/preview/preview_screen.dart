@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/utils/formatters.dart';
+import '../../widgets/common_widgets.dart';
 import '../../../data/models/receipt.dart';
-import '../../../data/models/receipt_item.dart';
 import '../../../data/models/tax_breakdown.dart';
 import '../../../services/api/scanner_api_service.dart';
-import '../../../services/llm/llama_cpp_service.dart';
+import '../../../services/receipt_validation_service.dart';
+import '../../../services/receipt_converter_service.dart';
 import '../../../main.dart';
 
 /// Preview screen for captured receipt images with processing results
@@ -124,10 +126,15 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       logger.i('LLM extraction completed in ${result.processingTimeMs}ms, confidence: ${result.confidence}');
 
       // Convert LLM result to Receipt object
-      final receipt = _buildReceiptFromLLM(result);
+      final receipt = ReceiptConverterService.fromLLMResult(
+        result,
+        imagePath: widget.imagePath,
+        onDateParseError: (dateStr) => logger.w('Failed to parse date: $dateStr'),
+      );
 
       // Validate totals
-      final warning = _validateTotals(receipt);
+      final warning = ReceiptValidationService.validateTotals(
+        receipt.taxBreakdown, receipt.totalAmount);
 
       setState(() {
         _extractedReceipt = receipt;
@@ -152,98 +159,6 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         _isProcessing = false;
       });
     }
-  }
-
-  /// Build Receipt from LLM extraction result
-  Receipt _buildReceiptFromLLM(LLMExtractionResult llmResult) {
-    // Parse date
-    DateTime? purchaseDate;
-    if (llmResult.date != null) {
-      try {
-        purchaseDate = DateTime.parse(llmResult.date!);
-      } catch (e) {
-        logger.w('Failed to parse date: ${llmResult.date}');
-      }
-    }
-
-    // Convert tax breakdown with full details
-    final taxBreakdownList = llmResult.taxBreakdown.map((item) => TaxBreakdown(
-      rate: item.rate,
-      amount: item.taxAmount,
-      taxableAmount: item.taxableAmount,
-      grossAmount: item.grossAmount,
-    )).toList();
-
-    // Detect currency
-    Currency currency = Currency.eur;
-    if (llmResult.currency != null) {
-      currency = Currency.fromCode(llmResult.currency!);
-    }
-
-    // Convert items
-    final items = llmResult.items.asMap().entries.map((entry) {
-      final item = entry.value;
-      return ReceiptItem(
-        id: 'item_${entry.key}',
-        name: item.name,
-        quantity: item.quantity,
-        unitPrice: item.price / item.quantity,
-        totalPrice: item.price,
-        taxRate: item.taxRate,
-      );
-    }).toList();
-
-    return Receipt.create(
-      originalImagePath: widget.imagePath,
-      merchantName: llmResult.merchantName,
-      purchaseDate: purchaseDate,
-      totalAmount: llmResult.total,
-      subtotalAmount: llmResult.subtotal,
-      taxAmount: llmResult.taxTotal,
-      taxBreakdown: taxBreakdownList,
-      taxTotal: llmResult.taxTotal,
-      paymentMethod: llmResult.paymentMethod != null
-          ? PaymentMethod.fromString(llmResult.paymentMethod)
-          : null,
-      currency: currency,
-      items: items,
-      confidence: llmResult.confidence,
-      receiptNumber: llmResult.receiptNumber,
-      rawOcrText: llmResult.rawResponse,
-      status: ReceiptStatus.completed,
-    );
-  }
-
-  /// Validate that total matches sum of gross amounts from tax breakdown
-  String? _validateTotals(Receipt receipt) {
-    if (receipt.taxBreakdown.isEmpty || receipt.totalAmount == null) {
-      return null;
-    }
-
-    // Calculate sum of gross amounts
-    double sumGross = 0;
-    bool hasGrossAmounts = false;
-
-    for (final tax in receipt.taxBreakdown) {
-      if (tax.grossAmount != null) {
-        sumGross += tax.grossAmount!;
-        hasGrossAmounts = true;
-      }
-    }
-
-    if (!hasGrossAmounts) {
-      return null; // No gross amounts to validate
-    }
-
-    final total = receipt.totalAmount!;
-    final difference = (sumGross - total).abs();
-
-    // Allow small rounding differences (0.02 or less)
-    if (difference > 0.02) {
-      return 'Total mismatch: Sum of tax categories (${sumGross.toStringAsFixed(2)}) ≠ Total (${total.toStringAsFixed(2)}). Difference: ${difference.toStringAsFixed(2)}';
-    }
-
-    return null;
   }
 
   @override
@@ -545,13 +460,22 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         children: [
           // Confidence indicator (hide in edit mode)
           if (!_isEditing) ...[
-            _buildConfidenceIndicator(),
+            ConfidenceIndicator(
+              confidence: _extractedReceipt?.confidence ?? 0.0,
+              padding: const EdgeInsets.all(AppConstants.defaultPadding),
+              borderRadius: AppConstants.defaultBorderRadius,
+            ),
             const SizedBox(height: AppConstants.defaultPadding),
           ],
 
           // Validation warning (if totals don't match)
           if (!_isEditing && _validationWarning != null) ...[
-            _buildValidationWarning(),
+            ValidationWarning(
+              message: _validationWarning!,
+              hint: 'The tax breakdown values may be incorrect. Please verify manually.',
+              padding: const EdgeInsets.all(AppConstants.defaultPadding),
+              borderRadius: AppConstants.defaultBorderRadius,
+            ),
             const SizedBox(height: AppConstants.defaultPadding),
           ],
 
@@ -587,7 +511,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           if (receipt.documentType != null) ...[
             _buildSectionTitle('Document Type'),
             _buildDataCard([
-              _buildDocumentTypeRow(receipt.documentType!),
+              DocumentTypeRow(documentType: receipt.documentType!),
             ]),
             const SizedBox(height: AppConstants.defaultPadding),
           ],
@@ -596,23 +520,23 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           _buildSectionTitle('Merchant'),
           _buildDataCard([
             _isEditing
-                ? _buildEditableDataRow('Store Name', _merchantNameController)
+                ? EditableDataRow(label: 'Store Name', controller: _merchantNameController)
                 : _buildDataRow('Store Name', receipt.merchantName ?? 'N/A'),
             if (!_isEditing && receipt.receiptNumber != null)
               _buildDataRow('Receipt #', receipt.receiptNumber!),
             if (_isEditing)
-              _buildEditableDataRow('Receipt #', _receiptNumberController),
+              EditableDataRow(label: 'Receipt #', controller: _receiptNumberController),
           ]),
           
           // Date and payment info
           _buildSectionTitle('Transaction Details'),
           _buildDataCard([
             if (_isEditing)
-              _buildEditableDataRow('Date', _dateController, hint: 'YYYY-MM-DD')
+              EditableDataRow(label: 'Date', controller: _dateController, hint: 'YYYY-MM-DD')
             else if (receipt.purchaseDate != null)
-              _buildDataRow('Date', _formatDate(receipt.purchaseDate!)),
+              _buildDataRow('Date', Formatters.formatDate(receipt.purchaseDate!)),
             if (_isEditing)
-              _buildEditableDataRow('Payment Method', _paymentMethodController)
+              EditableDataRow(label: 'Payment Method', controller: _paymentMethodController)
             else if (receipt.paymentMethod != null)
               _buildDataRow('Payment Method', receipt.paymentMethod!.displayName),
           ]),
@@ -629,15 +553,21 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           _buildSectionTitle('Amount Breakdown'),
           _buildDataCard([
             if (_isEditing)
-              _buildEditableDataRow('Subtotal', _subtotalController, hint: '0.00', isAmount: true)
+              EditableDataRow(label: 'Subtotal', controller: _subtotalController, hint: '0.00', isAmount: true)
             else if (receipt.subtotalAmount != null)
-              _buildDataRow('Subtotal', _formatAmount(receipt.subtotalAmount!)),
+              _buildDataRow('Subtotal', Formatters.formatAmount(receipt.subtotalAmount!)),
             // TaxBreakdownを表示（詳細版）
             if (!_isEditing && receipt.taxBreakdown.isNotEmpty) ...[
-              ...receipt.taxBreakdown.map((tax) => _buildTaxBreakdownDisplay(tax)),
+              ...receipt.taxBreakdown.map((tax) => TaxBreakdownCard(
+                rate: tax.rate,
+                taxAmount: tax.amount,
+                taxableAmount: tax.taxableAmount,
+                grossAmount: tax.grossAmount,
+                formatAmount: Formatters.formatAmount,
+              )),
               const Divider(),
               if (receipt.taxTotal != null)
-                _buildDataRow('Tax Total', _formatAmount(receipt.taxTotal!), isHighlighted: true),
+                _buildDataRow('Tax Total', Formatters.formatAmount(receipt.taxTotal!), isHighlighted: true),
             ] else if (_isEditing) ...[
               // Tax Breakdown編集UI
               ..._taxBreakdownControllers.asMap().entries.map((entry) {
@@ -673,15 +603,15 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
               ),
               // Fallback: Single Tax field (if no breakdowns)
               if (_taxBreakdownControllers.isEmpty)
-                _buildEditableDataRow('Tax', _taxController, hint: '0.00', isAmount: true),
+                EditableDataRow(label: 'Tax', controller: _taxController, hint: '0.00', isAmount: true),
             ] else if (receipt.taxTotal != null)
-              _buildDataRow('Tax', _formatAmount(receipt.taxTotal!)),
+              _buildDataRow('Tax', Formatters.formatAmount(receipt.taxTotal!)),
             if (_isEditing)
-              _buildEditableDataRow('Total', _totalController, hint: '0.00', isAmount: true, isHighlighted: true)
+              EditableDataRow(label: 'Total', controller: _totalController, hint: '0.00', isAmount: true, isHighlighted: true)
             else if (receipt.totalAmount != null)
               _buildDataRow(
                 'Total',
-                _formatAmount(receipt.totalAmount!),
+                Formatters.formatAmount(receipt.totalAmount!),
                 isHighlighted: true,
               ),
           ]),
@@ -689,19 +619,32 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           // Debug: LLM Reasoning (開発用)
           if (!_isEditing && _llmReasoning != null) ...[
             const SizedBox(height: AppConstants.defaultPadding * 2),
-            _buildReasoningSection(),
+            DebugSection.grey(
+              icon: Icons.psychology,
+              title: 'LLM解釈過程（開発用）',
+              content: _llmReasoning!,
+            ),
           ],
 
           // Debug: Step 1 Extraction Result (開発用)
           if (!_isEditing && _step1Result != null) ...[
             const SizedBox(height: AppConstants.defaultPadding),
-            _buildStep1ResultSection(),
+            DebugSection.blue(
+              icon: Icons.document_scanner,
+              title: 'Step 1: Raw Extraction (DEBUG)',
+              content: _step1Result!,
+            ),
           ],
 
           // Debug: Simple Test Result (WEB比較用)
           if (!_isEditing && _simpleTestResult != null) ...[
             const SizedBox(height: AppConstants.defaultPadding),
-            _buildSimpleTestResultSection(),
+            DebugSection.green(
+              icon: Icons.science,
+              title: 'Simple Test (WEB比較用)',
+              subtitle: 'Prompt: このレシートからTAXテーブルを読み取り合計金額と各税率いくらか調べてください',
+              content: _simpleTestResult!,
+            ),
           ],
 
           const SizedBox(height: AppConstants.defaultPadding * 2),
@@ -710,495 +653,32 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     );
   }
 
-  Widget _buildConfidenceIndicator() {
-    final confidence = _extractedReceipt?.confidence ?? 0.0;
-    final color = confidence >= 0.8 
-        ? Colors.green 
-        : confidence >= 0.6 
-            ? Colors.orange 
-            : Colors.red;
-    
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
-        border: Border.all(color: color, width: 1),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            confidence >= 0.8 
-                ? Icons.check_circle 
-                : confidence >= 0.6 
-                    ? Icons.warning 
-                    : Icons.error,
-            color: color,
-          ),
-          const SizedBox(width: AppConstants.smallPadding),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Detection Confidence: ${(confidence * 100).toInt()}%',
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  confidence >= 0.8 
-                      ? 'High confidence - data looks accurate'
-                      : confidence >= 0.6 
-                          ? 'Medium confidence - please verify'
-                          : 'Low confidence - manual review recommended',
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build validation warning indicator when totals don't match
-  Widget _buildValidationWarning() {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
-        border: Border.all(color: Colors.red, width: 2),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.error,
-            color: Colors.red,
-            size: 24,
-          ),
-          const SizedBox(width: AppConstants.smallPadding),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Calculation Error',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _validationWarning!,
-                  style: const TextStyle(
-                    color: Colors.red,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'The tax breakdown values may be incorrect. Please verify manually.',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontSize: 11,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build reasoning section (開発用 - LLMの解釈過程)
-  Widget _buildReasoningSection() {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
-        border: Border.all(color: Colors.grey.shade300, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.psychology, size: 18, color: Colors.grey.shade600),
-              const SizedBox(width: 6),
-              Text(
-                'LLM解釈過程（開発用）',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  color: Colors.grey.shade700,
-                ),
-              ),
-            ],
-          ),
-          const Divider(),
-          Text(
-            _llmReasoning ?? '',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey.shade800,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build Step 1 result section (開発用 - 第一段階の抽出結果)
-  Widget _buildStep1ResultSection() {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
-        border: Border.all(color: Colors.blue.shade200, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.document_scanner, size: 18, color: Colors.blue.shade600),
-              const SizedBox(width: 6),
-              Text(
-                'Step 1: Raw Extraction (DEBUG)',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  color: Colors.blue.shade700,
-                ),
-              ),
-            ],
-          ),
-          const Divider(),
-          Text(
-            _step1Result ?? '',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.blue.shade900,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build Simple Test result section (WEB比較用)
-  Widget _buildSimpleTestResultSection() {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      decoration: BoxDecoration(
-        color: Colors.green.shade50,
-        borderRadius: BorderRadius.circular(AppConstants.defaultBorderRadius),
-        border: Border.all(color: Colors.green.shade400, width: 2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.science, size: 18, color: Colors.green.shade700),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Simple Test (WEB比較用)',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: Colors.green.shade700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Prompt: このレシートからTAXテーブルを読み取り合計金額と各税率いくらか調べてください',
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.green.shade600,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          const Divider(),
-          Text(
-            _simpleTestResult ?? '',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.green.shade900,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSectionTitle(String title) {
-    return Padding(
+    return SectionTitle(
+      title: title,
       padding: const EdgeInsets.only(
         top: AppConstants.defaultPadding,
         bottom: AppConstants.smallPadding,
-      ),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Colors.black87,
-        ),
       ),
     );
   }
 
   Widget _buildDataCard(List<Widget> children) {
-    return Card(
-      elevation: 1,
-      child: Padding(
-        padding: const EdgeInsets.all(AppConstants.defaultPadding),
-        child: Column(
-          children: children,
-        ),
-      ),
+    return DataCard(
+      padding: const EdgeInsets.all(AppConstants.defaultPadding),
+      children: children,
     );
   }
 
   Widget _buildDataRow(String label, String value, {bool isHighlighted = false}) {
-    return Padding(
+    return LabelValueRow(
+      label: label,
+      value: value,
+      isHighlighted: isHighlighted,
       padding: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              value,
-              style: TextStyle(
-                color: isHighlighted ? Colors.black : Colors.black87,
-                fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
-                fontSize: isHighlighted ? 16 : 14,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
-  /// Build a detailed tax breakdown display for a single tax rate
-  Widget _buildTaxBreakdownDisplay(TaxBreakdown tax) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
-      padding: const EdgeInsets.all(AppConstants.smallPadding),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(AppConstants.smallBorderRadius),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Tax rate header
-          Row(
-            children: [
-              Icon(Icons.percent, size: 16, color: Colors.blue.shade700),
-              const SizedBox(width: 4),
-              Text(
-                'VAT ${tax.rate}%',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue.shade700,
-                ),
-              ),
-              const Spacer(),
-              if (tax.grossAmount != null)
-                Text(
-                  _formatAmount(tax.grossAmount!),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          // Details row
-          Row(
-            children: [
-              if (tax.taxableAmount != null) ...[
-                Expanded(
-                  child: Text(
-                    'Net: ${_formatAmount(tax.taxableAmount!)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ),
-              ],
-              Expanded(
-                child: Text(
-                  'Tax: ${_formatAmount(tax.amount)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDocumentTypeRow(String documentType) {
-    // Determine icon and color based on document type
-    IconData icon;
-    Color color;
-    String displayText;
-
-    switch (documentType.toLowerCase()) {
-      case 'receipt':
-        icon = Icons.receipt;
-        color = Colors.green;
-        displayText = 'Receipt';
-        break;
-      case 'invoice':
-        icon = Icons.description;
-        color = Colors.blue;
-        displayText = 'Invoice';
-        break;
-      default:
-        icon = Icons.help_outline;
-        color = Colors.grey;
-        displayText = 'Unknown';
-    }
-    
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              'Type',
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Row(
-              children: [
-                Icon(icon, color: color, size: 20),
-                const SizedBox(width: AppConstants.smallPadding),
-                Text(
-                  displayText,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEditableDataRow(
-    String label,
-    TextEditingController controller, {
-    String? hint,
-    bool isAmount = false,
-    bool isHighlighted = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppConstants.smallPadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                hintText: hint,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.blue, width: 2),
-                ),
-              ),
-              style: TextStyle(
-                color: isHighlighted ? Colors.black : Colors.black87,
-                fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
-                fontSize: isHighlighted ? 16 : 14,
-              ),
-              keyboardType: isAmount ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
   /// Build editable tax breakdown row with rate and amount
   Widget _buildTaxBreakdownRow({
     required int index,
@@ -1303,21 +783,12 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
-
-  String _formatAmount(double amount) {
-    return amount.toStringAsFixed(2);
-  }
-  
-
   /// Initialize text controllers with receipt data
   void _initializeTextControllers(Receipt receipt) {
     _merchantNameController.text = receipt.merchantName ?? '';
     _receiptNumberController.text = receipt.receiptNumber ?? '';
     _dateController.text = receipt.purchaseDate != null 
-        ? _formatDate(receipt.purchaseDate!) 
+        ? Formatters.formatDate(receipt.purchaseDate!) 
         : '';
     _subtotalController.text = receipt.subtotalAmount != null
         ? receipt.subtotalAmount!.toStringAsFixed(2)
