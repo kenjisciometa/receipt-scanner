@@ -249,8 +249,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = ref.watch(currentUserProvider);
-
     return Scaffold(
       appBar: AppBar(
         title: Text(AppConfig.appName),
@@ -261,37 +259,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             tooltip: 'History',
           ),
           IconButton(
-            icon: const Icon(Icons.account_circle),
-            onPressed: () => context.push('/account'),
-            tooltip: 'Account',
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'logout') {
-                _logout();
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'user',
-                enabled: false,
-                child: Text(
-                  currentUser?.email ?? 'Unknown User',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout),
-                    SizedBox(width: 8),
-                    Text('Logout'),
-                  ],
-                ),
-              ),
-            ],
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
+            tooltip: 'Logout',
           ),
         ],
       ),
@@ -300,33 +270,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Action Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isScanning ? null : _documentScanAndProcess,
-                    icon: const Icon(Icons.document_scanner),
-                    label: const Text('Scan'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isScanning ? null : _captureAndScanImage,
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Camera'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isScanning ? null : _pickAndScanImage,
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('Gallery'),
-                  ),
-                ),
-              ],
+            // Action Buttons - responsive layout
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Use vertical layout on narrow screens (< 360px)
+                if (constraints.maxWidth < 360) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _isScanning ? null : _documentScanAndProcess,
+                        icon: const Icon(Icons.document_scanner),
+                        label: const Text('Scan'),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: _isScanning ? null : _captureAndScanImage,
+                        icon: const Icon(Icons.camera_alt),
+                        label: const Text('Camera'),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: _isScanning ? null : _pickAndScanImage,
+                        icon: const Icon(Icons.photo_library),
+                        label: const Text('Gallery'),
+                      ),
+                    ],
+                  );
+                }
+                // Horizontal layout for wider screens
+                return Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isScanning ? null : _documentScanAndProcess,
+                        icon: const Icon(Icons.document_scanner, size: 20),
+                        label: const Text('Scan', maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isScanning ? null : _captureAndScanImage,
+                        icon: const Icon(Icons.camera_alt, size: 20),
+                        label: const Text('Camera', maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isScanning ? null : _pickAndScanImage,
+                        icon: const Icon(Icons.photo_library, size: 20),
+                        label: const Text('Gallery', maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 24),
 
