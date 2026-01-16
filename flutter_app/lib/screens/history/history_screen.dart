@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/receipt_repository.dart';
 import '../../services/image_storage_service.dart';
+import '../../presentation/widgets/receipt_edit_dialogs.dart';
 
 final receiptRepositoryProvider = Provider((ref) => ReceiptRepository());
 
@@ -605,34 +606,11 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
   }
 
   Future<void> _editMerchantName(BuildContext context, WidgetRef ref, String currentValue) async {
-    String textValue = currentValue;
-
-    final result = await showDialog<String?>(
+    final result = await ReceiptEditDialogs.editText(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Edit Merchant Name'),
-          content: TextFormField(
-            initialValue: textValue,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Merchant Name',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (value) => textValue = value,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(textValue),
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
+      title: 'Edit Merchant Name',
+      label: 'Merchant Name',
+      currentValue: currentValue,
     );
 
     if (result != null && result.isNotEmpty && context.mounted) {
@@ -654,36 +632,11 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
   }
 
   Future<void> _editAmount(BuildContext context, WidgetRef ref, String field, String label, double? currentValue) async {
-    String textValue = currentValue?.toString() ?? '';
-
-    final result = await showDialog<double?>(
+    final result = await ReceiptEditDialogs.editAmount(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text('Edit $label'),
-          content: TextFormField(
-            initialValue: textValue,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
-              prefixText: '€ ',
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (value) => textValue = value,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(double.tryParse(textValue)),
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
+      title: 'Edit $label',
+      label: label,
+      currentValue: currentValue,
     );
 
     if (result != null && context.mounted) {
@@ -702,89 +655,9 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
   }
 
   Future<void> _editTaxBreakdown(BuildContext context, WidgetRef ref, List<dynamic> currentBreakdown) async {
-    final List<Map<String, dynamic>> editableBreakdown =
-        currentBreakdown.map((e) => Map<String, dynamic>.from(e)).toList();
-
-    final result = await showDialog<List<Map<String, dynamic>>?>(
+    final result = await ReceiptEditDialogs.editTaxBreakdown(
       context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Edit Tax Breakdown'),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: editableBreakdown.length,
-                  itemBuilder: (context, index) {
-                    final item = editableBreakdown[index];
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    initialValue: item['rate']?.toString() ?? '',
-                                    decoration: const InputDecoration(
-                                      labelText: 'Rate %',
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    onChanged: (v) => item['rate'] = double.tryParse(v),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: TextFormField(
-                                    initialValue: item['tax_amount']?.toString() ?? '',
-                                    decoration: const InputDecoration(
-                                      labelText: 'Tax €',
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    onChanged: (v) => item['tax_amount'] = double.tryParse(v),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              initialValue: item['gross_amount']?.toString() ?? '',
-                              decoration: const InputDecoration(
-                                labelText: 'Gross €',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                              keyboardType: TextInputType.number,
-                              onChanged: (v) => item['gross_amount'] = double.tryParse(v),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(editableBreakdown),
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      currentBreakdown: currentBreakdown,
     );
 
     if (result != null && context.mounted) {
@@ -926,25 +799,15 @@ class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await ReceiptEditDialogs.confirmAction(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Receipt?'),
-        content: const Text('Are you sure you want to delete this receipt? This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+      title: 'Delete Receipt?',
+      message: 'Are you sure you want to delete this receipt? This action cannot be undone.',
+      confirmText: 'Delete',
+      confirmColor: Colors.red,
     );
 
-    if (confirmed == true) {
+    if (confirmed) {
       try {
         final repository = ref.read(receiptRepositoryProvider);
         await repository.deleteReceipt(receipt['id']);

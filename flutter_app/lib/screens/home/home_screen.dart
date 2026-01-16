@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:convert';
 import 'dart:io';
 import '../../services/auth_service.dart';
-import '../../services/scanner_service.dart';
+import '../../services/api/scanner_api_service.dart';
 import '../../services/receipt_repository.dart';
 import '../../services/image_storage_service.dart';
 import '../../services/scanner/document_scanner_service.dart';
 import '../../config/app_config.dart';
+import '../../presentation/widgets/receipt_edit_dialogs.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +21,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ImagePicker _picker = ImagePicker();
   final DocumentScannerService _documentScanner = DocumentScannerService();
+  final ScannerApiService _scannerApi = ScannerApiService();
   final ReceiptRepository _receiptRepository = ReceiptRepository();
   bool _isScanning = false;
   bool _isSaving = false;
@@ -72,12 +73,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     try {
-      // Convert image to base64
-      final bytes = await imageFile.readAsBytes();
-      final base64Image = base64Encode(bytes);
+      // Call scanner API service
+      final extractionResult = await _scannerApi.extractFromFile(imageFile);
 
-      // Call scanner service
-      final result = await ScannerService.extractReceipt(base64Image);
+      // Convert to Map for compatibility with existing UI code
+      final result = <String, dynamic>{
+        'success': true,
+        ...extractionResult.toJson(),
+      };
 
       setState(() {
         _lastScanResult = result;
@@ -666,39 +669,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _editSingleValue(String fieldKey, String label, double? currentValue) async {
-    String textValue = currentValue?.toString() ?? '';
-
-    final result = await showDialog<double?>(
+    final result = await ReceiptEditDialogs.editAmount(
       context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text('Edit $label'),
-          content: TextFormField(
-            initialValue: textValue,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
-              prefixText: '€ ',
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (value) => textValue = value,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop(double.tryParse(textValue));
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
+      title: 'Edit $label',
+      label: label,
+      currentValue: currentValue,
     );
 
     if (result != null && mounted) {
@@ -709,35 +684,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _editMerchantName() async {
-    String textValue = _lastScanResult!['merchant_name'] ?? '';
-
-    final result = await showDialog<String?>(
+    final result = await ReceiptEditDialogs.editText(
       context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Edit Merchant Name'),
-          content: TextFormField(
-            initialValue: textValue,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Merchant Name',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (value) => textValue = value,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(textValue),
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
+      title: 'Edit Merchant Name',
+      label: 'Merchant Name',
+      currentValue: _lastScanResult!['merchant_name'] ?? '',
     );
 
     if (result != null && result.isNotEmpty && mounted) {
@@ -748,57 +699,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _editDateTime() async {
-    String dateValue = _lastScanResult!['date'] ?? '';
-    String timeValue = _lastScanResult!['time'] ?? '';
-
-    final result = await showDialog<Map<String, String>?>(
+    final result = await ReceiptEditDialogs.editDateTime(
       context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Edit Date & Time'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  initialValue: dateValue,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Date (YYYY-MM-DD)',
-                    border: OutlineInputBorder(),
-                    hintText: '2025-01-15',
-                  ),
-                  onChanged: (value) => dateValue = value,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  initialValue: timeValue,
-                  decoration: const InputDecoration(
-                    labelText: 'Time (HH:MM)',
-                    border: OutlineInputBorder(),
-                    hintText: '14:30',
-                  ),
-                  onChanged: (value) => timeValue = value,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop({
-                'date': dateValue,
-                'time': timeValue,
-              }),
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
+      currentDate: _lastScanResult!['date'],
+      currentTime: _lastScanResult!['time'],
     );
 
     if (result != null && mounted) {
@@ -810,51 +714,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _editPaymentMethod() async {
-    String textValue = _lastScanResult!['payment_method'] ?? '';
-    final commonMethods = ['Card', 'Cash', 'Debit', 'Credit', 'Mobile'];
-
-    final result = await showDialog<String?>(
+    final result = await ReceiptEditDialogs.editPaymentMethod(
       context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Edit Payment Method'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  initialValue: textValue,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Payment Method',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => textValue = value,
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  children: commonMethods.map((method) => ActionChip(
-                    label: Text(method),
-                    onPressed: () => Navigator.of(dialogContext).pop(method),
-                  )).toList(),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(textValue),
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
+      currentValue: _lastScanResult!['payment_method'],
     );
 
     if (result != null && result.isNotEmpty && mounted) {
@@ -865,42 +727,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _editTaxBreakdownItem(int index, String field, dynamic currentValue) async {
-    String textValue = currentValue?.toString() ?? '';
     final isPercent = field == 'rate';
+    final title = field == 'rate' ? 'Tax Rate' : field == 'gross_amount' ? 'Gross Amount' : 'Tax Amount';
+    final label = field == 'rate' ? 'Rate' : field == 'gross_amount' ? 'Gross' : 'Tax';
 
-    final result = await showDialog<double?>(
+    final result = await ReceiptEditDialogs.editAmount(
       context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text('Edit ${field == 'rate' ? 'Tax Rate' : field == 'gross_amount' ? 'Gross Amount' : 'Tax Amount'}'),
-          content: TextFormField(
-            initialValue: textValue,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: field == 'rate' ? 'Rate' : field == 'gross_amount' ? 'Gross' : 'Tax',
-              border: const OutlineInputBorder(),
-              prefixText: isPercent ? null : '€ ',
-              suffixText: isPercent ? '%' : null,
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (value) => textValue = value,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final value = double.tryParse(textValue);
-                Navigator.of(dialogContext).pop(value);
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
+      title: 'Edit $title',
+      label: label,
+      currentValue: currentValue is num ? currentValue.toDouble() : double.tryParse(currentValue?.toString() ?? ''),
+      isPercent: isPercent,
     );
 
     if (result != null && mounted) {
