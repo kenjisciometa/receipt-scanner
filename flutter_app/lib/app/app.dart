@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../core/config/app_config.dart';
 import '../core/constants/app_constants.dart';
-import '../presentation/screens/camera/camera_screen.dart';
 import '../presentation/screens/preview/preview_screen.dart';
 import '../screens/auth/auth_wrapper.dart';
 import '../screens/account/account_screen.dart';

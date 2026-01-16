@@ -1,6 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
 import 'package:uuid/uuid.dart';
-import '../../core/constants/language_keywords.dart';
 import 'receipt_item.dart';
 import 'tax_breakdown.dart';
 
@@ -90,56 +89,46 @@ enum PaymentMethod {
   
   static PaymentMethod fromString(String? value) {
     if (value == null) return PaymentMethod.unknown;
-    
+
     final lowerValue = value.toLowerCase();
-    
-    // Check cash keywords (multi-language support)
-    final cashKeywords = LanguageKeywords.getAllKeywords('payment_method_cash');
+
+    // Check cash keywords (multi-language)
+    const cashKeywords = ['cash', 'käteinen', 'kontanter', 'espèces', 'bar', 'contanti', 'efectivo', 'contant'];
     for (final keyword in cashKeywords) {
-      if (lowerValue.contains(keyword.toLowerCase())) {
+      if (lowerValue.contains(keyword)) {
         return PaymentMethod.cash;
       }
     }
-    // Legacy cash keywords
-    if (lowerValue.contains('cash') || lowerValue.contains('contant')) {
-      return PaymentMethod.cash;
-    }
-    
+
     // Check credit card
     if (lowerValue.contains('credit') || lowerValue.contains('kredit')) {
       return PaymentMethod.creditCard;
     }
-    
+
     // Check debit card
     if (lowerValue.contains('debit')) {
       return PaymentMethod.debitCard;
     }
-    
+
     // Check mobile payment
     if (lowerValue.contains('mobile') || lowerValue.contains('app') ||
         lowerValue.contains('paypal') || lowerValue.contains('apple pay')) {
       return PaymentMethod.mobilePayment;
     }
-    
+
     // Check contactless
     if (lowerValue.contains('contactless') || lowerValue.contains('nfc')) {
       return PaymentMethod.contactless;
     }
-    
-    // Check card keywords (multi-language support)
-    // This should be checked after credit/debit to avoid false matches
-    final cardKeywords = LanguageKeywords.getAllKeywords('payment_method_card');
+
+    // Check card keywords (multi-language)
+    const cardKeywords = ['card', 'kortti', 'kort', 'carte', 'karte', 'carta', 'tarjeta'];
     for (final keyword in cardKeywords) {
-      if (lowerValue.contains(keyword.toLowerCase())) {
-        // Return card as-is, don't default to debitCard
+      if (lowerValue.contains(keyword)) {
         return PaymentMethod.card;
       }
     }
-    // Legacy card keywords
-    if (lowerValue.contains('card') || lowerValue.contains('kort')) {
-      return PaymentMethod.card;
-    }
-    
+
     return PaymentMethod.unknown;
   }
 }

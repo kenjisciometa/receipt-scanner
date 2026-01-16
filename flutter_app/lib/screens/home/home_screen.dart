@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/scanner_service.dart';
 import '../../services/receipt_repository.dart';
 import '../../services/image_storage_service.dart';
+import '../../services/scanner/document_scanner_service.dart';
 import '../../config/app_config.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -19,11 +20,18 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ImagePicker _picker = ImagePicker();
+  final DocumentScannerService _documentScanner = DocumentScannerService();
   final ReceiptRepository _receiptRepository = ReceiptRepository();
   bool _isScanning = false;
   bool _isSaving = false;
   Map<String, dynamic>? _lastScanResult;
   String? _lastImagePath;
+
+  @override
+  void dispose() {
+    _documentScanner.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickAndScanImage() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
@@ -37,6 +45,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (image == null) return;
 
     await _scanImage(File(image.path));
+  }
+
+  Future<void> _documentScanAndProcess() async {
+    try {
+      final result = await _documentScanner.scanReceipt();
+      if (result != null && result.isSuccess && result.firstImagePath != null) {
+        await _scanImage(File(result.firstImagePath!));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Document scanner error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _scanImage(File imageFile) async {
@@ -276,12 +301,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
+                    onPressed: _isScanning ? null : _documentScanAndProcess,
+                    icon: const Icon(Icons.document_scanner),
+                    label: const Text('Scan'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
                     onPressed: _isScanning ? null : _captureAndScanImage,
                     icon: const Icon(Icons.camera_alt),
                     label: const Text('Camera'),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _isScanning ? null : _pickAndScanImage,

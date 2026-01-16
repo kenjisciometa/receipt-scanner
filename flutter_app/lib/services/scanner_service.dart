@@ -58,45 +58,4 @@ class ScannerService {
       rethrow;
     }
   }
-
-  static Future<Map<String, dynamic>> checkScannerStatus() async {
-    final url = AppConfig.scannerExtractUrl;
-    print('[ScannerService] Checking status: $url');
-
-    try {
-      final headers = await AuthService.getAuthHeaders();
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      ).timeout(const Duration(seconds: 10));
-
-      print('[ScannerService] Status check response: ${response.statusCode}');
-
-      if (response.statusCode == 401) {
-        throw Exception('Authentication required. Please login again.');
-      }
-
-      // Check if response is HTML
-      if (response.body.trim().startsWith('<')) {
-        print('[ScannerService] Status check returned HTML');
-        return {'llm_available': false, 'error': 'Endpoint not found'};
-      }
-
-      final responseData = jsonDecode(response.body) as Map<String, dynamic>;
-
-      if (response.statusCode != 200) {
-        throw Exception(responseData['error'] ?? 'API error');
-      }
-
-      return responseData;
-    } catch (error) {
-      print('[ScannerService] Status check error: $error');
-      if (error.toString().contains('SocketException') ||
-          error.toString().contains('TimeoutException')) {
-        throw Exception('Network error. Please check your internet connection.');
-      }
-      rethrow;
-    }
-  }
 }
