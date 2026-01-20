@@ -149,6 +149,12 @@ class Receipt {
     this.taxBreakdown = const [],
     this.taxTotal,
     this.documentType,
+    // Invoice-specific fields
+    this.vendorAddress,
+    this.vendorTaxId,
+    this.customerName,
+    this.invoiceNumber,
+    this.dueDate,
     this.paymentMethod,
     this.currency = Currency.eur,
     this.items = const [],
@@ -200,9 +206,26 @@ class Receipt {
   /// Document type (e.g., 'receipt', 'invoice')
   final String? documentType;
 
+  // ========== INVOICE-SPECIFIC FIELDS ==========
+
+  /// Vendor/supplier address (invoice only)
+  final String? vendorAddress;
+
+  /// Vendor tax ID / VAT number (invoice only)
+  final String? vendorTaxId;
+
+  /// Customer/billing name (invoice only)
+  final String? customerName;
+
+  /// Invoice number (invoice only)
+  final String? invoiceNumber;
+
+  /// Payment due date (invoice only)
+  final DateTime? dueDate;
+
   /// Method of payment used
   final PaymentMethod? paymentMethod;
-  
+
   /// Currency of the amounts
   final Currency currency;
   
@@ -279,6 +302,12 @@ class Receipt {
     List<TaxBreakdown> taxBreakdown = const [],
     double? taxTotal,
     String? documentType,
+    // Invoice-specific fields
+    String? vendorAddress,
+    String? vendorTaxId,
+    String? customerName,
+    String? invoiceNumber,
+    DateTime? dueDate,
     PaymentMethod? paymentMethod,
     Currency currency = Currency.eur,
     List<ReceiptItem> items = const [],
@@ -303,6 +332,11 @@ class Receipt {
       taxBreakdown: taxBreakdown,
       taxTotal: taxTotal,
       documentType: documentType,
+      vendorAddress: vendorAddress,
+      vendorTaxId: vendorTaxId,
+      customerName: customerName,
+      invoiceNumber: invoiceNumber,
+      dueDate: dueDate,
       paymentMethod: paymentMethod,
       currency: currency,
       items: items,
@@ -339,6 +373,12 @@ class Receipt {
     List<TaxBreakdown>? taxBreakdown,
     double? taxTotal,
     String? documentType,
+    // Invoice-specific fields
+    String? vendorAddress,
+    String? vendorTaxId,
+    String? customerName,
+    String? invoiceNumber,
+    DateTime? dueDate,
     PaymentMethod? paymentMethod,
     Currency? currency,
     List<ReceiptItem>? items,
@@ -364,6 +404,11 @@ class Receipt {
       taxBreakdown: taxBreakdown ?? this.taxBreakdown,
       taxTotal: taxTotal ?? this.taxTotal,
       documentType: documentType ?? this.documentType,
+      vendorAddress: vendorAddress ?? this.vendorAddress,
+      vendorTaxId: vendorTaxId ?? this.vendorTaxId,
+      customerName: customerName ?? this.customerName,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      dueDate: dueDate ?? this.dueDate,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       currency: currency ?? this.currency,
       items: items ?? this.items,

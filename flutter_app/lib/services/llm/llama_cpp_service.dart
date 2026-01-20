@@ -39,6 +39,16 @@ class LLMExtractionResult {
   final String? reasoning;
   final String? step1Result;
 
+  // Document type classification
+  final String? documentType;
+
+  // Invoice-specific fields
+  final String? vendorAddress;
+  final String? vendorTaxId;
+  final String? customerName;
+  final String? invoiceNumber;
+  final String? dueDate;
+
   LLMExtractionResult({
     this.merchantName,
     this.date,
@@ -56,6 +66,12 @@ class LLMExtractionResult {
     required this.confidence,
     this.reasoning,
     this.step1Result,
+    this.documentType,
+    this.vendorAddress,
+    this.vendorTaxId,
+    this.customerName,
+    this.invoiceNumber,
+    this.dueDate,
   });
 
   factory LLMExtractionResult.fromJson(Map<String, dynamic> json) {
@@ -80,6 +96,12 @@ class LLMExtractionResult {
       confidence: _parseDouble(json['confidence']) ?? 0.0,
       reasoning: json['reasoning'],
       step1Result: json['step1_result'],
+      documentType: json['document_type'],
+      vendorAddress: json['vendor_address'],
+      vendorTaxId: json['vendor_tax_id'],
+      customerName: json['customer_name'],
+      invoiceNumber: json['invoice_number'],
+      dueDate: json['due_date'],
     );
   }
 
@@ -100,6 +122,12 @@ class LLMExtractionResult {
         'confidence': confidence,
         'reasoning': reasoning,
         'step1_result': step1Result,
+        'document_type': documentType,
+        'vendor_address': vendorAddress,
+        'vendor_tax_id': vendorTaxId,
+        'customer_name': customerName,
+        'invoice_number': invoiceNumber,
+        'due_date': dueDate,
       };
 }
 

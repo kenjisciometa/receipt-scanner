@@ -24,6 +24,13 @@ Receipt _$ReceiptFromJson(Map<String, dynamic> json) => Receipt(
           const [],
       taxTotal: (json['taxTotal'] as num?)?.toDouble(),
       documentType: json['documentType'] as String?,
+      vendorAddress: json['vendorAddress'] as String?,
+      vendorTaxId: json['vendorTaxId'] as String?,
+      customerName: json['customerName'] as String?,
+      invoiceNumber: json['invoiceNumber'] as String?,
+      dueDate: json['dueDate'] == null
+          ? null
+          : DateTime.parse(json['dueDate'] as String),
       paymentMethod:
           $enumDecodeNullable(_$PaymentMethodEnumMap, json['paymentMethod']),
       currency: $enumDecodeNullable(_$CurrencyEnumMap, json['currency']) ??
@@ -58,6 +65,11 @@ Map<String, dynamic> _$ReceiptToJson(Receipt instance) => <String, dynamic>{
       'taxBreakdown': instance.taxBreakdown.map((e) => e.toJson()).toList(),
       'taxTotal': instance.taxTotal,
       'documentType': instance.documentType,
+      'vendorAddress': instance.vendorAddress,
+      'vendorTaxId': instance.vendorTaxId,
+      'customerName': instance.customerName,
+      'invoiceNumber': instance.invoiceNumber,
+      'dueDate': instance.dueDate?.toIso8601String(),
       'paymentMethod': _$PaymentMethodEnumMap[instance.paymentMethod],
       'currency': _$CurrencyEnumMap[instance.currency]!,
       'items': instance.items.map((e) => e.toJson()).toList(),

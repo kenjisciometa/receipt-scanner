@@ -15,6 +15,10 @@ class ReceiptConverterService {
     required String imagePath,
     void Function(String dateString)? onDateParseError,
   }) {
+    print('[ReceiptConverter] START - Converting LLM result');
+    print('[ReceiptConverter] llmResult.documentType: ${llmResult.documentType}');
+    print('[ReceiptConverter] llmResult.vendorAddress: ${llmResult.vendorAddress}');
+
     // Parse date
     DateTime? purchaseDate;
     if (llmResult.date != null) {
@@ -54,6 +58,23 @@ class ReceiptConverterService {
       );
     }).toList();
 
+    // Parse due date for invoices
+    DateTime? dueDate;
+    if (llmResult.dueDate != null) {
+      try {
+        dueDate = DateTime.parse(llmResult.dueDate!);
+      } catch (e) {
+        // Ignore parsing errors for due date
+      }
+    }
+
+    print('[ReceiptConverter] Converting LLM result to Receipt');
+    print('[ReceiptConverter] documentType: ${llmResult.documentType}');
+    print('[ReceiptConverter] vendorAddress: ${llmResult.vendorAddress}');
+    print('[ReceiptConverter] customerName: ${llmResult.customerName}');
+    print('[ReceiptConverter] invoiceNumber: ${llmResult.invoiceNumber}');
+    print('[ReceiptConverter] dueDate: $dueDate');
+
     return Receipt.create(
       originalImagePath: imagePath,
       merchantName: llmResult.merchantName,
@@ -63,6 +84,13 @@ class ReceiptConverterService {
       taxAmount: llmResult.taxTotal,
       taxBreakdown: taxBreakdownList,
       taxTotal: llmResult.taxTotal,
+      documentType: llmResult.documentType,
+      // Invoice-specific fields
+      vendorAddress: llmResult.vendorAddress,
+      vendorTaxId: llmResult.vendorTaxId,
+      customerName: llmResult.customerName,
+      invoiceNumber: llmResult.invoiceNumber,
+      dueDate: dueDate,
       paymentMethod: llmResult.paymentMethod != null
           ? PaymentMethod.fromString(llmResult.paymentMethod)
           : null,

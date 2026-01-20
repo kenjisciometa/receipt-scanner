@@ -56,6 +56,16 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   late final TextEditingController _totalController;
   late final TextEditingController _paymentMethodController;
 
+  // Invoice-specific controllers
+  late final TextEditingController _vendorAddressController;
+  late final TextEditingController _vendorTaxIdController;
+  late final TextEditingController _customerNameController;
+  late final TextEditingController _invoiceNumberController;
+  late final TextEditingController _dueDateController;
+
+  // Document type (can be changed by user)
+  String _documentType = 'receipt';
+
   // Tax Breakdown controllers (rate and amount pairs)
   final List<({TextEditingController rate, TextEditingController amount})> _taxBreakdownControllers = [];
 
@@ -73,6 +83,13 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     _totalController = TextEditingController();
     _paymentMethodController = TextEditingController();
 
+    // Initialize invoice-specific controllers
+    _vendorAddressController = TextEditingController();
+    _vendorTaxIdController = TextEditingController();
+    _customerNameController = TextEditingController();
+    _invoiceNumberController = TextEditingController();
+    _dueDateController = TextEditingController();
+
     _startProcessing();
   }
 
@@ -85,6 +102,12 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     _taxController.dispose();
     _totalController.dispose();
     _paymentMethodController.dispose();
+    // Dispose invoice-specific controllers
+    _vendorAddressController.dispose();
+    _vendorTaxIdController.dispose();
+    _customerNameController.dispose();
+    _invoiceNumberController.dispose();
+    _dueDateController.dispose();
     // Dispose tax breakdown controllers
     for (final controllers in _taxBreakdownControllers) {
       controllers.rate.dispose();
@@ -120,12 +143,15 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       }
 
       // Process with Scanner API
-      logger.i('Processing with Scanner API...');
+      print('[PreviewScreen] Processing with Scanner API...');
       final result = await _scannerService.extractFromFile(file);
 
-      logger.i('LLM extraction completed in ${result.processingTimeMs}ms, confidence: ${result.confidence}');
+      print('[PreviewScreen] LLM extraction completed in ${result.processingTimeMs}ms');
+      print('[PreviewScreen] result.documentType: ${result.documentType}');
+      print('[PreviewScreen] result.vendorAddress: ${result.vendorAddress}');
 
       // Convert LLM result to Receipt object
+      print('[PreviewScreen] Calling ReceiptConverterService.fromLLMResult...');
       final receipt = ReceiptConverterService.fromLLMResult(
         result,
         imagePath: widget.imagePath,
@@ -136,15 +162,24 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       final warning = ReceiptValidationService.validateTotals(
         receipt.taxBreakdown, receipt.totalAmount);
 
+      // Initialize controllers first (before setState)
+      _initializeTextControllers(receipt);
+
       setState(() {
         _extractedReceipt = receipt;
+        _documentType = receipt.documentType ?? 'receipt';
         _validationWarning = warning;
         _llmReasoning = result.reasoning;
         _step1Result = result.step1Result;
       });
-
-      _initializeTextControllers(receipt);
-      logger.i('Receipt created: ${receipt.merchantName}, ${receipt.totalAmount}');
+      print('[PreviewScreen] Receipt created: ${receipt.merchantName}, ${receipt.totalAmount}');
+      print('[PreviewScreen] Document type from receipt: ${receipt.documentType}');
+      print('[PreviewScreen] _documentType state: $_documentType');
+      print('[PreviewScreen] Invoice fields:');
+      print('[PreviewScreen]   vendorAddress: ${receipt.vendorAddress}');
+      print('[PreviewScreen]   customerName: ${receipt.customerName}');
+      print('[PreviewScreen]   invoiceNumber: ${receipt.invoiceNumber}');
+      print('[PreviewScreen]   dueDate: ${receipt.dueDate}');
       if (warning != null) {
         logger.w('Validation warning: $warning');
       }
@@ -507,47 +542,96 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
             const SizedBox(height: AppConstants.defaultPadding),
           ],
           
-          // Document Type
-          if (receipt.documentType != null) ...[
-            _buildSectionTitle('Document Type'),
+          // Document Type (always show with selector)
+          _buildSectionTitle('Document Type'),
+          _buildDataCard([
+            DocumentTypeSelector(
+              currentType: _documentType,
+              onChanged: (newType) {
+                setState(() {
+                  _documentType = newType;
+                });
+              },
+            ),
+          ]),
+          const SizedBox(height: AppConstants.defaultPadding),
+
+          // Show different UI based on document type
+          if (_documentType == 'invoice') ...[
+            // ===== INVOICE UI =====
+            // Vendor info
+            _buildSectionTitle('Vendor'),
             _buildDataCard([
-              DocumentTypeRow(documentType: receipt.documentType!),
+              _isEditing
+                  ? EditableDataRow(label: 'Vendor Name', controller: _merchantNameController)
+                  : _buildDataRow('Vendor Name', receipt.merchantName ?? 'N/A'),
+              if (_isEditing)
+                EditableDataRow(label: 'Address', controller: _vendorAddressController)
+              else if (receipt.vendorAddress != null && receipt.vendorAddress!.isNotEmpty)
+                _buildDataRow('Address', receipt.vendorAddress!),
+              if (_isEditing)
+                EditableDataRow(label: 'Tax ID', controller: _vendorTaxIdController)
+              else if (receipt.vendorTaxId != null && receipt.vendorTaxId!.isNotEmpty)
+                _buildDataRow('Tax ID', receipt.vendorTaxId!),
             ]),
-            const SizedBox(height: AppConstants.defaultPadding),
+
+            // Customer info (invoice only)
+            _buildSectionTitle('Customer'),
+            _buildDataCard([
+              _isEditing
+                  ? EditableDataRow(label: 'Customer Name', controller: _customerNameController)
+                  : _buildDataRow('Customer Name', receipt.customerName ?? 'N/A'),
+            ]),
+
+            // Invoice details
+            _buildSectionTitle('Invoice Details'),
+            _buildDataCard([
+              if (_isEditing)
+                EditableDataRow(label: 'Invoice #', controller: _invoiceNumberController)
+              else if (receipt.invoiceNumber != null && receipt.invoiceNumber!.isNotEmpty)
+                _buildDataRow('Invoice #', receipt.invoiceNumber!),
+              if (_isEditing)
+                EditableDataRow(label: 'Date', controller: _dateController, hint: 'YYYY-MM-DD')
+              else if (receipt.purchaseDate != null)
+                _buildDataRow('Date', Formatters.formatDate(receipt.purchaseDate!)),
+              if (_isEditing)
+                EditableDataRow(label: 'Due Date', controller: _dueDateController, hint: 'YYYY-MM-DD')
+              else if (receipt.dueDate != null)
+                _buildDataRow('Due Date', Formatters.formatDate(receipt.dueDate!)),
+            ]),
+          ] else ...[
+            // ===== RECEIPT UI =====
+            // Merchant info
+            _buildSectionTitle('Merchant'),
+            _buildDataCard([
+              _isEditing
+                  ? EditableDataRow(label: 'Store Name', controller: _merchantNameController)
+                  : _buildDataRow('Store Name', receipt.merchantName ?? 'N/A'),
+              if (!_isEditing && receipt.receiptNumber != null)
+                _buildDataRow('Receipt #', receipt.receiptNumber!),
+              if (_isEditing)
+                EditableDataRow(label: 'Receipt #', controller: _receiptNumberController),
+            ]),
+
+            // Date and payment info
+            _buildSectionTitle('Transaction Details'),
+            _buildDataCard([
+              if (_isEditing)
+                EditableDataRow(label: 'Date', controller: _dateController, hint: 'YYYY-MM-DD')
+              else if (receipt.purchaseDate != null)
+                _buildDataRow('Date', Formatters.formatDate(receipt.purchaseDate!)),
+              if (_isEditing)
+                EditableDataRow(label: 'Payment Method', controller: _paymentMethodController)
+              else if (receipt.paymentMethod != null)
+                _buildDataRow('Payment Method', receipt.paymentMethod!.displayName),
+            ]),
           ],
-          
-          // Merchant info
-          _buildSectionTitle('Merchant'),
-          _buildDataCard([
-            _isEditing
-                ? EditableDataRow(label: 'Store Name', controller: _merchantNameController)
-                : _buildDataRow('Store Name', receipt.merchantName ?? 'N/A'),
-            if (!_isEditing && receipt.receiptNumber != null)
-              _buildDataRow('Receipt #', receipt.receiptNumber!),
-            if (_isEditing)
-              EditableDataRow(label: 'Receipt #', controller: _receiptNumberController),
-          ]),
-          
-          // Date and payment info
-          _buildSectionTitle('Transaction Details'),
-          _buildDataCard([
-            if (_isEditing)
-              EditableDataRow(label: 'Date', controller: _dateController, hint: 'YYYY-MM-DD')
-            else if (receipt.purchaseDate != null)
-              _buildDataRow('Date', Formatters.formatDate(receipt.purchaseDate!)),
-            if (_isEditing)
-              EditableDataRow(label: 'Payment Method', controller: _paymentMethodController)
-            else if (receipt.paymentMethod != null)
-              _buildDataRow('Payment Method', receipt.paymentMethod!.displayName),
-          ]),
           
           // Currency
-          if (receipt.currency != null) ...[
-            _buildSectionTitle('Currency'),
-            _buildDataCard([
-              _buildDataRow('Currency', receipt.currency.code),
-            ]),
-          ],
+          _buildSectionTitle('Currency'),
+          _buildDataCard([
+            _buildDataRow('Currency', receipt.currency.code),
+          ]),
           
           // Amount breakdown
           _buildSectionTitle('Amount Breakdown'),
@@ -785,10 +869,14 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
 
   /// Initialize text controllers with receipt data
   void _initializeTextControllers(Receipt receipt) {
+    // Set document type
+    _documentType = receipt.documentType ?? 'receipt';
+
+    // Common fields
     _merchantNameController.text = receipt.merchantName ?? '';
     _receiptNumberController.text = receipt.receiptNumber ?? '';
-    _dateController.text = receipt.purchaseDate != null 
-        ? Formatters.formatDate(receipt.purchaseDate!) 
+    _dateController.text = receipt.purchaseDate != null
+        ? Formatters.formatDate(receipt.purchaseDate!)
         : '';
     _subtotalController.text = receipt.subtotalAmount != null
         ? receipt.subtotalAmount!.toStringAsFixed(2)
@@ -800,7 +888,16 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         ? receipt.totalAmount!.toStringAsFixed(2)
         : '';
     _paymentMethodController.text = receipt.paymentMethod?.displayName ?? '';
-    
+
+    // Invoice-specific fields
+    _vendorAddressController.text = receipt.vendorAddress ?? '';
+    _vendorTaxIdController.text = receipt.vendorTaxId ?? '';
+    _customerNameController.text = receipt.customerName ?? '';
+    _invoiceNumberController.text = receipt.invoiceNumber ?? '';
+    _dueDateController.text = receipt.dueDate != null
+        ? Formatters.formatDate(receipt.dueDate!)
+        : '';
+
     // Initialize tax breakdown controllers
     _clearTaxBreakdownControllers();
     if (receipt.taxBreakdown.isNotEmpty) {
@@ -891,22 +988,41 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           ? null
           : _paymentMethodController.text.trim();
 
-      // Parse date
-      DateTime? purchaseDate;
-      if (_dateController.text.trim().isNotEmpty) {
-        final parts = _dateController.text.trim().split('/');
+      // Invoice-specific fields
+      final vendorAddress = _vendorAddressController.text.trim().isEmpty
+          ? null
+          : _vendorAddressController.text.trim();
+      final vendorTaxId = _vendorTaxIdController.text.trim().isEmpty
+          ? null
+          : _vendorTaxIdController.text.trim();
+      final customerName = _customerNameController.text.trim().isEmpty
+          ? null
+          : _customerNameController.text.trim();
+      final invoiceNumber = _invoiceNumberController.text.trim().isEmpty
+          ? null
+          : _invoiceNumberController.text.trim();
+
+      // Parse date helper function
+      DateTime? parseDate(String text) {
+        if (text.isEmpty) return null;
+        final parts = text.split('/');
         if (parts.length == 3) {
           try {
-            purchaseDate = DateTime(
+            return DateTime(
               int.parse(parts[2]),
               int.parse(parts[1]),
               int.parse(parts[0]),
             );
           } catch (e) {
-            logger.w('Failed to parse date: ${_dateController.text}');
+            logger.w('Failed to parse date: $text');
           }
         }
+        return null;
       }
+
+      // Parse dates
+      final purchaseDate = parseDate(_dateController.text.trim());
+      final dueDate = parseDate(_dueDateController.text.trim());
 
       // Parse tax breakdown
       final taxBreakdown = _taxBreakdownControllers.map((controllers) {
@@ -937,6 +1053,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
 
       // Update the receipt with edited values
       final updatedReceipt = _extractedReceipt!.copyWith(
+        documentType: _documentType,
         merchantName: merchantName,
         receiptNumber: receiptNumber,
         purchaseDate: purchaseDate,
@@ -948,6 +1065,12 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         paymentMethod: paymentMethodStr != null
             ? PaymentMethod.fromString(paymentMethodStr)
             : null,
+        // Invoice-specific fields
+        vendorAddress: vendorAddress,
+        vendorTaxId: vendorTaxId,
+        customerName: customerName,
+        invoiceNumber: invoiceNumber,
+        dueDate: dueDate,
       );
 
       setState(() {

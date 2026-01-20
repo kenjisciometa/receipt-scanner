@@ -32,14 +32,18 @@ class ScannerApiService {
   Future<LLMExtractionResult> extractFromFile(File imageFile) async {
     final bytes = await imageFile.readAsBytes();
     print('[ScannerAPI] Image file size: ${bytes.length} bytes');
-    return extractFromBytes(bytes);
+    final result = await extractFromBytes(bytes);
+    print('[ScannerAPI] extractFromFile: Got result, documentType=${result.documentType}');
+    return result;
   }
 
   /// Extract receipt data from image bytes via POS API
   Future<LLMExtractionResult> extractFromBytes(Uint8List imageBytes) async {
     final base64Image = base64Encode(imageBytes);
     print('[ScannerAPI] Base64 image length: ${base64Image.length}');
-    return extractFromBase64(base64Image);
+    final result = await extractFromBase64(base64Image);
+    print('[ScannerAPI] extractFromBytes: Got result');
+    return result;
   }
 
   /// Extract receipt data from base64 encoded image via POS API
@@ -100,8 +104,16 @@ class ScannerApiService {
       print('[ScannerAPI] Extraction successful!');
       print('[ScannerAPI] Processing time: ${data['processing_time_ms']}ms');
 
+      // Debug: Print invoice fields from response
+      print('[ScannerAPI] document_type: ${data['document_type']}');
+      print('[ScannerAPI] vendor_address: ${data['vendor_address']}');
+      print('[ScannerAPI] vendor_tax_id: ${data['vendor_tax_id']}');
+      print('[ScannerAPI] customer_name: ${data['customer_name']}');
+      print('[ScannerAPI] invoice_number: ${data['invoice_number']}');
+      print('[ScannerAPI] due_date: ${data['due_date']}');
+
       // Parse response from POS API
-      return LLMExtractionResult(
+      final extractionResult = LLMExtractionResult(
         merchantName: data['merchant_name'],
         date: data['date'],
         time: data['time'],
@@ -122,7 +134,16 @@ class ScannerApiService {
         confidence: _parseDouble(data['confidence']) ?? 0.0,
         reasoning: data['reasoning'],
         step1Result: data['step1_result'],
+        // Document type and Invoice-specific fields
+        documentType: data['document_type'],
+        vendorAddress: data['vendor_address'],
+        vendorTaxId: data['vendor_tax_id'],
+        customerName: data['customer_name'],
+        invoiceNumber: data['invoice_number'],
+        dueDate: data['due_date'],
       );
+      print('[ScannerAPI] LLMExtractionResult created, returning...');
+      return extractionResult;
     } catch (e) {
       stopwatch.stop();
       print('[ScannerAPI] EXCEPTION: $e');

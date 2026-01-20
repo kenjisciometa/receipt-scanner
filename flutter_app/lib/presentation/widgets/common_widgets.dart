@@ -660,7 +660,7 @@ class EditableDataRow extends StatelessWidget {
   }
 }
 
-/// Document type display row with icon
+/// Document type display row with icon (read-only)
 class DocumentTypeRow extends StatelessWidget {
   final String documentType;
   final EdgeInsetsGeometry padding;
@@ -677,27 +677,7 @@ class DocumentTypeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine icon and color based on document type
-    final IconData icon;
-    final Color color;
-    final String displayText;
-
-    switch (documentType.toLowerCase()) {
-      case 'receipt':
-        icon = Icons.receipt;
-        color = Colors.green;
-        displayText = 'Receipt';
-        break;
-      case 'invoice':
-        icon = Icons.description;
-        color = Colors.blue;
-        displayText = 'Invoice';
-        break;
-      default:
-        icon = Icons.help_outline;
-        color = Colors.grey;
-        displayText = 'Unknown';
-    }
+    final (icon, color, displayText) = _getDocumentTypeDisplay(documentType);
 
     return Padding(
       padding: padding,
@@ -734,6 +714,126 @@ class DocumentTypeRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Document type selector with toggle buttons (editable)
+class DocumentTypeSelector extends StatelessWidget {
+  final String currentType;
+  final ValueChanged<String> onChanged;
+  final EdgeInsetsGeometry padding;
+
+  const DocumentTypeSelector({
+    super.key,
+    required this.currentType,
+    required this.onChanged,
+    this.padding = const EdgeInsets.symmetric(vertical: 8),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              'Document Type',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Row(
+              children: [
+                _buildTypeButton(
+                  context,
+                  type: 'receipt',
+                  icon: Icons.receipt,
+                  label: 'Receipt',
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 8),
+                _buildTypeButton(
+                  context,
+                  type: 'invoice',
+                  icon: Icons.description,
+                  label: 'Invoice',
+                  color: Colors.blue,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeButton(
+    BuildContext context, {
+    required String type,
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    final isSelected = currentType.toLowerCase() == type;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () => onChanged(type),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withValues(alpha: 0.15) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? color : Colors.grey.shade300,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? color : Colors.grey.shade600,
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? color : Colors.grey.shade600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Helper function to get document type display properties
+(IconData, Color, String) _getDocumentTypeDisplay(String documentType) {
+  switch (documentType.toLowerCase()) {
+    case 'receipt':
+      return (Icons.receipt, Colors.green, 'Receipt');
+    case 'invoice':
+      return (Icons.description, Colors.blue, 'Invoice');
+    default:
+      return (Icons.help_outline, Colors.grey, 'Unknown');
   }
 }
 

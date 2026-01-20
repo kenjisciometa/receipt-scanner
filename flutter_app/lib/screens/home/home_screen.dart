@@ -375,6 +375,109 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  // Document Type Toggle
+                                  Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setState(() {
+                                                _lastScanResult!['document_type'] = 'receipt';
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: _lastScanResult!['document_type'] != 'invoice'
+                                                    ? Colors.green.shade100
+                                                    : Colors.grey.shade100,
+                                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                                                border: Border.all(
+                                                  color: _lastScanResult!['document_type'] != 'invoice'
+                                                      ? Colors.green.shade400
+                                                      : Colors.grey.shade300,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.receipt_long,
+                                                    size: 16,
+                                                    color: _lastScanResult!['document_type'] != 'invoice'
+                                                        ? Colors.green.shade700
+                                                        : Colors.grey.shade500,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    'Receipt',
+                                                    style: TextStyle(
+                                                      fontWeight: _lastScanResult!['document_type'] != 'invoice'
+                                                          ? FontWeight.bold
+                                                          : FontWeight.normal,
+                                                      color: _lastScanResult!['document_type'] != 'invoice'
+                                                          ? Colors.green.shade700
+                                                          : Colors.grey.shade600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setState(() {
+                                                _lastScanResult!['document_type'] = 'invoice';
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: _lastScanResult!['document_type'] == 'invoice'
+                                                    ? Colors.blue.shade100
+                                                    : Colors.grey.shade100,
+                                                borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                                                border: Border.all(
+                                                  color: _lastScanResult!['document_type'] == 'invoice'
+                                                      ? Colors.blue.shade400
+                                                      : Colors.grey.shade300,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.description,
+                                                    size: 16,
+                                                    color: _lastScanResult!['document_type'] == 'invoice'
+                                                        ? Colors.blue.shade700
+                                                        : Colors.grey.shade500,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    'Invoice',
+                                                    style: TextStyle(
+                                                      fontWeight: _lastScanResult!['document_type'] == 'invoice'
+                                                          ? FontWeight.bold
+                                                          : FontWeight.normal,
+                                                      color: _lastScanResult!['document_type'] == 'invoice'
+                                                          ? Colors.blue.shade700
+                                                          : Colors.grey.shade600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Merchant/Vendor Name
                                   GestureDetector(
                                     onTap: _editMerchantName,
                                     child: Container(
@@ -423,7 +526,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       ),
                                     ),
                                   ),
-                                  if (_lastScanResult!['receipt_number'] != null)
+                                  // Show receipt number for receipts
+                                  if (_lastScanResult!['document_type'] != 'invoice' && _lastScanResult!['receipt_number'] != null)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 4),
                                       child: Text(
@@ -431,9 +535,196 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                                       ),
                                     ),
+                                  // Show invoice number for invoices (editable)
+                                  if (_lastScanResult!['document_type'] == 'invoice')
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: GestureDetector(
+                                        onTap: () => _editInvoiceTextField('invoice_number', 'Edit Invoice Number', 'Invoice Number'),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(color: Colors.grey.shade300),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                _lastScanResult!['invoice_number'] != null
+                                                    ? 'Invoice #${_lastScanResult!['invoice_number']}'
+                                                    : 'Set invoice #',
+                                                style: TextStyle(
+                                                  color: _lastScanResult!['invoice_number'] != null
+                                                      ? Colors.grey.shade600
+                                                      : Colors.grey,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Icon(Icons.edit, size: 12, color: Colors.grey.shade500),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
+
+                            // Invoice-specific fields
+                            if (_lastScanResult!['document_type'] == 'invoice') ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.blue.shade200),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.description, size: 16, color: Colors.blue.shade700),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'INVOICE',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue.shade700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    // Vendor Address
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Vendor Address:',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => _editInvoiceTextField('vendor_address', 'Edit Vendor Address', 'Vendor Address'),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(color: Colors.grey.shade300),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _lastScanResult!['vendor_address'] ?? 'Set address',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: _lastScanResult!['vendor_address'] != null ? Colors.black87 : Colors.grey,
+                                                ),
+                                              ),
+                                            ),
+                                            Icon(Icons.edit, size: 14, color: Colors.grey.shade500),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    // Vendor Tax ID
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Vendor Tax ID:',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => _editInvoiceTextField('vendor_tax_id', 'Edit Vendor Tax ID', 'Tax ID'),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(color: Colors.grey.shade300),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _lastScanResult!['vendor_tax_id'] ?? 'Set tax ID',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: _lastScanResult!['vendor_tax_id'] != null ? Colors.black87 : Colors.grey,
+                                                ),
+                                              ),
+                                            ),
+                                            Icon(Icons.edit, size: 14, color: Colors.grey.shade500),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    // Customer Name
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Customer:',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => _editInvoiceTextField('customer_name', 'Edit Customer Name', 'Customer Name'),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(color: Colors.grey.shade300),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _lastScanResult!['customer_name'] ?? 'Set customer',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: _lastScanResult!['customer_name'] != null ? Colors.black87 : Colors.grey,
+                                                ),
+                                              ),
+                                            ),
+                                            Icon(Icons.edit, size: 14, color: Colors.grey.shade500),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    // Due Date
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Due Date:',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    ),
+                                    GestureDetector(
+                                      onTap: _editDueDate,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(color: Colors.grey.shade300),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _lastScanResult!['due_date'] ?? 'Set due date',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: _lastScanResult!['due_date'] != null ? Colors.black87 : Colors.grey,
+                                                ),
+                                              ),
+                                            ),
+                                            Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade500),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+
                             const SizedBox(height: 16),
 
                             // Tax breakdown
@@ -593,19 +884,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                GestureDetector(
-                                  onTap: _editPaymentMethod,
-                                  child: Chip(
-                                    label: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(_lastScanResult!['payment_method'] ?? 'Set payment'),
-                                        const SizedBox(width: 4),
-                                        Icon(Icons.edit, size: 14, color: Colors.grey.shade600),
-                                      ],
+                                Row(
+                                  children: [
+                                    GestureDetector(
+                                      onTap: _editPaymentMethod,
+                                      child: Chip(
+                                        label: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(_lastScanResult!['payment_method'] ?? 'Set payment'),
+                                            const SizedBox(width: 4),
+                                            Icon(Icons.edit, size: 14, color: Colors.grey.shade600),
+                                          ],
+                                        ),
+                                        avatar: const Icon(Icons.payment, size: 16),
+                                      ),
                                     ),
-                                    avatar: const Icon(Icons.payment, size: 16),
-                                  ),
+                                    const SizedBox(width: 8),
+                                    GestureDetector(
+                                      onTap: _editCurrency,
+                                      child: Chip(
+                                        label: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(_lastScanResult!['currency'] ?? 'EUR'),
+                                            const SizedBox(width: 4),
+                                            Icon(Icons.arrow_drop_down, size: 18, color: Colors.grey.shade600),
+                                          ],
+                                        ),
+                                        avatar: const Icon(Icons.currency_exchange, size: 16),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 Text(
                                   'Confidence: ${((_lastScanResult!['confidence'] ?? 0) * 100).toInt()}%',
@@ -727,6 +1037,89 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (result != null && result.isNotEmpty && mounted) {
       setState(() {
         _lastScanResult!['payment_method'] = result;
+      });
+    }
+  }
+
+  // Invoice-specific edit methods
+  Future<void> _editInvoiceTextField(String fieldKey, String title, String label) async {
+    final result = await ReceiptEditDialogs.editText(
+      context: context,
+      title: title,
+      label: label,
+      currentValue: _lastScanResult![fieldKey] ?? '',
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _lastScanResult![fieldKey] = result.isEmpty ? null : result;
+      });
+    }
+  }
+
+  Future<void> _editDueDate() async {
+    final currentDueDate = _lastScanResult!['due_date'] as String?;
+    DateTime? initialDate;
+    if (currentDueDate != null) {
+      initialDate = DateTime.tryParse(currentDueDate);
+    }
+
+    final result = await showDatePicker(
+      context: context,
+      initialDate: initialDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _lastScanResult!['due_date'] = '${result.year}-${result.month.toString().padLeft(2, '0')}-${result.day.toString().padLeft(2, '0')}';
+      });
+    }
+  }
+
+  Future<void> _editCurrency() async {
+    final currencies = ['EUR', 'USD', 'SEK', 'NOK', 'DKK', 'GBP', 'JPY', 'CHF'];
+    final currentCurrency = _lastScanResult!['currency'] ?? 'EUR';
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Currency'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: currencies.length,
+            itemBuilder: (context, index) {
+              final currency = currencies[index];
+              final isSelected = currency == currentCurrency;
+              return ListTile(
+                title: Text(
+                  currency,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? Colors.blue : null,
+                  ),
+                ),
+                trailing: isSelected ? const Icon(Icons.check, color: Colors.blue) : null,
+                onTap: () => Navigator.of(context).pop(currency),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _lastScanResult!['currency'] = result;
       });
     }
   }
