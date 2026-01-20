@@ -22,7 +22,8 @@ class AppConfig {
 
   // API endpoints
   static String get scannerExtractUrl => '$apiBaseUrl/api/scanner/extract';
-  static String get storageUploadUrl => '$apiBaseUrl/api/storage/receipts';
+  static String get receiptStorageUploadUrl => '$apiBaseUrl/api/storage/receipts';
+  static String get invoiceStorageUploadUrl => '$apiBaseUrl/api/storage/invoices';
 
   // Storage base URL for retrieving images
   static String get storageBaseUrl => '$apiBaseUrl/api/storage/receipts';

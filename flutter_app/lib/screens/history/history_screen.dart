@@ -8,6 +8,7 @@ import '../../services/receipt_repository.dart';
 import '../../services/image_storage_service.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
 import '../../presentation/widgets/common_widgets.dart';
+import '../../presentation/widgets/file_viewer_widget.dart';
 import '../../services/receipt_validation_service.dart';
 
 final receiptRepositoryProvider = Provider((ref) => ReceiptRepository());
@@ -623,6 +624,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
   }
 
   void _showImageDialog(BuildContext context, String imageUrl) {
+    final isPdf = isPdfUrl(imageUrl);
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -630,7 +632,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             AppBar(
-              title: const Text('Receipt Image'),
+              title: Text(isPdf ? 'Receipt PDF' : 'Receipt Image'),
               leading: IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.pop(context),
@@ -664,18 +666,14 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
                         children: [
                           const Icon(Icons.error, size: 48, color: Colors.red),
                           const SizedBox(height: 8),
-                          Text('Failed to load image:\n${snapshot.error ?? "Unknown error"}', textAlign: TextAlign.center),
+                          Text('Failed to load file:\n${snapshot.error ?? "Unknown error"}', textAlign: TextAlign.center),
                         ],
                       ),
                     );
                   }
-                  return InteractiveViewer(
-                    minScale: 0.5,
-                    maxScale: 4.0,
-                    child: Image.memory(
-                      snapshot.data!,
-                      fit: BoxFit.contain,
-                    ),
+                  return FileViewerWidget(
+                    data: snapshot.data!,
+                    fit: BoxFit.contain,
                   );
                 },
               ),
@@ -687,28 +685,30 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
   }
 
   Future<void> _saveImageToDevice(BuildContext context, String imageUrl) async {
+    final isPdf = isPdfUrl(imageUrl);
     try {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Downloading image...'), duration: Duration(seconds: 1)),
+        SnackBar(content: Text('Downloading ${isPdf ? 'PDF' : 'image'}...'), duration: const Duration(seconds: 1)),
       );
 
-      final imageBytes = await ImageStorageService.getImage(imageUrl);
-      if (imageBytes == null) {
-        throw Exception('Failed to download image');
+      final fileBytes = await ImageStorageService.getImage(imageUrl);
+      if (fileBytes == null) {
+        throw Exception('Failed to download file');
       }
 
       final directory = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final filePath = '${directory.path}/receipt_$timestamp.jpg';
+      final extension = isPdf ? 'pdf' : 'jpg';
+      final filePath = '${directory.path}/receipt_$timestamp.$extension';
 
       final file = File(filePath);
-      await file.writeAsBytes(imageBytes);
+      await file.writeAsBytes(fileBytes);
 
       if (!context.mounted) return;
 
       await Share.shareXFiles(
         [XFile(filePath)],
-        text: 'Receipt image',
+        text: isPdf ? 'Receipt PDF' : 'Receipt image',
       );
     } catch (e) {
       if (!context.mounted) return;

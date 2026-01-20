@@ -174,12 +174,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     try {
-      // Upload image to NAS via ReactPOS API
-      String? imageUrl;
-      if (_lastImagePath != null && ImageStorageService.isConfigured) {
-        imageUrl = await ImageStorageService.uploadReceiptImage(_lastImagePath!);
-      }
-
       // Parse date
       DateTime? purchaseDate;
       if (_lastScanResult!['date'] != null) {
@@ -189,6 +183,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
 
       final documentType = _lastScanResult!['document_type'] as String? ?? 'receipt';
+
+      // Upload image to NAS via ReactPOS API (use correct endpoint based on document type)
+      String? imageUrl;
+      if (_lastImagePath != null && ImageStorageService.isConfigured) {
+        if (documentType == 'invoice') {
+          imageUrl = await ImageStorageService.uploadInvoiceImage(_lastImagePath!);
+        } else {
+          imageUrl = await ImageStorageService.uploadReceiptImage(_lastImagePath!);
+        }
+      }
       final taxBreakdownList = _lastScanResult!['tax_breakdown'] != null
           ? List<Map<String, dynamic>>.from(_lastScanResult!['tax_breakdown'])
           : null;
