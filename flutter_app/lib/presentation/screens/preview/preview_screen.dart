@@ -11,6 +11,8 @@ import '../../../data/models/tax_breakdown.dart';
 import '../../../services/api/scanner_api_service.dart';
 import '../../../services/receipt_validation_service.dart';
 import '../../../services/receipt_converter_service.dart';
+import '../../../services/invoice_repository.dart';
+import '../../../services/receipt_repository.dart';
 import '../../../main.dart';
 
 /// Preview screen for captured receipt images with processing results
@@ -1100,14 +1102,84 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
     }
   }
 
-  void _saveReceipt() {
-    // TODO: Save receipt to database
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Receipt saved successfully!'),
-        backgroundColor: Colors.green,
-      ),
-    );
-    context.go('/');
+  Future<void> _saveReceipt() async {
+    if (_extractedReceipt == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No data to save'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final receipt = _extractedReceipt!;
+      final taxBreakdownMaps = receipt.taxBreakdown.map((tb) => {
+        'rate': tb.rate,
+        'tax_amount': tb.amount,
+        'taxable_amount': tb.taxableAmount,
+        'gross_amount': tb.grossAmount,
+      }).toList();
+
+      if (_documentType == 'invoice') {
+        // Save to invoices table
+        final invoiceRepo = InvoiceRepository();
+        await invoiceRepo.saveInvoice(
+          merchantName: receipt.merchantName,
+          vendorAddress: receipt.vendorAddress,
+          vendorTaxId: receipt.vendorTaxId,
+          customerName: receipt.customerName,
+          invoiceNumber: receipt.invoiceNumber,
+          invoiceDate: receipt.purchaseDate,
+          dueDate: receipt.dueDate,
+          subtotalAmount: receipt.subtotalAmount,
+          taxAmount: receipt.taxAmount,
+          totalAmount: receipt.totalAmount,
+          currency: receipt.currency.name,
+          taxBreakdown: taxBreakdownMaps,
+          paymentMethod: receipt.paymentMethod?.name,
+          originalImageUrl: receipt.originalImagePath,
+          confidence: receipt.confidence,
+        );
+        logger.i('Invoice saved to database');
+      } else {
+        // Save to receipts table
+        final receiptRepo = ReceiptRepository();
+        await receiptRepo.saveReceipt(
+          merchantName: receipt.merchantName,
+          purchaseDate: receipt.purchaseDate,
+          subtotalAmount: receipt.subtotalAmount,
+          taxAmount: receipt.taxAmount,
+          totalAmount: receipt.totalAmount,
+          currency: receipt.currency.name,
+          paymentMethod: receipt.paymentMethod?.name,
+          originalImageUrl: receipt.originalImagePath,
+          confidence: receipt.confidence,
+          taxBreakdown: taxBreakdownMaps,
+        );
+        logger.i('Receipt saved to database');
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_documentType == 'invoice'
+              ? 'Invoice saved successfully!'
+              : 'Receipt saved successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      context.go('/');
+    } catch (e) {
+      logger.e('Failed to save: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

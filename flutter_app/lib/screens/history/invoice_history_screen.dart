@@ -4,59 +4,57 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import '../../services/receipt_repository.dart';
+import '../../services/invoice_repository.dart';
 import '../../services/image_storage_service.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
 import '../../presentation/widgets/common_widgets.dart';
 import '../../presentation/widgets/file_viewer_widget.dart';
-import '../../services/receipt_validation_service.dart';
 
-final receiptRepositoryProvider = Provider((ref) => ReceiptRepository());
+final invoiceRepositoryProvider = Provider((ref) => InvoiceRepository());
 
-final receiptsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final repository = ref.watch(receiptRepositoryProvider);
-  return repository.getReceipts();
+final invoicesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final repository = ref.watch(invoiceRepositoryProvider);
+  return repository.getInvoices();
 });
 
-final statisticsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
-  final repository = ref.watch(receiptRepositoryProvider);
+final invoiceStatisticsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final repository = ref.watch(invoiceRepositoryProvider);
   return repository.getStatistics();
 });
 
-class HistoryScreen extends ConsumerStatefulWidget {
-  const HistoryScreen({super.key});
+class InvoiceHistoryScreen extends ConsumerStatefulWidget {
+  const InvoiceHistoryScreen({super.key});
 
   @override
-  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
+  ConsumerState<InvoiceHistoryScreen> createState() => _InvoiceHistoryScreenState();
 }
 
-class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+class _InvoiceHistoryScreenState extends ConsumerState<InvoiceHistoryScreen> {
   String _selectedFilter = 'All';
   DateTimeRange? _customDateRange;
 
   @override
   void initState() {
     super.initState();
-    // Refresh data when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.invalidate(receiptsProvider);
-      ref.invalidate(statisticsProvider);
+      ref.invalidate(invoicesProvider);
+      ref.invalidate(invoiceStatisticsProvider);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final receiptsAsync = ref.watch(receiptsProvider);
-    final statsAsync = ref.watch(statisticsProvider);
+    final invoicesAsync = ref.watch(invoicesProvider);
+    final statsAsync = ref.watch(invoiceStatisticsProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('History'),
+        title: const Text('Invoice History'),
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          ref.invalidate(receiptsProvider);
-          ref.invalidate(statisticsProvider);
+          ref.invalidate(invoicesProvider);
+          ref.invalidate(invoiceStatisticsProvider);
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -75,15 +73,15 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   children: [
                     Expanded(
                       child: StatCard(
-                        title: 'Total Spent',
-                        value: '€${stats['total_spent']?.toStringAsFixed(2) ?? '0.00'}',
-                        icon: Icons.shopping_cart,
+                        title: 'Total',
+                        value: '€${stats['total_amount']?.toStringAsFixed(2) ?? '0.00'}',
+                        icon: Icons.euro,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: StatCard(
-                        title: 'Total Tax',
+                        title: 'Tax',
                         value: '€${stats['total_tax']?.toStringAsFixed(2) ?? '0.00'}',
                         icon: Icons.receipt_long,
                       ),
@@ -91,9 +89,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: StatCard(
-                        title: 'Receipts',
-                        value: '${stats['receipt_count'] ?? 0}',
-                        icon: Icons.format_list_numbered,
+                        title: 'Invoices',
+                        value: '${stats['invoice_count'] ?? 0}',
+                        icon: Icons.description,
                       ),
                     ),
                   ],
@@ -103,19 +101,19 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Receipt history
+              // Invoice history
               Text(
-                'Receipt History',
+                'Invoice History',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
 
-              // Filter chips
+              // Date filter chips
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    ...['All', 'Today', 'Yesterday', 'Last 7 days', 'This month'].map((filter) {
+                    ...['All', 'Today', 'Last 7 days', 'This month'].map((filter) {
                       final isSelected = _selectedFilter == filter;
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
@@ -145,12 +143,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                           final range = await showDateRangePicker(
                             context: context,
                             firstDate: DateTime(2020),
-                            lastDate: DateTime.now(),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
                             initialDateRange: _customDateRange,
-                            helpText: 'Select date range',
-                            cancelText: 'Cancel',
-                            confirmText: 'OK',
-                            saveText: 'OK',
                           );
                           if (range != null) {
                             setState(() {
@@ -168,36 +162,37 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               ),
               const SizedBox(height: 12),
 
-              receiptsAsync.when(
-                data: (receipts) {
-                  if (receipts.isEmpty) {
+              invoicesAsync.when(
+                data: (invoices) {
+                  if (invoices.isEmpty) {
                     return const Card(
                       child: Padding(
                         padding: EdgeInsets.all(32),
                         child: Center(
-                          child: Text('No receipts yet. Scan your first receipt!'),
+                          child: Text('No invoices yet. Scan your first invoice!'),
                         ),
                       ),
                     );
                   }
-                  // Filter receipts by added date
-                  final filtered = _filterReceiptsByAddedDate(receipts, _selectedFilter);
+                  // Filter invoices
+                  final filtered = _filterInvoicesByDate(invoices, _selectedFilter);
+
                   if (filtered.isEmpty) {
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(32),
                         child: Center(
-                          child: Text('No receipts added $_selectedFilter'.toLowerCase()),
+                          child: Text('No invoices match the selected filters'),
                         ),
                       ),
                     );
                   }
                   return Column(
-                    children: filtered.map((receipt) => ReceiptCard(receipt: receipt)).toList(),
+                    children: filtered.map((invoice) => InvoiceCard(invoice: invoice)).toList(),
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('Error loading receipts: $e'),
+                error: (e, _) => Text('Error loading invoices: $e'),
               ),
             ],
           ),
@@ -206,19 +201,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     );
   }
 
-  List<Map<String, dynamic>> _filterReceiptsByAddedDate(List<Map<String, dynamic>> receipts, String filter) {
-    if (filter == 'All') return receipts;
+  List<Map<String, dynamic>> _filterInvoicesByDate(List<Map<String, dynamic>> invoices, String filter) {
+    if (filter == 'All') return invoices;
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
     final last7Days = today.subtract(const Duration(days: 7));
     final thisMonthStart = DateTime(now.year, now.month, 1);
 
-    return receipts.where((receipt) {
-      // Use created_at (added date)
-      final createdAt = receipt['created_at'] != null
-          ? DateTime.tryParse(receipt['created_at'])
+    return invoices.where((invoice) {
+      final createdAt = invoice['created_at'] != null
+          ? DateTime.tryParse(invoice['created_at'])
           : null;
 
       if (createdAt == null) return false;
@@ -228,8 +221,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       switch (filter) {
         case 'Today':
           return addedDay == today;
-        case 'Yesterday':
-          return addedDay == yesterday;
         case 'Last 7 days':
           return addedDay.isAfter(last7Days) || addedDay == last7Days;
         case 'This month':
@@ -247,33 +238,37 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 }
 
-class ReceiptCard extends ConsumerStatefulWidget {
-  final Map<String, dynamic> receipt;
+class InvoiceCard extends ConsumerStatefulWidget {
+  final Map<String, dynamic> invoice;
 
-  const ReceiptCard({super.key, required this.receipt});
+  const InvoiceCard({super.key, required this.invoice});
 
   @override
-  ConsumerState<ReceiptCard> createState() => _ReceiptCardState();
+  ConsumerState<InvoiceCard> createState() => _InvoiceCardState();
 }
 
-class _ReceiptCardState extends ConsumerState<ReceiptCard> {
+class _InvoiceCardState extends ConsumerState<InvoiceCard> {
   bool _isEditMode = false;
 
-  Map<String, dynamic> get receipt => widget.receipt;
+  Map<String, dynamic> get invoice => widget.invoice;
 
   @override
   Widget build(BuildContext context) {
-    final merchantName = receipt['merchant_name'] ?? 'Unknown';
-    final total = receipt['total_amount'] as num?;
-    final subtotal = receipt['subtotal_amount'] as num?;
-    final tax = receipt['tax_amount'] as num?;
-    final currency = receipt['currency'] ?? 'EUR';
-    final taxBreakdown = receipt['tax_breakdown'] as List<dynamic>?;
-    final purchaseDate = receipt['purchase_date'] != null
-        ? DateTime.tryParse(receipt['purchase_date'])
+    final merchantName = invoice['merchant_name'] ?? 'Unknown Vendor';
+    final customerName = invoice['customer_name'];
+    final invoiceNumber = invoice['invoice_number'];
+    final total = invoice['total_amount'] as num?;
+    final tax = invoice['tax_amount'] as num?;
+    final currency = invoice['currency'] ?? 'EUR';
+    final taxBreakdown = invoice['tax_breakdown'] as List<dynamic>?;
+    final invoiceDate = invoice['invoice_date'] != null
+        ? DateTime.tryParse(invoice['invoice_date'])
         : null;
-    final createdAt = receipt['created_at'] != null
-        ? DateTime.parse(receipt['created_at'])
+    final dueDate = invoice['due_date'] != null
+        ? DateTime.tryParse(invoice['due_date'])
+        : null;
+    final createdAt = invoice['created_at'] != null
+        ? DateTime.parse(invoice['created_at'])
         : null;
 
     String currencySymbol = currency == 'EUR' ? '€' : currency;
@@ -283,27 +278,23 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
       return '${date.day}.${date.month}.${date.year}';
     }
 
-    String formatTime(DateTime? date) {
-      if (date == null) return '';
-      return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-    }
-
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
         leading: const CircleAvatar(
-          child: Icon(Icons.receipt),
+          child: Icon(Icons.description),
         ),
-        title: Text(merchantName),
+        title: Text(
+          merchantName,
+          maxLines: 2,
+          softWrap: true,
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(formatDate(purchaseDate ?? createdAt)),
-            if (createdAt != null)
-              Text(
-                'Added: ${formatDate(createdAt)} ${formatTime(createdAt)}',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-              ),
+            if (invoiceNumber != null)
+              Text('Invoice #$invoiceNumber', style: const TextStyle(fontSize: 12)),
+            Text(formatDate(invoiceDate ?? createdAt)),
           ],
         ),
         trailing: Text(
@@ -323,7 +314,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Edit Receipt', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text('Edit Invoice', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       TextButton.icon(
                         onPressed: () => setState(() => _isEditMode = false),
                         icon: const Icon(Icons.close, size: 18),
@@ -335,28 +326,46 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
 
                   // Merchant name
                   EditableField(
-                    label: 'Merchant',
+                    label: 'Vendor',
                     value: merchantName,
                     icon: Icons.store,
                     onTap: () => _editMerchantName(context, ref, merchantName),
                   ),
                   const SizedBox(height: 8),
 
-                  // Date
+                  // Vendor Address
                   EditableField(
-                    label: 'Date',
-                    value: formatDate(purchaseDate ?? createdAt),
-                    icon: Icons.calendar_today,
-                    onTap: () => _editDate(context, ref, purchaseDate),
+                    label: 'Address',
+                    value: invoice['vendor_address'] ?? 'Not set',
+                    icon: Icons.location_on,
+                    onTap: () => _editVendorAddress(context, ref, invoice['vendor_address']),
                   ),
                   const SizedBox(height: 8),
 
-                  // Subtotal
+                  // Invoice Number
                   EditableField(
-                    label: 'Subtotal',
-                    value: '$currencySymbol${subtotal?.toStringAsFixed(2) ?? '0.00'}',
-                    icon: Icons.receipt_long,
-                    onTap: () => _editAmount(context, ref, 'subtotal_amount', 'Subtotal', subtotal?.toDouble()),
+                    label: 'Invoice #',
+                    value: invoiceNumber ?? 'Not set',
+                    icon: Icons.numbers,
+                    onTap: () => _editInvoiceNumber(context, ref, invoiceNumber),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Invoice Date
+                  EditableField(
+                    label: 'Invoice Date',
+                    value: formatDate(invoiceDate),
+                    icon: Icons.calendar_today,
+                    onTap: () => _editInvoiceDate(context, ref, invoiceDate),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Due Date
+                  EditableField(
+                    label: 'Due Date',
+                    value: formatDate(dueDate),
+                    icon: Icons.event,
+                    onTap: () => _editDueDate(context, ref, dueDate),
                   ),
                   const SizedBox(height: 8),
 
@@ -392,9 +401,43 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
                   ],
                 ] else ...[
                   // Normal view - read-only display
+                  // Vendor info
+                  if (invoice['vendor_address'] != null || invoice['vendor_tax_id'] != null) ...[
+                    const Text('Vendor', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    if (invoice['vendor_address'] != null)
+                      DetailRow(
+                        label: 'Address',
+                        value: (invoice['vendor_address'] as String).split(',').map((s) => s.trim()).join('\n'),
+                      ),
+                    if (invoice['vendor_tax_id'] != null)
+                      DetailRow(label: 'Tax ID', value: invoice['vendor_tax_id']),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Customer info
+                  if (customerName != null) ...[
+                    const Text('Customer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    DetailRow(label: 'Name', value: customerName),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Dates
+                  const Text('Dates', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  if (invoiceDate != null)
+                    DetailRow(label: 'Invoice Date', value: formatDate(invoiceDate)),
+                  if (dueDate != null)
+                    DetailRow(
+                      label: 'Due Date',
+                      value: formatDate(dueDate),
+                    ),
+                  const SizedBox(height: 12),
+
                   // Amounts
-                  if (subtotal != null)
-                    DetailRow(label: 'Subtotal', value: '$currencySymbol${subtotal.toStringAsFixed(2)}'),
+                  const Text('Amounts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 4),
                   DetailRow(label: 'Tax', value: '$currencySymbol${tax?.toStringAsFixed(2) ?? '0.00'}'),
                   DetailRow(label: 'Total', value: '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}', isBold: true),
 
@@ -409,25 +452,12 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
                       final taxAmount = (taxItem['tax_amount'] as num?)?.toDouble();
                       final grossAmount = (taxItem['gross_amount'] as num?)?.toDouble();
 
-                      // Validate using service
-                      final isItemValid = ReceiptValidationService.validateTaxItem(
-                        Map<String, dynamic>.from(taxItem),
-                      );
-
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Text('$rate%', style: const TextStyle(fontSize: 13)),
-                                if (!isItemValid) ...[
-                                  const SizedBox(width: 4),
-                                  const Icon(Icons.warning, size: 14, color: Colors.orange),
-                                ],
-                              ],
-                            ),
+                            Text('$rate%', style: const TextStyle(fontSize: 13)),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
@@ -443,36 +473,6 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
                         ),
                       );
                     }),
-                    // Validation summary
-                    Builder(
-                      builder: (context) {
-                        final validation = ReceiptValidationService.validateTaxBreakdown(taxBreakdown, total?.toDouble(), tax?.toDouble());
-                        if (validation.isNotEmpty) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade50,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.orange.shade200),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: validation.map((msg) => Row(
-                                  children: [
-                                    const Icon(Icons.warning, size: 14, color: Colors.orange),
-                                    const SizedBox(width: 4),
-                                    Expanded(child: Text(msg, style: const TextStyle(fontSize: 12, color: Colors.orange))),
-                                  ],
-                                )).toList(),
-                              ),
-                            ),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
                   ],
                 ],
 
@@ -494,13 +494,13 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    // View image button (only if image exists)
-                    if (receipt['original_image_url'] != null) ...[
+                    // View image button
+                    if (invoice['original_image_url'] != null) ...[
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () => _showImageDialog(context, receipt['original_image_url']),
+                          onPressed: () => _showImageDialog(context, invoice['original_image_url']),
                           icon: const Icon(Icons.image, size: 18),
-                          label: const Text('View Image'),
+                          label: const Text('Image'),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -529,17 +529,43 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
   Future<void> _editMerchantName(BuildContext context, WidgetRef ref, String currentValue) async {
     final result = await ReceiptEditDialogs.editText(
       context: context,
-      title: 'Edit Merchant Name',
-      label: 'Merchant Name',
+      title: 'Edit Vendor Name',
+      label: 'Vendor Name',
       currentValue: currentValue,
     );
 
     if (result != null && result.isNotEmpty && context.mounted) {
-      await _updateReceipt(context, ref, merchantName: result);
+      await _updateInvoice(context, ref, merchantName: result);
     }
   }
 
-  Future<void> _editDate(BuildContext context, WidgetRef ref, DateTime? currentDate) async {
+  Future<void> _editVendorAddress(BuildContext context, WidgetRef ref, String? currentValue) async {
+    final result = await ReceiptEditDialogs.editText(
+      context: context,
+      title: 'Edit Vendor Address',
+      label: 'Address',
+      currentValue: currentValue ?? '',
+    );
+
+    if (result != null && context.mounted) {
+      await _updateInvoice(context, ref, vendorAddress: result.isEmpty ? null : result);
+    }
+  }
+
+  Future<void> _editInvoiceNumber(BuildContext context, WidgetRef ref, String? currentValue) async {
+    final result = await ReceiptEditDialogs.editText(
+      context: context,
+      title: 'Edit Invoice Number',
+      label: 'Invoice Number',
+      currentValue: currentValue ?? '',
+    );
+
+    if (result != null && context.mounted) {
+      await _updateInvoice(context, ref, invoiceNumber: result.isEmpty ? null : result);
+    }
+  }
+
+  Future<void> _editInvoiceDate(BuildContext context, WidgetRef ref, DateTime? currentDate) async {
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: currentDate ?? DateTime.now(),
@@ -548,7 +574,20 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
     );
 
     if (pickedDate != null && context.mounted) {
-      await _updateReceipt(context, ref, purchaseDate: pickedDate);
+      await _updateInvoice(context, ref, invoiceDate: pickedDate);
+    }
+  }
+
+  Future<void> _editDueDate(BuildContext context, WidgetRef ref, DateTime? currentDate) async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: currentDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+
+    if (pickedDate != null && context.mounted) {
+      await _updateInvoice(context, ref, dueDate: pickedDate);
     }
   }
 
@@ -562,14 +601,11 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
 
     if (result != null && context.mounted) {
       switch (field) {
-        case 'subtotal_amount':
-          await _updateReceipt(context, ref, subtotalAmount: result);
-          break;
         case 'tax_amount':
-          await _updateReceipt(context, ref, taxAmount: result);
+          await _updateInvoice(context, ref, taxAmount: result);
           break;
         case 'total_amount':
-          await _updateReceipt(context, ref, totalAmount: result);
+          await _updateInvoice(context, ref, totalAmount: result);
           break;
       }
     }
@@ -582,36 +618,40 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
     );
 
     if (result != null && context.mounted) {
-      await _updateReceipt(context, ref, taxBreakdown: result);
+      await _updateInvoice(context, ref, taxBreakdown: result);
     }
   }
 
-  Future<void> _updateReceipt(
+  Future<void> _updateInvoice(
     BuildContext context,
     WidgetRef ref, {
     String? merchantName,
-    DateTime? purchaseDate,
-    double? subtotalAmount,
+    String? vendorAddress,
+    String? invoiceNumber,
+    DateTime? invoiceDate,
+    DateTime? dueDate,
     double? taxAmount,
     double? totalAmount,
     List<Map<String, dynamic>>? taxBreakdown,
   }) async {
     try {
-      final repository = ref.read(receiptRepositoryProvider);
-      await repository.updateReceipt(
-        id: receipt['id'],
+      final repository = ref.read(invoiceRepositoryProvider);
+      await repository.updateInvoice(
+        id: invoice['id'],
         merchantName: merchantName,
-        purchaseDate: purchaseDate,
-        subtotalAmount: subtotalAmount,
+        vendorAddress: vendorAddress,
+        invoiceNumber: invoiceNumber,
+        invoiceDate: invoiceDate,
+        dueDate: dueDate,
         taxAmount: taxAmount,
         totalAmount: totalAmount,
         taxBreakdown: taxBreakdown,
       );
-      ref.invalidate(receiptsProvider);
-      ref.invalidate(statisticsProvider);
+      ref.invalidate(invoicesProvider);
+      ref.invalidate(invoiceStatisticsProvider);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Receipt updated'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Invoice updated'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -632,7 +672,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             AppBar(
-              title: Text(isPdf ? 'Receipt PDF' : 'Receipt Image'),
+              title: Text(isPdf ? 'Invoice PDF' : 'Invoice Image'),
               leading: IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.pop(context),
@@ -699,7 +739,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
       final directory = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final extension = isPdf ? 'pdf' : 'jpg';
-      final filePath = '${directory.path}/receipt_$timestamp.$extension';
+      final filePath = '${directory.path}/invoice_$timestamp.$extension';
 
       final file = File(filePath);
       await file.writeAsBytes(fileBytes);
@@ -708,7 +748,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
 
       await Share.shareXFiles(
         [XFile(filePath)],
-        text: isPdf ? 'Receipt PDF' : 'Receipt image',
+        text: isPdf ? 'Invoice PDF' : 'Invoice image',
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -721,21 +761,21 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
     final confirmed = await ReceiptEditDialogs.confirmAction(
       context: context,
-      title: 'Delete Receipt?',
-      message: 'Are you sure you want to delete this receipt? This action cannot be undone.',
+      title: 'Delete Invoice?',
+      message: 'Are you sure you want to delete this invoice? This action cannot be undone.',
       confirmText: 'Delete',
       confirmColor: Colors.red,
     );
 
     if (confirmed) {
       try {
-        final repository = ref.read(receiptRepositoryProvider);
-        await repository.deleteReceipt(receipt['id']);
-        ref.invalidate(receiptsProvider);
-        ref.invalidate(statisticsProvider);
+        final repository = ref.read(invoiceRepositoryProvider);
+        await repository.deleteInvoice(invoice['id']);
+        ref.invalidate(invoicesProvider);
+        ref.invalidate(invoiceStatisticsProvider);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Receipt deleted'), backgroundColor: Colors.orange),
+            const SnackBar(content: Text('Invoice deleted'), backgroundColor: Colors.orange),
           );
         }
       } catch (e) {

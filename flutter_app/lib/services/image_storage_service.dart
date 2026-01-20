@@ -5,11 +5,22 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import 'auth_service.dart';
 
-/// Image Storage Service - uploads receipt images via ReactPOS API to NAS
+/// Image Storage Service - uploads receipt/invoice images via ReactPOS API to NAS
 class ImageStorageService {
   /// Upload receipt image to NAS via ReactPOS API
   /// Returns the storage URL path for the uploaded image
   static Future<String?> uploadReceiptImage(String localFilePath) async {
+    return _uploadFile(localFilePath, AppConfig.receiptStorageUploadUrl, 'receipt');
+  }
+
+  /// Upload invoice image to NAS via ReactPOS API
+  /// Returns the storage URL path for the uploaded image
+  static Future<String?> uploadInvoiceImage(String localFilePath) async {
+    return _uploadFile(localFilePath, AppConfig.invoiceStorageUploadUrl, 'invoice');
+  }
+
+  /// Internal method to upload file to specified endpoint
+  static Future<String?> _uploadFile(String localFilePath, String uploadUrl, String type) async {
     try {
       if (!AuthService.isAuthenticated) {
         throw Exception('User not authenticated');
@@ -24,14 +35,15 @@ class ImageStorageService {
       final Uint8List bytes = await file.readAsBytes();
       final base64Image = base64Encode(bytes);
 
-      _log('Uploading image: ${bytes.length} bytes');
+      _log('Uploading $type to URL: $uploadUrl');
+      _log('Uploading $type: ${bytes.length} bytes');
 
       // Get auth headers
       final headers = await AuthService.getAuthHeaders();
 
       // Upload via ReactPOS API
       final response = await http.post(
-        Uri.parse(AppConfig.storageUploadUrl),
+        Uri.parse(uploadUrl),
         headers: headers,
         body: jsonEncode({
           'image': base64Image,
@@ -39,6 +51,7 @@ class ImageStorageService {
       ).timeout(const Duration(seconds: 60));
 
       _log('Upload response status: ${response.statusCode}');
+      _log('Upload response body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -57,13 +70,23 @@ class ImageStorageService {
         return null;
       }
     } catch (e) {
-      _log('Error uploading image: $e');
+      _log('Error uploading $type: $e');
       return null;
     }
   }
 
   /// Upload receipt image from bytes
   static Future<String?> uploadReceiptImageFromBytes(Uint8List bytes) async {
+    return _uploadFileFromBytes(bytes, AppConfig.receiptStorageUploadUrl, 'receipt');
+  }
+
+  /// Upload invoice image from bytes
+  static Future<String?> uploadInvoiceImageFromBytes(Uint8List bytes) async {
+    return _uploadFileFromBytes(bytes, AppConfig.invoiceStorageUploadUrl, 'invoice');
+  }
+
+  /// Internal method to upload bytes to specified endpoint
+  static Future<String?> _uploadFileFromBytes(Uint8List bytes, String uploadUrl, String type) async {
     try {
       if (!AuthService.isAuthenticated) {
         throw Exception('User not authenticated');
@@ -71,12 +94,12 @@ class ImageStorageService {
 
       final base64Image = base64Encode(bytes);
 
-      _log('Uploading image from bytes: ${bytes.length} bytes');
+      _log('Uploading $type from bytes: ${bytes.length} bytes');
 
       final headers = await AuthService.getAuthHeaders();
 
       final response = await http.post(
-        Uri.parse(AppConfig.storageUploadUrl),
+        Uri.parse(uploadUrl),
         headers: headers,
         body: jsonEncode({
           'image': base64Image,
@@ -97,7 +120,7 @@ class ImageStorageService {
       _log('Upload failed: ${response.statusCode}');
       return null;
     } catch (e) {
-      _log('Error uploading image from bytes: $e');
+      _log('Error uploading $type from bytes: $e');
       return null;
     }
   }
@@ -153,7 +176,7 @@ class ImageStorageService {
     try {
       final headers = await AuthService.getAuthHeaders();
 
-      var url = AppConfig.storageUploadUrl;
+      var url = AppConfig.receiptStorageUploadUrl;
       final params = <String, String>{};
       if (year != null) params['year'] = year;
       if (month != null) params['month'] = month;

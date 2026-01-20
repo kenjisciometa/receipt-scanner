@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_config.dart';
 
-class ReceiptRepository {
+class InvoiceRepository {
   static SupabaseClient? _accountAppClient;
 
   /// Get AccountApp Supabase client (separate from auth client)
@@ -49,18 +49,25 @@ class ReceiptRepository {
     return null;
   }
 
-  /// Save receipt to Supabase
-  Future<Map<String, dynamic>?> saveReceipt({
+  /// Save invoice to Supabase
+  Future<Map<String, dynamic>?> saveInvoice({
     required String? merchantName,
-    required DateTime? purchaseDate,
-    required double? subtotalAmount,
-    required double? taxAmount,
-    required double? totalAmount,
+    String? vendorAddress,
+    String? vendorTaxId,
+    String? customerName,
+    String? customerAddress,
+    String? customerTaxId,
+    String? invoiceNumber,
+    DateTime? invoiceDate,
+    DateTime? dueDate,
+    double? subtotalAmount,
+    double? taxAmount,
+    double? totalAmount,
     String? currency,
-    String? paymentMethod,
-    double? confidence,
-    String? originalImageUrl,
     List<Map<String, dynamic>>? taxBreakdown,
+    String? paymentMethod,
+    String? originalImageUrl,
+    double? confidence,
   }) async {
     final userId = _userId;
     if (userId == null) {
@@ -73,19 +80,26 @@ class ReceiptRepository {
       'user_id': userId,
       'organization_id': organizationId,
       'merchant_name': merchantName,
-      'purchase_date': purchaseDate?.toIso8601String(),
+      'vendor_address': vendorAddress,
+      'vendor_tax_id': vendorTaxId,
+      'customer_name': customerName,
+      'customer_address': customerAddress,
+      'customer_tax_id': customerTaxId,
+      'invoice_number': invoiceNumber,
+      'invoice_date': invoiceDate?.toIso8601String(),
+      'due_date': dueDate?.toIso8601String(),
       'subtotal_amount': subtotalAmount,
       'tax_amount': taxAmount,
       'total_amount': totalAmount,
       'currency': currency ?? 'EUR',
-      'payment_method': paymentMethod,
-      'confidence': confidence,
-      'original_image_url': originalImageUrl,
       'tax_breakdown': taxBreakdown,
+      'payment_method': paymentMethod,
+      'original_image_url': originalImageUrl,
+      'confidence': confidence,
     };
 
     final response = await _client
-        .from('receipts')
+        .from('invoices')
         .insert(data)
         .select()
         .single();
@@ -93,8 +107,8 @@ class ReceiptRepository {
     return response;
   }
 
-  /// Get all receipts for current user's organization
-  Future<List<Map<String, dynamic>>> getReceipts({
+  /// Get all invoices for current user's organization
+  Future<List<Map<String, dynamic>>> getInvoices({
     int limit = 50,
     int offset = 0,
   }) async {
@@ -106,7 +120,7 @@ class ReceiptRepository {
     final organizationId = await _getOrganizationId();
 
     var query = _client
-        .from('receipts')
+        .from('invoices')
         .select();
 
     // Filter by organization_id if available, otherwise fall back to user_id
@@ -123,10 +137,10 @@ class ReceiptRepository {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Get receipt by ID
-  Future<Map<String, dynamic>?> getReceiptById(String id) async {
+  /// Get invoice by ID
+  Future<Map<String, dynamic>?> getInvoiceById(String id) async {
     final response = await _client
-        .from('receipts')
+        .from('invoices')
         .select()
         .eq('id', id)
         .maybeSingle();
@@ -134,53 +148,67 @@ class ReceiptRepository {
     return response;
   }
 
-  /// Get receipt statistics for current user
+  /// Get invoice statistics for current user
   Future<Map<String, dynamic>> getStatistics() async {
-    final receipts = await getReceipts(limit: 1000);
+    final invoices = await getInvoices(limit: 1000);
 
-    double totalSpent = 0;
+    double totalAmount = 0;
     double totalTax = 0;
-    int receiptCount = receipts.length;
+    int invoiceCount = invoices.length;
 
-    for (final receipt in receipts) {
-      totalSpent += (receipt['total_amount'] as num?)?.toDouble() ?? 0;
-      totalTax += (receipt['tax_amount'] as num?)?.toDouble() ?? 0;
+    for (final invoice in invoices) {
+      totalAmount += (invoice['total_amount'] as num?)?.toDouble() ?? 0;
+      totalTax += (invoice['tax_amount'] as num?)?.toDouble() ?? 0;
     }
 
     return {
-      'total_spent': totalSpent,
+      'total_amount': totalAmount,
       'total_tax': totalTax,
-      'receipt_count': receiptCount,
+      'invoice_count': invoiceCount,
     };
   }
 
-  /// Update receipt
-  Future<Map<String, dynamic>?> updateReceipt({
+  /// Update invoice
+  Future<Map<String, dynamic>?> updateInvoice({
     required String id,
     String? merchantName,
-    DateTime? purchaseDate,
+    String? vendorAddress,
+    String? vendorTaxId,
+    String? customerName,
+    String? customerAddress,
+    String? customerTaxId,
+    String? invoiceNumber,
+    DateTime? invoiceDate,
+    DateTime? dueDate,
     double? subtotalAmount,
     double? taxAmount,
     double? totalAmount,
     String? currency,
-    String? paymentMethod,
     List<Map<String, dynamic>>? taxBreakdown,
+    String? paymentMethod,
   }) async {
     final data = <String, dynamic>{};
 
     if (merchantName != null) data['merchant_name'] = merchantName;
-    if (purchaseDate != null) data['purchase_date'] = purchaseDate.toIso8601String();
+    if (vendorAddress != null) data['vendor_address'] = vendorAddress;
+    if (vendorTaxId != null) data['vendor_tax_id'] = vendorTaxId;
+    if (customerName != null) data['customer_name'] = customerName;
+    if (customerAddress != null) data['customer_address'] = customerAddress;
+    if (customerTaxId != null) data['customer_tax_id'] = customerTaxId;
+    if (invoiceNumber != null) data['invoice_number'] = invoiceNumber;
+    if (invoiceDate != null) data['invoice_date'] = invoiceDate.toIso8601String();
+    if (dueDate != null) data['due_date'] = dueDate.toIso8601String();
     if (subtotalAmount != null) data['subtotal_amount'] = subtotalAmount;
     if (taxAmount != null) data['tax_amount'] = taxAmount;
     if (totalAmount != null) data['total_amount'] = totalAmount;
     if (currency != null) data['currency'] = currency;
-    if (paymentMethod != null) data['payment_method'] = paymentMethod;
     if (taxBreakdown != null) data['tax_breakdown'] = taxBreakdown;
+    if (paymentMethod != null) data['payment_method'] = paymentMethod;
 
     if (data.isEmpty) return null;
 
     final response = await _client
-        .from('receipts')
+        .from('invoices')
         .update(data)
         .eq('id', id)
         .select()
@@ -189,8 +217,8 @@ class ReceiptRepository {
     return response;
   }
 
-  /// Delete receipt
-  Future<void> deleteReceipt(String id) async {
-    await _client.from('receipts').delete().eq('id', id);
+  /// Delete invoice
+  Future<void> deleteInvoice(String id) async {
+    await _client.from('invoices').delete().eq('id', id);
   }
 }

@@ -7,6 +7,7 @@ import 'dart:io';
 import '../../services/auth_service.dart';
 import '../../services/api/scanner_api_service.dart';
 import '../../services/receipt_repository.dart';
+import '../../services/invoice_repository.dart';
 import '../../services/image_storage_service.dart';
 import '../../services/scanner/document_scanner_service.dart';
 import '../../config/app_config.dart';
@@ -173,12 +174,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     try {
-      // Upload image to NAS via ReactPOS API
-      String? imageUrl;
-      if (_lastImagePath != null && ImageStorageService.isConfigured) {
-        imageUrl = await ImageStorageService.uploadReceiptImage(_lastImagePath!);
-      }
-
       // Parse date
       DateTime? purchaseDate;
       if (_lastScanResult!['date'] != null) {
@@ -187,25 +182,71 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         } catch (_) {}
       }
 
-      await _receiptRepository.saveReceipt(
-        merchantName: _lastScanResult!['merchant_name'],
-        purchaseDate: purchaseDate,
-        subtotalAmount: (_lastScanResult!['subtotal'] as num?)?.toDouble(),
-        taxAmount: (_lastScanResult!['tax_total'] as num?)?.toDouble(),
-        totalAmount: (_lastScanResult!['total'] as num?)?.toDouble(),
-        currency: _lastScanResult!['currency'],
-        paymentMethod: _lastScanResult!['payment_method'],
-        confidence: (_lastScanResult!['confidence'] as num?)?.toDouble(),
-        originalImageUrl: imageUrl,
-        taxBreakdown: _lastScanResult!['tax_breakdown'] != null
-            ? List<Map<String, dynamic>>.from(_lastScanResult!['tax_breakdown'])
-            : null,
-      );
+      final documentType = _lastScanResult!['document_type'] as String? ?? 'receipt';
+
+      // Upload image to NAS via ReactPOS API (use correct endpoint based on document type)
+      String? imageUrl;
+      if (_lastImagePath != null && ImageStorageService.isConfigured) {
+        if (documentType == 'invoice') {
+          imageUrl = await ImageStorageService.uploadInvoiceImage(_lastImagePath!);
+        } else {
+          imageUrl = await ImageStorageService.uploadReceiptImage(_lastImagePath!);
+        }
+      }
+      final taxBreakdownList = _lastScanResult!['tax_breakdown'] != null
+          ? List<Map<String, dynamic>>.from(_lastScanResult!['tax_breakdown'])
+          : null;
+
+      print('[HomeScreen] Saving as $documentType...');
+
+      if (documentType == 'invoice') {
+        // Parse due date for invoices
+        DateTime? dueDate;
+        if (_lastScanResult!['due_date'] != null) {
+          try {
+            dueDate = DateTime.tryParse(_lastScanResult!['due_date']);
+          } catch (_) {}
+        }
+
+        final invoiceRepo = InvoiceRepository();
+        await invoiceRepo.saveInvoice(
+          merchantName: _lastScanResult!['merchant_name'],
+          vendorAddress: _lastScanResult!['vendor_address'],
+          vendorTaxId: _lastScanResult!['vendor_tax_id'],
+          customerName: _lastScanResult!['customer_name'],
+          invoiceNumber: _lastScanResult!['invoice_number'],
+          invoiceDate: purchaseDate,
+          dueDate: dueDate,
+          subtotalAmount: (_lastScanResult!['subtotal'] as num?)?.toDouble(),
+          taxAmount: (_lastScanResult!['tax_total'] as num?)?.toDouble(),
+          totalAmount: (_lastScanResult!['total'] as num?)?.toDouble(),
+          currency: _lastScanResult!['currency'],
+          taxBreakdown: taxBreakdownList,
+          paymentMethod: _lastScanResult!['payment_method'],
+          originalImageUrl: imageUrl,
+          confidence: (_lastScanResult!['confidence'] as num?)?.toDouble(),
+        );
+      } else {
+        await _receiptRepository.saveReceipt(
+          merchantName: _lastScanResult!['merchant_name'],
+          purchaseDate: purchaseDate,
+          subtotalAmount: (_lastScanResult!['subtotal'] as num?)?.toDouble(),
+          taxAmount: (_lastScanResult!['tax_total'] as num?)?.toDouble(),
+          totalAmount: (_lastScanResult!['total'] as num?)?.toDouble(),
+          currency: _lastScanResult!['currency'],
+          paymentMethod: _lastScanResult!['payment_method'],
+          confidence: (_lastScanResult!['confidence'] as num?)?.toDouble(),
+          originalImageUrl: imageUrl,
+          taxBreakdown: taxBreakdownList,
+        );
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(imageUrl != null ? 'Receipt saved with image!' : 'Receipt saved!'),
+          content: Text(documentType == 'invoice'
+              ? (imageUrl != null ? 'Invoice saved with image!' : 'Invoice saved!')
+              : (imageUrl != null ? 'Receipt saved with image!' : 'Receipt saved!')),
           backgroundColor: Colors.green,
         ),
       );

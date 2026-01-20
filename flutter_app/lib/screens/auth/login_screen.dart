@@ -38,6 +38,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       );
 
       if (response.user != null && mounted) {
+        // Log user metadata to see what's available
+        debugPrint('=== USER LOGIN DEBUG ===');
+        debugPrint('User ID: ${response.user!.id}');
+        debugPrint('User Email: ${response.user!.email}');
+        debugPrint('User Metadata: ${response.user!.userMetadata}');
+        debugPrint('App Metadata: ${response.user!.appMetadata}');
+        debugPrint('========================');
+
         // Login successful, navigation will be handled by auth state listener
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
