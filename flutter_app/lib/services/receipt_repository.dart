@@ -93,7 +93,7 @@ class ReceiptRepository {
     return response;
   }
 
-  /// Get all receipts for current user
+  /// Get all receipts for current user's organization
   Future<List<Map<String, dynamic>>> getReceipts({
     int limit = 50,
     int offset = 0,
@@ -103,10 +103,20 @@ class ReceiptRepository {
       return [];
     }
 
-    final response = await _client
+    final organizationId = await _getOrganizationId();
+
+    var query = _client
         .from('receipts')
-        .select()
-        .eq('user_id', userId)
+        .select();
+
+    // Filter by organization_id if available, otherwise fall back to user_id
+    if (organizationId != null) {
+      query = query.eq('organization_id', organizationId);
+    } else {
+      query = query.eq('user_id', userId);
+    }
+
+    final response = await query
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
 
