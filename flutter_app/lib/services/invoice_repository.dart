@@ -16,6 +16,39 @@ class InvoiceRepository {
   /// Get user ID from the auth client (sciometa-pos)
   String? get _userId => Supabase.instance.client.auth.currentUser?.id;
 
+  /// Cached organization ID
+  static String? _cachedOrganizationId;
+  static String? _cachedForUserId;
+
+  /// Get organization ID from users table in auth Supabase
+  Future<String?> _getOrganizationId() async {
+    final userId = _userId;
+    if (userId == null) return null;
+
+    // Return cached value if for same user
+    if (_cachedForUserId == userId && _cachedOrganizationId != null) {
+      return _cachedOrganizationId;
+    }
+
+    try {
+      final response = await Supabase.instance.client
+          .from('users')
+          .select('organization_id')
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (response != null) {
+        _cachedOrganizationId = response['organization_id'] as String?;
+        _cachedForUserId = userId;
+        return _cachedOrganizationId;
+      }
+    } catch (e) {
+      // Log error but don't fail - organization_id is optional
+      print('Error fetching organization_id: $e');
+    }
+    return null;
+  }
+
   /// Save invoice to Supabase
   Future<Map<String, dynamic>?> saveInvoice({
     required String? merchantName,
@@ -41,8 +74,11 @@ class InvoiceRepository {
       throw Exception('User not authenticated');
     }
 
+    final organizationId = await _getOrganizationId();
+
     final data = {
       'user_id': userId,
+      'organization_id': organizationId,
       'merchant_name': merchantName,
       'vendor_address': vendorAddress,
       'vendor_tax_id': vendorTaxId,
