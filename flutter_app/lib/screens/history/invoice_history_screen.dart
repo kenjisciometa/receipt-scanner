@@ -247,6 +247,8 @@ class InvoiceCard extends ConsumerStatefulWidget {
 }
 
 class _InvoiceCardState extends ConsumerState<InvoiceCard> {
+  bool _isEditMode = false;
+
   Map<String, dynamic> get invoice => widget.invoice;
 
   @override
@@ -281,7 +283,11 @@ class _InvoiceCardState extends ConsumerState<InvoiceCard> {
         leading: const CircleAvatar(
           child: Icon(Icons.description),
         ),
-        title: Text(merchantName),
+        title: Text(
+          merchantName,
+          maxLines: 2,
+          softWrap: true,
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -302,81 +308,191 @@ class _InvoiceCardState extends ConsumerState<InvoiceCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Vendor info
-                if (invoice['vendor_address'] != null || invoice['vendor_tax_id'] != null) ...[
-                  const Text('Vendor', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  const SizedBox(height: 4),
-                  if (invoice['vendor_address'] != null)
-                    DetailRow(label: 'Address', value: invoice['vendor_address']),
-                  if (invoice['vendor_tax_id'] != null)
-                    DetailRow(label: 'Tax ID', value: invoice['vendor_tax_id']),
+                if (_isEditMode) ...[
+                  // Edit mode - editable fields
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Edit Invoice', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      TextButton.icon(
+                        onPressed: () => setState(() => _isEditMode = false),
+                        icon: const Icon(Icons.close, size: 18),
+                        label: const Text('Done'),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
-                ],
 
-                // Customer info
-                if (customerName != null) ...[
-                  const Text('Customer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  const SizedBox(height: 4),
-                  DetailRow(label: 'Name', value: customerName),
-                  const SizedBox(height: 12),
-                ],
+                  // Merchant name
+                  EditableField(
+                    label: 'Vendor',
+                    value: merchantName,
+                    icon: Icons.store,
+                    onTap: () => _editMerchantName(context, ref, merchantName),
+                  ),
+                  const SizedBox(height: 8),
 
-                // Dates
-                const Text('Dates', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 4),
-                if (invoiceDate != null)
-                  DetailRow(label: 'Invoice Date', value: formatDate(invoiceDate)),
-                if (dueDate != null)
-                  DetailRow(
+                  // Vendor Address
+                  EditableField(
+                    label: 'Address',
+                    value: invoice['vendor_address'] ?? 'Not set',
+                    icon: Icons.location_on,
+                    onTap: () => _editVendorAddress(context, ref, invoice['vendor_address']),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Invoice Number
+                  EditableField(
+                    label: 'Invoice #',
+                    value: invoiceNumber ?? 'Not set',
+                    icon: Icons.numbers,
+                    onTap: () => _editInvoiceNumber(context, ref, invoiceNumber),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Invoice Date
+                  EditableField(
+                    label: 'Invoice Date',
+                    value: formatDate(invoiceDate),
+                    icon: Icons.calendar_today,
+                    onTap: () => _editInvoiceDate(context, ref, invoiceDate),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Due Date
+                  EditableField(
                     label: 'Due Date',
                     value: formatDate(dueDate),
+                    icon: Icons.event,
+                    onTap: () => _editDueDate(context, ref, dueDate),
                   ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 8),
 
-                // Amounts
-                const Text('Amounts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 4),
-                DetailRow(label: 'Tax', value: '$currencySymbol${tax?.toStringAsFixed(2) ?? '0.00'}'),
-                DetailRow(label: 'Total', value: '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}', isBold: true),
+                  // Tax
+                  EditableField(
+                    label: 'Tax',
+                    value: '$currencySymbol${tax?.toStringAsFixed(2) ?? '0.00'}',
+                    icon: Icons.percent,
+                    onTap: () => _editAmount(context, ref, 'tax_amount', 'Tax', tax?.toDouble()),
+                  ),
+                  const SizedBox(height: 8),
 
-                // Tax breakdown
-                if (taxBreakdown != null && taxBreakdown.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  const Divider(),
-                  const Text('Tax Breakdown:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  const SizedBox(height: 4),
-                  ...taxBreakdown.map((taxItem) {
-                    final rate = (taxItem['rate'] as num?)?.toDouble() ?? 0;
-                    final taxAmount = (taxItem['tax_amount'] as num?)?.toDouble();
-                    final grossAmount = (taxItem['gross_amount'] as num?)?.toDouble();
+                  // Total
+                  EditableField(
+                    label: 'Total',
+                    value: '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}',
+                    icon: Icons.payments,
+                    onTap: () => _editAmount(context, ref, 'total_amount', 'Total', total?.toDouble()),
+                    isBold: true,
+                  ),
 
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('$rate%', style: const TextStyle(fontSize: 13)),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              if (grossAmount != null)
-                                Text('Gross: $currencySymbol${grossAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13)),
-                              Text(
-                                'Tax: $currencySymbol${taxAmount?.toStringAsFixed(2) ?? '0.00'}',
-                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                              ),
-                            ],
-                          ),
-                        ],
+                  // Tax breakdown
+                  if (taxBreakdown != null && taxBreakdown.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    EditableField(
+                      label: 'Tax Breakdown',
+                      value: '${taxBreakdown.length} tax rate(s)',
+                      icon: Icons.list_alt,
+                      onTap: () => _editTaxBreakdown(context, ref, taxBreakdown),
+                    ),
+                  ],
+                ] else ...[
+                  // Normal view - read-only display
+                  // Vendor info
+                  if (invoice['vendor_address'] != null || invoice['vendor_tax_id'] != null) ...[
+                    const Text('Vendor', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    if (invoice['vendor_address'] != null)
+                      DetailRow(
+                        label: 'Address',
+                        value: (invoice['vendor_address'] as String).split(',').map((s) => s.trim()).join('\n'),
                       ),
-                    );
-                  }),
+                    if (invoice['vendor_tax_id'] != null)
+                      DetailRow(label: 'Tax ID', value: invoice['vendor_tax_id']),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Customer info
+                  if (customerName != null) ...[
+                    const Text('Customer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    DetailRow(label: 'Name', value: customerName),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Dates
+                  const Text('Dates', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  if (invoiceDate != null)
+                    DetailRow(label: 'Invoice Date', value: formatDate(invoiceDate)),
+                  if (dueDate != null)
+                    DetailRow(
+                      label: 'Due Date',
+                      value: formatDate(dueDate),
+                    ),
+                  const SizedBox(height: 12),
+
+                  // Amounts
+                  const Text('Amounts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  DetailRow(label: 'Tax', value: '$currencySymbol${tax?.toStringAsFixed(2) ?? '0.00'}'),
+                  DetailRow(label: 'Total', value: '$currencySymbol${total?.toStringAsFixed(2) ?? '0.00'}', isBold: true),
+
+                  // Tax breakdown
+                  if (taxBreakdown != null && taxBreakdown.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const Text('Tax Breakdown:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    ...taxBreakdown.map((taxItem) {
+                      final rate = (taxItem['rate'] as num?)?.toDouble() ?? 0;
+                      final taxAmount = (taxItem['tax_amount'] as num?)?.toDouble();
+                      final grossAmount = (taxItem['gross_amount'] as num?)?.toDouble();
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('$rate%', style: const TextStyle(fontSize: 13)),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (grossAmount != null)
+                                  Text('Gross: $currencySymbol${grossAmount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13)),
+                                Text(
+                                  'Tax: $currencySymbol${taxAmount?.toStringAsFixed(2) ?? '0.00'}',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
                 ],
 
                 // Action buttons
                 const SizedBox(height: 20),
                 Row(
                   children: [
+                    // Edit button
+                    if (!_isEditMode) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => setState(() => _isEditMode = true),
+                          icon: Icon(Icons.edit, size: 18, color: Theme.of(context).primaryColor),
+                          label: Text('Edit', style: TextStyle(color: Theme.of(context).primaryColor)),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: Theme.of(context).primaryColor),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     // View image button
                     if (invoice['original_image_url'] != null) ...[
                       Expanded(
@@ -407,6 +523,143 @@ class _InvoiceCardState extends ConsumerState<InvoiceCard> {
         ],
       ),
     );
+  }
+
+  Future<void> _editMerchantName(BuildContext context, WidgetRef ref, String currentValue) async {
+    final result = await ReceiptEditDialogs.editText(
+      context: context,
+      title: 'Edit Vendor Name',
+      label: 'Vendor Name',
+      currentValue: currentValue,
+    );
+
+    if (result != null && result.isNotEmpty && context.mounted) {
+      await _updateInvoice(context, ref, merchantName: result);
+    }
+  }
+
+  Future<void> _editVendorAddress(BuildContext context, WidgetRef ref, String? currentValue) async {
+    final result = await ReceiptEditDialogs.editText(
+      context: context,
+      title: 'Edit Vendor Address',
+      label: 'Address',
+      currentValue: currentValue ?? '',
+    );
+
+    if (result != null && context.mounted) {
+      await _updateInvoice(context, ref, vendorAddress: result.isEmpty ? null : result);
+    }
+  }
+
+  Future<void> _editInvoiceNumber(BuildContext context, WidgetRef ref, String? currentValue) async {
+    final result = await ReceiptEditDialogs.editText(
+      context: context,
+      title: 'Edit Invoice Number',
+      label: 'Invoice Number',
+      currentValue: currentValue ?? '',
+    );
+
+    if (result != null && context.mounted) {
+      await _updateInvoice(context, ref, invoiceNumber: result.isEmpty ? null : result);
+    }
+  }
+
+  Future<void> _editInvoiceDate(BuildContext context, WidgetRef ref, DateTime? currentDate) async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: currentDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (pickedDate != null && context.mounted) {
+      await _updateInvoice(context, ref, invoiceDate: pickedDate);
+    }
+  }
+
+  Future<void> _editDueDate(BuildContext context, WidgetRef ref, DateTime? currentDate) async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: currentDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+
+    if (pickedDate != null && context.mounted) {
+      await _updateInvoice(context, ref, dueDate: pickedDate);
+    }
+  }
+
+  Future<void> _editAmount(BuildContext context, WidgetRef ref, String field, String label, double? currentValue) async {
+    final result = await ReceiptEditDialogs.editAmount(
+      context: context,
+      title: 'Edit $label',
+      label: label,
+      currentValue: currentValue,
+    );
+
+    if (result != null && context.mounted) {
+      switch (field) {
+        case 'tax_amount':
+          await _updateInvoice(context, ref, taxAmount: result);
+          break;
+        case 'total_amount':
+          await _updateInvoice(context, ref, totalAmount: result);
+          break;
+      }
+    }
+  }
+
+  Future<void> _editTaxBreakdown(BuildContext context, WidgetRef ref, List<dynamic> currentBreakdown) async {
+    final result = await ReceiptEditDialogs.editTaxBreakdown(
+      context: context,
+      currentBreakdown: currentBreakdown,
+    );
+
+    if (result != null && context.mounted) {
+      await _updateInvoice(context, ref, taxBreakdown: result);
+    }
+  }
+
+  Future<void> _updateInvoice(
+    BuildContext context,
+    WidgetRef ref, {
+    String? merchantName,
+    String? vendorAddress,
+    String? invoiceNumber,
+    DateTime? invoiceDate,
+    DateTime? dueDate,
+    double? taxAmount,
+    double? totalAmount,
+    List<Map<String, dynamic>>? taxBreakdown,
+  }) async {
+    try {
+      final repository = ref.read(invoiceRepositoryProvider);
+      await repository.updateInvoice(
+        id: invoice['id'],
+        merchantName: merchantName,
+        vendorAddress: vendorAddress,
+        invoiceNumber: invoiceNumber,
+        invoiceDate: invoiceDate,
+        dueDate: dueDate,
+        taxAmount: taxAmount,
+        totalAmount: totalAmount,
+        taxBreakdown: taxBreakdown,
+      );
+      ref.invalidate(invoicesProvider);
+      ref.invalidate(invoiceStatisticsProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invoice updated'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   void _showImageDialog(BuildContext context, String imageUrl) {
