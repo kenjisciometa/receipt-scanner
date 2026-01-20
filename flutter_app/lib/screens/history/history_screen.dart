@@ -192,7 +192,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     );
                   }
                   return Column(
-                    children: filtered.map((receipt) => _ReceiptCard(receipt: receipt)).toList(),
+                    children: filtered.map((receipt) => ReceiptCard(receipt: receipt)).toList(),
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -246,16 +246,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 }
 
-class _ReceiptCard extends ConsumerStatefulWidget {
+class ReceiptCard extends ConsumerStatefulWidget {
   final Map<String, dynamic> receipt;
 
-  const _ReceiptCard({required this.receipt});
+  const ReceiptCard({super.key, required this.receipt});
 
   @override
-  ConsumerState<_ReceiptCard> createState() => _ReceiptCardState();
+  ConsumerState<ReceiptCard> createState() => _ReceiptCardState();
 }
 
-class _ReceiptCardState extends ConsumerState<_ReceiptCard> {
+class _ReceiptCardState extends ConsumerState<ReceiptCard> {
   bool _isEditMode = false;
 
   Map<String, dynamic> get receipt => widget.receipt;

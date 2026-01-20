@@ -32,13 +32,9 @@ class InvoiceRepository {
     double? totalAmount,
     String? currency,
     List<Map<String, dynamic>>? taxBreakdown,
-    List<Map<String, dynamic>>? items,
     String? paymentMethod,
-    String? paymentStatus,
     String? originalImageUrl,
     double? confidence,
-    String? detectedLanguage,
-    String? notes,
   }) async {
     final userId = _userId;
     if (userId == null) {
@@ -61,13 +57,9 @@ class InvoiceRepository {
       'total_amount': totalAmount,
       'currency': currency ?? 'EUR',
       'tax_breakdown': taxBreakdown,
-      'items': items,
       'payment_method': paymentMethod,
-      'payment_status': paymentStatus ?? 'unpaid',
       'original_image_url': originalImageUrl,
       'confidence': confidence,
-      'detected_language': detectedLanguage,
-      'notes': notes,
     };
 
     final response = await _client
@@ -83,23 +75,16 @@ class InvoiceRepository {
   Future<List<Map<String, dynamic>>> getInvoices({
     int limit = 50,
     int offset = 0,
-    String? paymentStatus,
   }) async {
     final userId = _userId;
     if (userId == null) {
       return [];
     }
 
-    var query = _client
+    final response = await _client
         .from('invoices')
         .select()
-        .eq('user_id', userId);
-
-    if (paymentStatus != null) {
-      query = query.eq('payment_status', paymentStatus);
-    }
-
-    final response = await query
+        .eq('user_id', userId)
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
 
@@ -117,64 +102,23 @@ class InvoiceRepository {
     return response;
   }
 
-  /// Get overdue invoices
-  Future<List<Map<String, dynamic>>> getOverdueInvoices() async {
-    final userId = _userId;
-    if (userId == null) {
-      return [];
-    }
-
-    final now = DateTime.now().toIso8601String();
-
-    final response = await _client
-        .from('invoices')
-        .select()
-        .eq('user_id', userId)
-        .eq('payment_status', 'unpaid')
-        .lt('due_date', now)
-        .order('due_date', ascending: true);
-
-    return List<Map<String, dynamic>>.from(response);
-  }
-
   /// Get invoice statistics for current user
   Future<Map<String, dynamic>> getStatistics() async {
     final invoices = await getInvoices(limit: 1000);
 
     double totalAmount = 0;
     double totalTax = 0;
-    double unpaidAmount = 0;
     int invoiceCount = invoices.length;
-    int unpaidCount = 0;
-    int overdueCount = 0;
-
-    final now = DateTime.now();
 
     for (final invoice in invoices) {
-      final amount = (invoice['total_amount'] as num?)?.toDouble() ?? 0;
-      totalAmount += amount;
+      totalAmount += (invoice['total_amount'] as num?)?.toDouble() ?? 0;
       totalTax += (invoice['tax_amount'] as num?)?.toDouble() ?? 0;
-
-      if (invoice['payment_status'] == 'unpaid') {
-        unpaidAmount += amount;
-        unpaidCount++;
-
-        final dueDate = invoice['due_date'] != null
-            ? DateTime.tryParse(invoice['due_date'])
-            : null;
-        if (dueDate != null && dueDate.isBefore(now)) {
-          overdueCount++;
-        }
-      }
     }
 
     return {
       'total_amount': totalAmount,
       'total_tax': totalTax,
-      'unpaid_amount': unpaidAmount,
       'invoice_count': invoiceCount,
-      'unpaid_count': unpaidCount,
-      'overdue_count': overdueCount,
     };
   }
 
@@ -195,11 +139,7 @@ class InvoiceRepository {
     double? totalAmount,
     String? currency,
     List<Map<String, dynamic>>? taxBreakdown,
-    List<Map<String, dynamic>>? items,
     String? paymentMethod,
-    String? paymentStatus,
-    DateTime? paidDate,
-    String? notes,
   }) async {
     final data = <String, dynamic>{};
 
@@ -217,11 +157,7 @@ class InvoiceRepository {
     if (totalAmount != null) data['total_amount'] = totalAmount;
     if (currency != null) data['currency'] = currency;
     if (taxBreakdown != null) data['tax_breakdown'] = taxBreakdown;
-    if (items != null) data['items'] = items;
     if (paymentMethod != null) data['payment_method'] = paymentMethod;
-    if (paymentStatus != null) data['payment_status'] = paymentStatus;
-    if (paidDate != null) data['paid_date'] = paidDate.toIso8601String();
-    if (notes != null) data['notes'] = notes;
 
     if (data.isEmpty) return null;
 
@@ -233,15 +169,6 @@ class InvoiceRepository {
         .single();
 
     return response;
-  }
-
-  /// Mark invoice as paid
-  Future<Map<String, dynamic>?> markAsPaid(String id, {DateTime? paidDate}) async {
-    return updateInvoice(
-      id: id,
-      paymentStatus: 'paid',
-      paidDate: paidDate ?? DateTime.now(),
-    );
   }
 
   /// Delete invoice

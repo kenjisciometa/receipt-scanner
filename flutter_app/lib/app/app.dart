@@ -7,7 +7,7 @@ import '../core/constants/app_constants.dart';
 import '../presentation/screens/preview/preview_screen.dart';
 import '../screens/auth/auth_wrapper.dart';
 import '../screens/account/account_screen.dart';
-import '../screens/history/history_screen.dart';
+import '../screens/history/combined_history_screen.dart';
 
 /// Main application widget
 class ReceiptScannerApp extends ConsumerWidget {
@@ -78,11 +78,11 @@ class ReceiptScannerApp extends ConsumerWidget {
           builder: (context, state) => const AccountScreen(),
         ),
 
-        // History screen
+        // Combined history screen (receipts + invoices tabs)
         GoRoute(
           path: '/history',
           name: 'history',
-          builder: (context, state) => const HistoryScreen(),
+          builder: (context, state) => const CombinedHistoryScreen(),
         ),
         // GoRoute(
         //   path: '/settings',

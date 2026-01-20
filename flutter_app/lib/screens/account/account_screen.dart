@@ -43,12 +43,12 @@ class AccountScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
 
-            // History button
+            // History button (receipts & invoices)
             Card(
               child: ListTile(
                 leading: const Icon(Icons.history),
-                title: const Text('Receipt History'),
-                subtitle: const Text('View all your scanned receipts'),
+                title: const Text('History'),
+                subtitle: const Text('View receipts and invoices'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/history'),
               ),

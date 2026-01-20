@@ -1141,7 +1141,6 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           paymentMethod: receipt.paymentMethod?.name,
           originalImageUrl: receipt.originalImagePath,
           confidence: receipt.confidence,
-          detectedLanguage: receipt.detectedLanguage,
         );
         logger.i('Invoice saved to database');
       } else {
