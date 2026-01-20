@@ -44,8 +44,9 @@ class ReceiptValidationService {
   static List<String> validateTaxBreakdown(
     List<dynamic> taxBreakdown,
     double? total,
-    double? taxTotal,
-  ) {
+    double? taxTotal, {
+    double? subtotal,
+  }) {
     final errors = <String>[];
     double grossSum = 0;
     double taxSum = 0;
@@ -84,7 +85,29 @@ class ReceiptValidationService {
       }
     }
 
+    // Validate subtotal + taxTotal = total
+    if (subtotal != null && taxTotal != null && total != null) {
+      final expectedTotal = subtotal + taxTotal;
+      if ((expectedTotal - total).abs() > _tolerance) {
+        errors.add(
+            'Subtotal + Tax (${expectedTotal.toStringAsFixed(2)}) != Total (${total.toStringAsFixed(2)})');
+      }
+    }
+
     return errors;
+  }
+
+  /// Validate subtotal + taxTotal = total
+  /// Returns error message if invalid, null if valid
+  static String? validateTotalSum(double? subtotal, double? taxTotal, double? total) {
+    if (subtotal == null || taxTotal == null || total == null) {
+      return null;
+    }
+    final expectedTotal = subtotal + taxTotal;
+    if ((expectedTotal - total).abs() > _tolerance) {
+      return 'Subtotal + Tax (${expectedTotal.toStringAsFixed(2)}) != Total (${total.toStringAsFixed(2)})';
+    }
+    return null;
   }
 
   /// Validate individual tax breakdown item
