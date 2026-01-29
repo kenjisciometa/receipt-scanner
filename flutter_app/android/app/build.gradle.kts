@@ -48,3 +48,7 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    implementation("com.android.billingclient:billing:6.0.1")
+}

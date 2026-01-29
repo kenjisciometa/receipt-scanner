@@ -78,14 +78,21 @@ dependencies:
   # HTTP Client (for LLM API)
   http: ^1.2.0
 
+  # Supabase (for AccountApp database, not auth)
+  supabase_flutter: ^2.3.0
+
   # Local Storage
   shared_preferences: ^2.3.3
 
   # Environment Variables
   flutter_dotenv: ^5.1.0
 
-  # Authentication
-  supabase_flutter: ^2.5.6
+  # URL Launcher (for Stripe checkout)
+  url_launcher: ^6.2.5
+
+  # In-App Purchase (Google Play Billing)
+  in_app_purchase: ^3.2.0
+  in_app_purchase_android: ^0.3.6
 
   # UI Enhancements
   flutter_animate: ^4.5.0
