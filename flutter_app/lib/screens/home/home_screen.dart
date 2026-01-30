@@ -24,12 +24,45 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ImagePicker _picker = ImagePicker();
   final DocumentScannerService _documentScanner = DocumentScannerService();
-  final ScannerApiService _scannerApi = ScannerApiService();
-  final ReceiptRepository _receiptRepository = ReceiptRepository();
+  ScannerApiService? _scannerApi;
   bool _isScanning = false;
   bool _isSaving = false;
   Map<String, dynamic>? _lastScanResult;
   String? _lastImagePath;
+
+  /// Get or create the scanner API service with auth headers
+  ScannerApiService _getScannerApi() {
+    _scannerApi ??= ScannerApiService(
+      getAuthHeaders: () => ref.read(authServiceProvider.notifier).getAuthHeaders(),
+    );
+    return _scannerApi!;
+  }
+
+  /// Create a receipt repository with current auth info
+  ReceiptRepository _getReceiptRepository() {
+    final authState = ref.read(authServiceProvider);
+    final user = authState.user;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+    return ReceiptRepository(
+      userId: user.id,
+      organizationId: user.organizationId,
+    );
+  }
+
+  /// Create an invoice repository with current auth info
+  InvoiceRepository _getInvoiceRepository() {
+    final authState = ref.read(authServiceProvider);
+    final user = authState.user;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+    return InvoiceRepository(
+      userId: user.id,
+      organizationId: user.organizationId,
+    );
+  }
 
   @override
   void dispose() {
@@ -106,7 +139,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     try {
       // Call scanner API service
-      final extractionResult = await _scannerApi.extractFromFile(imageFile);
+      final extractionResult = await _getScannerApi().extractFromFile(imageFile);
 
       // Convert to Map for compatibility with existing UI code
       final result = <String, dynamic>{
@@ -214,10 +247,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // Upload image to NAS via ReactPOS API (use correct endpoint based on document type)
       String? imageUrl;
       if (_lastImagePath != null && ImageStorageService.isConfigured) {
+        final authService = ref.read(authServiceProvider.notifier);
+        final authHeaders = await authService.getAuthHeaders();
         if (documentType == 'invoice') {
-          imageUrl = await ImageStorageService.uploadInvoiceImage(_lastImagePath!);
+          imageUrl = await ImageStorageService.uploadInvoiceImage(
+            _lastImagePath!,
+            authHeaders: authHeaders,
+          );
         } else {
-          imageUrl = await ImageStorageService.uploadReceiptImage(_lastImagePath!);
+          imageUrl = await ImageStorageService.uploadReceiptImage(
+            _lastImagePath!,
+            authHeaders: authHeaders,
+          );
         }
       }
       final taxBreakdownList = _lastScanResult!['tax_breakdown'] != null
@@ -235,7 +276,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           } catch (_) {}
         }
 
-        final invoiceRepo = InvoiceRepository();
+        final invoiceRepo = _getInvoiceRepository();
         await invoiceRepo.saveInvoice(
           merchantName: _lastScanResult!['merchant_name'],
           vendorAddress: _lastScanResult!['vendor_address'],
@@ -254,7 +295,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           confidence: (_lastScanResult!['confidence'] as num?)?.toDouble(),
         );
       } else {
-        await _receiptRepository.saveReceipt(
+        final receiptRepo = _getReceiptRepository();
+        await receiptRepo.saveReceipt(
           merchantName: _lastScanResult!['merchant_name'],
           purchaseDate: purchaseDate,
           subtotalAmount: (_lastScanResult!['subtotal'] as num?)?.toDouble(),
@@ -300,7 +342,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _logout() async {
     try {
-      await AuthService.signOut();
+      final authService = ref.read(authServiceProvider.notifier);
+      await authService.signOut();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

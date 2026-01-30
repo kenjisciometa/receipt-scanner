@@ -14,7 +14,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLoading = false;
   bool _obscurePassword = true;
 
   @override
@@ -27,53 +26,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    final authService = ref.read(authServiceProvider.notifier);
+    final success = await authService.signIn(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
 
-    try {
-      final response = await AuthService.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
+    if (success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Login successful'),
+          backgroundColor: Colors.green,
+        ),
       );
-
-      if (response.user != null && mounted) {
-        // Log user metadata to see what's available
-        debugPrint('=== USER LOGIN DEBUG ===');
-        debugPrint('User ID: ${response.user!.id}');
-        debugPrint('User Email: ${response.user!.email}');
-        debugPrint('User Metadata: ${response.user!.userMetadata}');
-        debugPrint('App Metadata: ${response.user!.appMetadata}');
-        debugPrint('========================');
-
-        // Login successful, navigation will be handled by auth state listener
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login successful'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Login error: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    } else if (mounted) {
+      final authState = ref.read(authServiceProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authState.error ?? 'Login failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authServiceProvider);
+    final isLoading = authState.isLoading;
+
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -102,6 +83,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  enabled: !isLoading,
                   decoration: const InputDecoration(
                     labelText: 'Email',
                     prefixIcon: Icon(Icons.email),
@@ -123,6 +105,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  enabled: !isLoading,
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock),
@@ -152,11 +135,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 // Login Button
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _handleLogin,
+                  onPressed: isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
-                  child: _isLoading
+                  child: isLoading
                       ? const SizedBox(
                           height: 20,
                           width: 20,
@@ -171,7 +154,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 // Info Text
                 Text(
-                  'Please login with your Restaurant POS account',
+                  'Login with your Sciometa account',
                   style: Theme.of(context).textTheme.bodySmall,
                   textAlign: TextAlign.center,
                 ),

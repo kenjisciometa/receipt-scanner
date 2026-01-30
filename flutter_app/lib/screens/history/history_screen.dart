@@ -6,14 +6,27 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/receipt_repository.dart';
 import '../../services/image_storage_service.dart';
+import '../../services/auth_service.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
 import '../../presentation/widgets/common_widgets.dart';
 import '../../presentation/widgets/file_viewer_widget.dart';
 import '../../services/receipt_validation_service.dart';
 
-final receiptRepositoryProvider = Provider((ref) => ReceiptRepository());
+final receiptRepositoryProvider = Provider((ref) {
+  final authState = ref.watch(authServiceProvider);
+  final user = authState.user;
+  if (user == null) {
+    throw Exception('User not authenticated');
+  }
+  return ReceiptRepository(
+    userId: user.id,
+    organizationId: user.organizationId,
+  );
+});
 
 final receiptsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final authState = ref.watch(authServiceProvider);
+  if (authState.user == null) return [];
   final repository = ref.watch(receiptRepositoryProvider);
   return repository.getReceipts();
 });
@@ -623,6 +636,12 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
     }
   }
 
+  Future<Uint8List?> _getImageWithAuth(String imageUrl) async {
+    final authService = ref.read(authServiceProvider.notifier);
+    final authHeaders = await authService.getAuthHeaders();
+    return ImageStorageService.getImage(imageUrl, authHeaders: authHeaders);
+  }
+
   void _showImageDialog(BuildContext context, String imageUrl) {
     final isPdf = isPdfUrl(imageUrl);
     showDialog(
@@ -648,7 +667,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
             ),
             Flexible(
               child: FutureBuilder<Uint8List?>(
-                future: ImageStorageService.getImage(imageUrl),
+                future: _getImageWithAuth(imageUrl),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
@@ -691,7 +710,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
         SnackBar(content: Text('Downloading ${isPdf ? 'PDF' : 'image'}...'), duration: const Duration(seconds: 1)),
       );
 
-      final fileBytes = await ImageStorageService.getImage(imageUrl);
+      final fileBytes = await _getImageWithAuth(imageUrl);
       if (fileBytes == null) {
         throw Exception('Failed to download file');
       }

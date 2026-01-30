@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_config.dart';
 import '../llm/llama_cpp_service.dart';
@@ -10,23 +9,12 @@ import '../llm/llama_cpp_service.dart';
 /// Scanner API Service - calls POS API for receipt extraction
 class ScannerApiService {
   final Duration timeout;
+  final Future<Map<String, String>> Function() getAuthHeaders;
 
   ScannerApiService({
     this.timeout = const Duration(seconds: 180), // 3 minutes for 3-stage extraction
+    required this.getAuthHeaders,
   });
-
-  /// Get authorization headers with Supabase token
-  Future<Map<String, String>> _getHeaders() async {
-    final session = Supabase.instance.client.auth.currentSession;
-    final token = session?.accessToken;
-
-    print('[ScannerAPI] Token available: ${token != null}');
-
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-  }
 
   /// Extract receipt data from image file via POS API
   Future<LLMExtractionResult> extractFromFile(File imageFile) async {
@@ -58,7 +46,7 @@ class ScannerApiService {
     print('========================================');
 
     try {
-      final headers = await _getHeaders();
+      final headers = await getAuthHeaders();
       print('[ScannerAPI] Headers: ${headers.keys.toList()}');
 
       print('[ScannerAPI] Sending POST request...');
@@ -159,7 +147,7 @@ class ScannerApiService {
     print('[ScannerAPI] Checking server availability: $url');
 
     try {
-      final headers = await _getHeaders();
+      final headers = await getAuthHeaders();
 
       final response = await http
           .get(

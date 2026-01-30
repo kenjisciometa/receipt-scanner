@@ -9,6 +9,7 @@ import '../../widgets/common_widgets.dart';
 import '../../../data/models/receipt.dart';
 import '../../../data/models/tax_breakdown.dart';
 import '../../../services/api/scanner_api_service.dart';
+import '../../../services/auth_service.dart';
 import '../../../services/receipt_validation_service.dart';
 import '../../../services/receipt_converter_service.dart';
 import '../../../services/invoice_repository.dart';
@@ -74,7 +75,9 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _scannerService = ScannerApiService();
+    _scannerService = ScannerApiService(
+      getAuthHeaders: () => ref.read(authServiceProvider.notifier).getAuthHeaders(),
+    );
 
     // Initialize text controllers
     _merchantNameController = TextEditingController();
@@ -1124,7 +1127,13 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
 
       if (_documentType == 'invoice') {
         // Save to invoices table
-        final invoiceRepo = InvoiceRepository();
+        final authState = ref.read(authServiceProvider);
+        final user = authState.user;
+        if (user == null) throw Exception('User not authenticated');
+        final invoiceRepo = InvoiceRepository(
+          userId: user.id,
+          organizationId: user.organizationId,
+        );
         await invoiceRepo.saveInvoice(
           merchantName: receipt.merchantName,
           vendorAddress: receipt.vendorAddress,
@@ -1145,7 +1154,13 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         logger.i('Invoice saved to database');
       } else {
         // Save to receipts table
-        final receiptRepo = ReceiptRepository();
+        final authState = ref.read(authServiceProvider);
+        final user = authState.user;
+        if (user == null) throw Exception('User not authenticated');
+        final receiptRepo = ReceiptRepository(
+          userId: user.id,
+          organizationId: user.organizationId,
+        );
         await receiptRepo.saveReceipt(
           merchantName: receipt.merchantName,
           purchaseDate: receipt.purchaseDate,

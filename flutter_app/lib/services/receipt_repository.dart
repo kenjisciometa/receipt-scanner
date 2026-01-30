@@ -4,6 +4,14 @@ import '../config/app_config.dart';
 class ReceiptRepository {
   static SupabaseClient? _accountAppClient;
 
+  final String userId;
+  final String? organizationId;
+
+  ReceiptRepository({
+    required this.userId,
+    this.organizationId,
+  });
+
   /// Get AccountApp Supabase client (separate from auth client)
   SupabaseClient get _client {
     _accountAppClient ??= SupabaseClient(
@@ -11,42 +19,6 @@ class ReceiptRepository {
       AppConfig.accountAppSupabaseAnonKey,
     );
     return _accountAppClient!;
-  }
-
-  /// Get user ID from the auth client (sciometa-pos)
-  String? get _userId => Supabase.instance.client.auth.currentUser?.id;
-
-  /// Cached organization ID
-  static String? _cachedOrganizationId;
-  static String? _cachedForUserId;
-
-  /// Get organization ID from users table in auth Supabase
-  Future<String?> _getOrganizationId() async {
-    final userId = _userId;
-    if (userId == null) return null;
-
-    // Return cached value if for same user
-    if (_cachedForUserId == userId && _cachedOrganizationId != null) {
-      return _cachedOrganizationId;
-    }
-
-    try {
-      final response = await Supabase.instance.client
-          .from('users')
-          .select('organization_id')
-          .eq('id', userId)
-          .maybeSingle();
-
-      if (response != null) {
-        _cachedOrganizationId = response['organization_id'] as String?;
-        _cachedForUserId = userId;
-        return _cachedOrganizationId;
-      }
-    } catch (e) {
-      // Log error but don't fail - organization_id is optional
-      print('Error fetching organization_id: $e');
-    }
-    return null;
   }
 
   /// Save receipt to Supabase
@@ -62,13 +34,6 @@ class ReceiptRepository {
     String? originalImageUrl,
     List<Map<String, dynamic>>? taxBreakdown,
   }) async {
-    final userId = _userId;
-    if (userId == null) {
-      throw Exception('User not authenticated');
-    }
-
-    final organizationId = await _getOrganizationId();
-
     final data = {
       'user_id': userId,
       'organization_id': organizationId,
@@ -98,20 +63,13 @@ class ReceiptRepository {
     int limit = 50,
     int offset = 0,
   }) async {
-    final userId = _userId;
-    if (userId == null) {
-      return [];
-    }
-
-    final organizationId = await _getOrganizationId();
-
     var query = _client
         .from('receipts')
         .select();
 
     // Filter by organization_id if available, otherwise fall back to user_id
     if (organizationId != null) {
-      query = query.eq('organization_id', organizationId);
+      query = query.eq('organization_id', organizationId!);
     } else {
       query = query.eq('user_id', userId);
     }

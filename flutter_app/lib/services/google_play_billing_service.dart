@@ -135,10 +135,24 @@ class GooglePlayBillingService extends StateNotifier<GooglePlayBillingState> {
       }
 
       // Find our subscription product
-      final subscriptionProduct = response.productDetails.firstWhere(
-        (p) => p.id == kSubscriptionId,
-        orElse: () => response.productDetails.first,
-      );
+      // Note: Avoid using orElse with firstWhere due to type variance issues
+      // with GooglePlayProductDetails on Android
+      ProductDetails? subscriptionProduct;
+      for (final p in response.productDetails) {
+        if (p.id == kSubscriptionId) {
+          subscriptionProduct = p;
+          break;
+        }
+      }
+      // Fallback to first product if not found
+      subscriptionProduct ??= response.productDetails.isNotEmpty
+          ? response.productDetails.first
+          : null;
+
+      if (subscriptionProduct == null) {
+        state = state.copyWith(error: 'Subscription product not found');
+        return;
+      }
 
       debugPrint('✅ Product loaded: ${subscriptionProduct.id} - ${subscriptionProduct.price}');
       state = state.copyWith(productDetails: subscriptionProduct);

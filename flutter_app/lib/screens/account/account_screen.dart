@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
+import '../../services/billing_service.dart';
 
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = Supabase.instance.client.auth.currentUser;
+    final authState = ref.watch(authServiceProvider);
+    final billingState = ref.watch(billingServiceProvider);
+    final user = authState.user;
+    final accessStatus = billingState.accessStatus;
 
     return Scaffold(
       appBar: AppBar(
@@ -26,14 +29,34 @@ class AccountScreen extends ConsumerWidget {
                 leading: CircleAvatar(
                   backgroundColor: Theme.of(context).primaryColor,
                   child: Text(
-                    user?.email?.substring(0, 1).toUpperCase() ?? 'U',
+                    user?.email.substring(0, 1).toUpperCase() ?? 'U',
                     style: const TextStyle(color: Colors.white),
                   ),
                 ),
                 title: Text(user?.email ?? 'Unknown'),
-                subtitle: const Text('Logged in'),
+                subtitle: Text(user?.fullName ?? 'Logged in'),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Subscription status card
+            if (accessStatus != null)
+              Card(
+                child: ListTile(
+                  leading: Icon(
+                    accessStatus.hasAccess ? Icons.check_circle : Icons.warning,
+                    color: accessStatus.hasAccess ? Colors.green : Colors.orange,
+                  ),
+                  title: Text(accessStatus.planName ?? 'Subscription'),
+                  subtitle: Text(_getSubscriptionStatusText(accessStatus)),
+                  trailing: accessStatus.status == BillingStatus.trial
+                      ? Chip(
+                          label: Text('${accessStatus.trialDaysRemaining ?? 0} days left'),
+                          backgroundColor: Colors.blue.shade100,
+                        )
+                      : null,
+                ),
+              ),
             const SizedBox(height: 24),
 
             // Menu items
@@ -79,7 +102,8 @@ class AccountScreen extends ConsumerWidget {
                     ),
                   );
                   if (confirmed == true) {
-                    await AuthService.signOut();
+                    final authService = ref.read(authServiceProvider.notifier);
+                    await authService.signOut();
                   }
                 },
                 icon: const Icon(Icons.logout, color: Colors.red),
@@ -93,5 +117,22 @@ class AccountScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  String _getSubscriptionStatusText(AppAccessStatus status) {
+    switch (status.status) {
+      case BillingStatus.trial:
+        return 'Free trial active';
+      case BillingStatus.subscribed:
+        return 'Active subscription - ${status.formattedPrice}';
+      case BillingStatus.canceled:
+        return 'Canceled - access until period end';
+      case BillingStatus.trialExpired:
+        return 'Trial expired';
+      case BillingStatus.noAccess:
+        return 'No active subscription';
+      default:
+        return 'Unknown status';
+    }
   }
 }
