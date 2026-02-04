@@ -12,6 +12,7 @@ import '../../services/image_storage_service.dart';
 import '../../services/scanner/document_scanner_service.dart';
 import '../../config/app_config.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
+import '../../presentation/widgets/account_status_button.dart';
 import '../../services/receipt_validation_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -340,28 +341,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<void> _logout() async {
-    try {
-      final authService = ref.read(authServiceProvider.notifier);
-      await authService.signOut();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Logged out successfully'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Logout error: $error'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -373,11 +352,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () => context.push('/history'),
             tooltip: 'History',
           ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
-            tooltip: 'Logout',
-          ),
+          const AccountStatusButton(),
         ],
       ),
       body: Padding(

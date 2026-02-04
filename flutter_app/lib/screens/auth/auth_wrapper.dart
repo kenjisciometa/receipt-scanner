@@ -83,8 +83,20 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
       );
     }
 
-    // If not authenticated, show login screen
+    // If not authenticated, reset billing check flag and show login screen
     if (!authState.isAuthenticated) {
+      // Reset billing state when logged out
+      if (_billingChecked) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _billingChecked = false;
+            });
+          }
+          // Also reset billing service state
+          ref.read(billingServiceProvider.notifier).reset();
+        });
+      }
       return const LoginScreen();
     }
 

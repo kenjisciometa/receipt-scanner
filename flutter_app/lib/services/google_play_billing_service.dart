@@ -214,16 +214,19 @@ class GooglePlayBillingService extends StateNotifier<GooglePlayBillingState> {
     );
 
     try {
+      // IMPORTANT: Always acknowledge the purchase first to prevent automatic refund
+      // Google Play will refund the purchase if not acknowledged within 3 days
+      if (purchaseDetails.pendingCompletePurchase) {
+        debugPrint('📦 Acknowledging purchase...');
+        await _inAppPurchase.completePurchase(purchaseDetails);
+        debugPrint('✅ Purchase acknowledged');
+      }
+
       // Verify purchase with backend
       final verified = await verifyPurchase(purchaseDetails);
 
       if (verified) {
-        debugPrint('✅ Purchase verified successfully');
-
-        // Complete the purchase (acknowledge)
-        if (purchaseDetails.pendingCompletePurchase) {
-          await _inAppPurchase.completePurchase(purchaseDetails);
-        }
+        debugPrint('✅ Purchase verified with backend successfully');
 
         // Refresh billing status to update app access
         final billingService = _ref.read(billingServiceProvider.notifier);
@@ -234,17 +237,36 @@ class GooglePlayBillingService extends StateNotifier<GooglePlayBillingState> {
           clearPendingPurchase: true,
         );
       } else {
-        debugPrint('❌ Purchase verification failed');
+        debugPrint('⚠️ Purchase acknowledged but backend verification failed');
+        // Purchase is acknowledged, but backend verification failed
+        // User should contact support or try refreshing
         state = state.copyWith(
           isVerifying: false,
-          error: 'Purchase verification failed. Please contact support.',
+          error: 'Purchase completed but verification pending. Please restart the app or contact support.',
+          clearPendingPurchase: true,
         );
+
+        // Try to refresh billing status anyway
+        final billingService = _ref.read(billingServiceProvider.notifier);
+        await billingService.getAppAccess();
       }
     } catch (e) {
-      debugPrint('❌ Error verifying purchase: $e');
+      debugPrint('❌ Error in purchase handling: $e');
+
+      // Still try to acknowledge if not done yet
+      if (purchaseDetails.pendingCompletePurchase) {
+        try {
+          await _inAppPurchase.completePurchase(purchaseDetails);
+          debugPrint('✅ Purchase acknowledged after error');
+        } catch (ackError) {
+          debugPrint('❌ Failed to acknowledge purchase: $ackError');
+        }
+      }
+
       state = state.copyWith(
         isVerifying: false,
-        error: 'Failed to verify purchase: $e',
+        error: 'Purchase processing error: $e',
+        clearPendingPurchase: true,
       );
     }
   }
@@ -307,15 +329,22 @@ class GooglePlayBillingService extends StateNotifier<GooglePlayBillingState> {
 
   /// Restore previous purchases
   Future<void> restorePurchases() async {
+    debugPrint('🔄 restorePurchases called');
+    debugPrint('   - isAvailable: ${state.isAvailable}');
+    debugPrint('   - isLoading: ${state.isLoading}');
+
     if (!state.isAvailable) {
+      debugPrint('❌ Google Play Store is not available');
       state = state.copyWith(error: 'Google Play Store is not available');
       return;
     }
 
     state = state.copyWith(isLoading: true, clearError: true);
+    debugPrint('🔄 Starting restore...');
 
     try {
       await _inAppPurchase.restorePurchases();
+      debugPrint('✅ restorePurchases completed');
       state = state.copyWith(isLoading: false);
     } catch (e) {
       debugPrint('❌ Error restoring purchases: $e');
@@ -346,12 +375,13 @@ class GooglePlayBillingService extends StateNotifier<GooglePlayBillingState> {
       }
 
       final response = await http.post(
-        Uri.parse('${AppConfig.sciometaAuthUrl}/api/billing/verify-google-play'),
+        Uri.parse(AppConfig.billingVerifyGooglePlayUrl),
         headers: headers,
         body: jsonEncode({
-          'package_name': 'com.sciometa.receiptscanner',
+          'package_name': 'com.sciometa.eds',
           'product_id': purchase.productID,
           'purchase_token': purchaseToken,
+          'app_slug': AppConfig.appId,
         }),
       );
 

@@ -44,17 +44,44 @@ class AppAccessStatus {
     final statusStr = json['status'] as String? ?? 'unknown';
     final status = _parseStatus(statusStr);
 
+    // Trial info is nested in 'trial' object
+    final trialData = json['trial'] as Map<String, dynamic>?;
+
+    // Subscription info is nested in 'subscription' object
+    final subscriptionData = json['subscription'] as Map<String, dynamic>?;
+
+    // POS API uses 'end', sciometa-auth used 'ends_at' - support both for compatibility
+    DateTime? trialEndsAt;
+    if (trialData != null) {
+      final endValue = trialData['end'] ?? trialData['ends_at'];
+      if (endValue != null) {
+        trialEndsAt = DateTime.tryParse(endValue as String);
+      }
+    }
+
+    // POS API uses 'period_end', support both formats
+    DateTime? subscriptionEndsAt;
+    if (subscriptionData != null) {
+      final periodEndValue = subscriptionData['period_end'] ?? subscriptionData['current_period_end'];
+      if (periodEndValue != null) {
+        subscriptionEndsAt = DateTime.tryParse(periodEndValue as String);
+      }
+    }
+
+    // Check for 'can_start_trial' - if not present, derive from status
+    bool canStartTrial = json['can_start_trial'] as bool? ?? false;
+    // If status is 'no_access' and no trial data exists, user can start trial
+    if (!canStartTrial && status == BillingStatus.noAccess && trialData == null) {
+      canStartTrial = true;
+    }
+
     return AppAccessStatus(
       status: status,
-      canStartTrial: json['can_start_trial'] as bool? ?? false,
-      trialEndsAt: json['trial_ends_at'] != null
-          ? DateTime.parse(json['trial_ends_at'] as String)
-          : null,
-      trialDaysRemaining: json['trial_days_remaining'] as int?,
-      subscriptionEndsAt: json['subscription_ends_at'] != null
-          ? DateTime.parse(json['subscription_ends_at'] as String)
-          : null,
-      planName: json['plan_name'] as String?,
+      canStartTrial: canStartTrial,
+      trialEndsAt: trialEndsAt,
+      trialDaysRemaining: trialData?['days_remaining'] as int?,
+      subscriptionEndsAt: subscriptionEndsAt,
+      planName: subscriptionData?['plan'] as String?,
       priceCents: json['price_cents'] as int?,
       currency: json['currency'] as String?,
     );
@@ -67,20 +94,24 @@ class AppAccessStatus {
       case 'trial':
         return BillingStatus.trial;
       case 'trial_expired':
+      case 'expired':  // サブスクリプション期限切れも含む
         return BillingStatus.trialExpired;
       case 'subscribed':
       case 'active':
         return BillingStatus.subscribed;
       case 'canceled':
+      case 'active_until_period_end':  // キャンセル済みだが期間終了まで有効
         return BillingStatus.canceled;
       default:
         return BillingStatus.unknown;
     }
   }
 
-  /// Whether the user has access to the app (trial or subscribed)
+  /// Whether the user has access to the app (trial, subscribed, or canceled but still in period)
   bool get hasAccess =>
-      status == BillingStatus.trial || status == BillingStatus.subscribed;
+      status == BillingStatus.trial ||
+      status == BillingStatus.subscribed ||
+      status == BillingStatus.canceled;  // キャンセル済みでも期間内はアクセス可
 
   /// Formatted price string (e.g., "€4.99/month")
   String get formattedPrice {
@@ -208,7 +239,7 @@ class BillingService extends StateNotifier<BillingState> {
     try {
       final headers = await _getAuthHeaders();
       final response = await http.post(
-        Uri.parse(AppConfig.billingCreateCheckoutUrl),
+        Uri.parse(AppConfig.billingCheckoutUrl),
         headers: headers,
         body: jsonEncode({
           'app_slug': AppConfig.appId,
@@ -224,7 +255,9 @@ class BillingService extends StateNotifier<BillingState> {
 
       if (response.statusCode == 200) {
         final checkoutData = data['data'] as Map<String, dynamic>?;
-        final checkoutUrl = checkoutData?['checkout_url'] as String?;
+        // POS API returns both 'url' and 'checkout_url' for compatibility
+        final checkoutUrl = checkoutData?['checkout_url'] as String? ??
+                           checkoutData?['url'] as String?;
 
         if (checkoutUrl != null) {
           state = state.copyWith(isLoading: false);

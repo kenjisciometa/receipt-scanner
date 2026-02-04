@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/auth_service.dart';
 import '../../services/billing_service.dart';
+import '../../services/google_play_billing_service.dart';
 
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
@@ -41,42 +45,7 @@ class AccountScreen extends ConsumerWidget {
 
             // Subscription status card
             if (accessStatus != null)
-              Card(
-                child: ListTile(
-                  leading: Icon(
-                    accessStatus.hasAccess ? Icons.check_circle : Icons.warning,
-                    color: accessStatus.hasAccess ? Colors.green : Colors.orange,
-                  ),
-                  title: Text(accessStatus.planName ?? 'Subscription'),
-                  subtitle: Text(_getSubscriptionStatusText(accessStatus)),
-                  trailing: accessStatus.status == BillingStatus.trial
-                      ? Chip(
-                          label: Text('${accessStatus.trialDaysRemaining ?? 0} days left'),
-                          backgroundColor: Colors.blue.shade100,
-                        )
-                      : null,
-                ),
-              ),
-            const SizedBox(height: 24),
-
-            // Menu items
-            Text(
-              'Menu',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 12),
-
-            // History button (receipts & invoices)
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.history),
-                title: const Text('History'),
-                subtitle: const Text('View receipts and invoices'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push('/history'),
-              ),
-            ),
-
+              _buildSubscriptionCard(context, ref, accessStatus),
             const SizedBox(height: 24),
 
             // Logout button
@@ -104,6 +73,10 @@ class AccountScreen extends ConsumerWidget {
                   if (confirmed == true) {
                     final authService = ref.read(authServiceProvider.notifier);
                     await authService.signOut();
+                    // Navigate to home (AuthWrapper will show login screen)
+                    if (context.mounted) {
+                      context.go('/');
+                    }
                   }
                 },
                 icon: const Icon(Icons.logout, color: Colors.red),
@@ -119,20 +92,257 @@ class AccountScreen extends ConsumerWidget {
     );
   }
 
-  String _getSubscriptionStatusText(AppAccessStatus status) {
-    switch (status.status) {
+  Widget _buildSubscriptionCard(
+    BuildContext context,
+    WidgetRef ref,
+    AppAccessStatus accessStatus,
+  ) {
+    final googlePlayState = ref.watch(googlePlayBillingServiceProvider);
+    final productDetails = googlePlayState.productDetails;
+    final isPurchasing = googlePlayState.isPurchasing;
+    final isVerifying = googlePlayState.isVerifying;
+
+    // Determine status icon and color
+    IconData statusIcon;
+    Color statusColor;
+    String statusText;
+
+    switch (accessStatus.status) {
       case BillingStatus.trial:
-        return 'Free trial active';
+        statusIcon = Icons.access_time;
+        statusColor = Colors.blue;
+        statusText = 'Free trial active';
+        break;
       case BillingStatus.subscribed:
-        return 'Active subscription - ${status.formattedPrice}';
+        statusIcon = Icons.check_circle;
+        statusColor = Colors.green;
+        statusText = 'Active subscription';
+        break;
       case BillingStatus.canceled:
-        return 'Canceled - access until period end';
+        statusIcon = Icons.cancel_outlined;
+        statusColor = Colors.orange;
+        statusText = 'Canceled';
+        break;
       case BillingStatus.trialExpired:
-        return 'Trial expired';
+        statusIcon = Icons.warning;
+        statusColor = Colors.red;
+        statusText = 'Trial expired';
+        break;
       case BillingStatus.noAccess:
-        return 'No active subscription';
+        statusIcon = Icons.lock_outline;
+        statusColor = Colors.grey;
+        statusText = 'No active subscription';
+        break;
       default:
-        return 'Unknown status';
+        statusIcon = Icons.help_outline;
+        statusColor = Colors.grey;
+        statusText = 'Unknown status';
+    }
+
+    // Check if purchase is available
+    final canPurchase = accessStatus.status == BillingStatus.trial ||
+        accessStatus.status == BillingStatus.trialExpired ||
+        accessStatus.status == BillingStatus.noAccess ||
+        accessStatus.status == BillingStatus.canceled;
+
+    // Get price string from Google Play product
+    final priceString = productDetails?.price ?? '€4.99/month';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header with status
+            Row(
+              children: [
+                Icon(statusIcon, color: statusColor, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Receipt Scanner Pro',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        statusText,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: statusColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const Divider(height: 24),
+
+            // Status-specific details
+            if (accessStatus.status == BillingStatus.trial) ...[
+              if (accessStatus.trialEndsAt != null)
+                _buildInfoRow(
+                  context,
+                  'Trial ends',
+                  DateFormat('yyyy-MM-dd').format(accessStatus.trialEndsAt!),
+                ),
+              _buildInfoRow(
+                context,
+                'Days remaining',
+                '${accessStatus.trialDaysRemaining ?? 0} days',
+              ),
+            ],
+
+            if (accessStatus.status == BillingStatus.subscribed) ...[
+              _buildInfoRow(context, 'Price', priceString),
+              if (accessStatus.subscriptionEndsAt != null)
+                _buildInfoRow(
+                  context,
+                  'Next billing',
+                  DateFormat('yyyy-MM-dd').format(accessStatus.subscriptionEndsAt!),
+                ),
+            ],
+
+            if (accessStatus.status == BillingStatus.canceled) ...[
+              if (accessStatus.subscriptionEndsAt != null)
+                _buildInfoRow(
+                  context,
+                  'Access until',
+                  DateFormat('yyyy-MM-dd').format(accessStatus.subscriptionEndsAt!),
+                ),
+            ],
+
+            if (accessStatus.status == BillingStatus.trialExpired ||
+                accessStatus.status == BillingStatus.noAccess) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Subscribe to continue using Receipt Scanner Pro features.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
+            // Error display
+            if (googlePlayState.error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  googlePlayState.error!,
+                  style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                ),
+              ),
+
+            // Purchase button (for trial, expired, or no access)
+            if (canPurchase && accessStatus.status != BillingStatus.subscribed)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: (isPurchasing || isVerifying)
+                      ? null
+                      : () => _handlePurchase(ref),
+                  icon: (isPurchasing || isVerifying)
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.shopping_cart),
+                  label: Text(
+                    isPurchasing
+                        ? 'Processing...'
+                        : isVerifying
+                            ? 'Verifying...'
+                            : 'Subscribe - $priceString',
+                  ),
+                ),
+              ),
+
+            // Manage subscription button (for active subscribers)
+            if (accessStatus.status == BillingStatus.subscribed)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _openSubscriptionManagement,
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Manage subscription'),
+                ),
+              ),
+
+            const SizedBox(height: 8),
+
+            // Restore purchases button
+            Builder(
+              builder: (context) {
+                debugPrint('🔧 Restore button state - isLoading: ${googlePlayState.isLoading}, isAvailable: ${googlePlayState.isAvailable}');
+                return Center(
+                  child: TextButton(
+                    onPressed: googlePlayState.isLoading
+                        ? null
+                        : () => _handleRestorePurchases(ref),
+                    child: googlePlayState.isLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Restore purchases'),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(BuildContext context, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.grey.shade600,
+            ),
+          ),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handlePurchase(WidgetRef ref) async {
+    final googlePlayService = ref.read(googlePlayBillingServiceProvider.notifier);
+    await googlePlayService.purchaseSubscription();
+  }
+
+  Future<void> _handleRestorePurchases(WidgetRef ref) async {
+    debugPrint('👆 Restore purchases button tapped');
+    final googlePlayService = ref.read(googlePlayBillingServiceProvider.notifier);
+    await googlePlayService.restorePurchases();
+    debugPrint('👆 Restore purchases completed');
+  }
+
+  Future<void> _openSubscriptionManagement() async {
+    final uri = Uri.parse('https://play.google.com/store/account/subscriptions');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 }

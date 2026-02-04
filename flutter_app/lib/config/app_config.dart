@@ -6,13 +6,10 @@ class AppConfig {
   static bool get isDevelopment => environment.toLowerCase() == 'development';
   static bool get isProduction => environment.toLowerCase() == 'production';
 
-  // POS API (used for auth proxy)
+  // POS API (used for auth and billing)
   static String get apiBaseUrl => dotenv.env['API_BASE_URL'] ?? 'https://pos.sciometa.com';
 
-  // Sciometa Auth (used for billing API direct calls)
-  static String get sciometaAuthUrl => dotenv.env['SCIOMETA_AUTH_URL'] ?? 'https://auth.sciometa.com';
-
-  // App identifier for Sciometa Auth
+  // App identifier for billing
   static const String appId = 'receipt';
 
   // Supabase - AccountApp (receipts metadata)
@@ -22,14 +19,15 @@ class AppConfig {
   // App info
   static String get appName => 'Receipt Scanner';
 
-  // Auth API endpoints (via POS API proxy)
+  // Auth API endpoints (via POS API)
   static String get authLoginUrl => '$apiBaseUrl/api/auth/login';
   static String get authRefreshUrl => '$apiBaseUrl/api/auth/refresh';
 
-  // Billing API endpoints (direct to Sciometa Auth)
-  static String get billingAppAccessUrl => '$sciometaAuthUrl/api/billing/app-access';
-  static String get billingStartTrialUrl => '$sciometaAuthUrl/api/billing/start-trial';
-  static String get billingCreateCheckoutUrl => '$sciometaAuthUrl/api/billing/create-checkout';
+  // Billing API endpoints (via POS API)
+  static String get billingAppAccessUrl => '$apiBaseUrl/api/billing/app-access';
+  static String get billingStartTrialUrl => '$apiBaseUrl/api/billing/start-trial';
+  static String get billingCheckoutUrl => '$apiBaseUrl/api/billing/checkout';
+  static String get billingVerifyGooglePlayUrl => '$apiBaseUrl/api/billing/verify-google-play';
 
   // Scanner API endpoints
   static String get scannerExtractUrl => '$apiBaseUrl/api/scanner/extract';
