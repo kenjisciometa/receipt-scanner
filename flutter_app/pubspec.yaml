@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.1.4+10
+version: 0.1.7+13
 
 environment:
   sdk: ^3.5.0
@@ -93,6 +93,11 @@ dependencies:
   # In-App Purchase (Google Play Billing)
   in_app_purchase: ^3.2.0
   in_app_purchase_android: ^0.3.6
+
+  # Google Sign-In (for Gmail integration)
+  google_sign_in: ^6.2.1
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
+  googleapis: ^13.2.0
 
   # UI Enhancements
   flutter_animate: ^4.5.0

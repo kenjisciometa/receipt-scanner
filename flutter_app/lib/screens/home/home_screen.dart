@@ -13,6 +13,7 @@ import '../../services/scanner/document_scanner_service.dart';
 import '../../config/app_config.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
 import '../../presentation/widgets/account_status_button.dart';
+import '../../presentation/widgets/gmail_status_button.dart';
 import '../../services/receipt_validation_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -347,6 +348,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: AppBar(
         title: Text(AppConfig.appName),
         actions: [
+          const GmailStatusButton(),
           IconButton(
             icon: const Icon(Icons.history),
             onPressed: () => context.push('/history'),

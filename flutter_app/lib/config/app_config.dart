@@ -36,4 +36,15 @@ class AppConfig {
 
   // Storage base URL for retrieving images
   static String get storageBaseUrl => '$apiBaseUrl/api/storage/receipts';
+
+  // Gmail integration (via AccountApp API)
+  static String get accountAppApiBaseUrl => dotenv.env['ACCOUNTAPP_API_URL'] ?? 'https://tax.sciometa.com';
+  static String get gmailConnectionsUrl => '$accountAppApiBaseUrl/api/gmail/connections';
+  static String get gmailRegisterTokenUrl => '$accountAppApiBaseUrl/api/gmail/register-token';
+  static String get gmailDisconnectUrl => '$accountAppApiBaseUrl/api/gmail/disconnect';
+  static String get gmailSyncUrl => '$accountAppApiBaseUrl/api/gmail/sync';
+  static String get gmailExtractedUrl => '$accountAppApiBaseUrl/api/gmail/extracted';
+
+  // Google OAuth (Web client ID for server-side token exchange)
+  static String get googleWebClientId => dotenv.env['GOOGLE_WEB_CLIENT_ID'] ?? '';
 }

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../services/auth_service.dart';
 import '../../services/billing_service.dart';
 import '../../services/google_play_billing_service.dart';
+import '../../services/gmail_service.dart';
 
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
@@ -15,6 +16,8 @@ class AccountScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authServiceProvider);
     final billingState = ref.watch(billingServiceProvider);
+    final gmailState = ref.watch(gmailServiceProvider);
+    final pendingInvoicesCount = ref.watch(pendingExtractedInvoicesCountProvider);
     final user = authState.user;
     final accessStatus = billingState.accessStatus;
 
@@ -41,6 +44,10 @@ class AccountScreen extends ConsumerWidget {
                 subtitle: Text(user?.fullName ?? 'Logged in'),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Gmail integration card
+            _buildGmailCard(context, gmailState, pendingInvoicesCount),
             const SizedBox(height: 16),
 
             // Subscription status card
@@ -87,6 +94,99 @@ class AccountScreen extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGmailCard(
+    BuildContext context,
+    GmailConnectionState gmailState,
+    int pendingInvoicesCount,
+  ) {
+    final isConnected = gmailState.isConnected;
+    final connection = gmailState.connection;
+
+    return Card(
+      child: InkWell(
+        onTap: () => context.push('/gmail'),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Gmail icon
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isConnected
+                      ? Colors.green.shade50
+                      : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.email,
+                  color: isConnected
+                      ? Colors.green.shade700
+                      : Colors.red.shade700,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Gmail Integration',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isConnected
+                          ? connection!.gmailEmail
+                          : 'Not connected',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (isConnected && pendingInvoicesCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '$pendingInvoicesCount pending',
+                            style: TextStyle(
+                              color: Colors.orange.shade800,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              // Arrow
+              Icon(
+                Icons.chevron_right,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
         ),
       ),
     );

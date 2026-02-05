@@ -8,6 +8,10 @@ import '../presentation/screens/preview/preview_screen.dart';
 import '../screens/auth/auth_wrapper.dart';
 import '../screens/account/account_screen.dart';
 import '../screens/history/combined_history_screen.dart';
+import '../screens/gmail/gmail_connection_screen.dart';
+import '../screens/gmail/extracted_invoices_screen.dart';
+import '../screens/gmail/invoice_preview_screen.dart';
+import '../data/models/gmail_extracted_invoice.dart';
 
 /// Main application widget
 class ReceiptScannerApp extends ConsumerWidget {
@@ -84,11 +88,26 @@ class ReceiptScannerApp extends ConsumerWidget {
           name: 'history',
           builder: (context, state) => const CombinedHistoryScreen(),
         ),
-        // GoRoute(
-        //   path: '/settings',
-        //   name: 'settings',
-        //   builder: (context, state) => const SettingsScreen(),
-        // ),
+
+        // Gmail integration routes
+        GoRoute(
+          path: '/gmail',
+          name: 'gmail',
+          builder: (context, state) => const GmailConnectionScreen(),
+        ),
+        GoRoute(
+          path: '/gmail/extracted',
+          name: 'gmail-extracted',
+          builder: (context, state) => const ExtractedInvoicesScreen(),
+        ),
+        GoRoute(
+          path: '/gmail/extracted/:id',
+          name: 'gmail-extracted-detail',
+          builder: (context, state) {
+            final invoice = state.extra as GmailExtractedInvoice;
+            return InvoicePreviewScreen(invoice: invoice);
+          },
+        ),
       ],
       errorBuilder: (context, state) => Scaffold(
         body: Center(
