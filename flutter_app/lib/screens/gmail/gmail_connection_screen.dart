@@ -522,6 +522,12 @@ class GmailConnectionScreen extends ConsumerWidget {
     );
   }
 
+  // Default keywords matching server-side register-token defaults
+  static const _defaultKeywords = [
+    'invoice', 'receipt', 'Rechnung', 'Quittung', 'facture', 'reçu',
+    'fattura', 'ricevuta', 'lasku', 'kuitti', 'faktura', 'kvitto'
+  ];
+
   Future<void> _showKeywordsDialog(
     BuildContext context,
     WidgetRef ref,
@@ -531,44 +537,67 @@ class GmailConnectionScreen extends ConsumerWidget {
 
     final result = await showDialog<List<String>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Search Keywords'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter keywords separated by commas. We will search for emails containing these words.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Edit Search Keywords'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter keywords separated by commas. Only files with matching keywords in their filename will be processed.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    labelText: 'Keywords',
+                    hintText: 'invoice, receipt, lasku, kuitti...',
+                    helperText: 'Tip: Include words in multiple languages',
+                    helperMaxLines: 2,
+                  ),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () {
+                    controller.text = _defaultKeywords.join(', ');
+                  },
+                  icon: const Icon(Icons.restore, size: 18),
+                  label: const Text('Reset to defaults'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.blue,
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Defaults: ${_defaultKeywords.take(6).join(", ")}...',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: 'Keywords',
-                hintText: 'invoice, bill, receipt',
-              ),
-              maxLines: 2,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final keywords = controller.text
+                    .split(',')
+                    .map((k) => k.trim())
+                    .where((k) => k.isNotEmpty)
+                    .toList();
+                Navigator.pop(context, keywords);
+              },
+              child: const Text('Save'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final keywords = controller.text
-                  .split(',')
-                  .map((k) => k.trim())
-                  .where((k) => k.isNotEmpty)
-                  .toList();
-              Navigator.pop(context, keywords);
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
 
