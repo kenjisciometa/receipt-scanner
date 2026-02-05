@@ -83,4 +83,5 @@ const _$ExtractedInvoiceStatusEnumMap = {
   ExtractedInvoiceStatus.pending: 'pending',
   ExtractedInvoiceStatus.approved: 'approved',
   ExtractedInvoiceStatus.rejected: 'rejected',
+  ExtractedInvoiceStatus.skipped: 'skipped',
 };

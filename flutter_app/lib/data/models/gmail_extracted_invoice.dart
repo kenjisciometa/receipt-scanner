@@ -10,6 +10,8 @@ enum ExtractedInvoiceStatus {
   approved,
   @JsonValue('rejected')
   rejected,
+  @JsonValue('skipped')
+  skipped, // Scanned but not an invoice (won't be re-scanned)
 }
 
 /// Source type of the extracted invoice
@@ -205,6 +207,8 @@ class GmailExtractedInvoice {
         return 'Approved';
       case ExtractedInvoiceStatus.rejected:
         return 'Rejected';
+      case ExtractedInvoiceStatus.skipped:
+        return 'Skipped (not invoice)';
     }
   }
 
