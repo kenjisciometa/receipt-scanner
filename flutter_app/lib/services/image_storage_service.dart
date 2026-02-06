@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 
@@ -227,7 +228,9 @@ class ImageStorageService {
   static bool get isConfigured => true;
 
   static void _log(String message) {
-    // ignore: avoid_print
-    print('[ImageStorageService] $message');
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[ImageStorageService] $message');
+    }
   }
 }

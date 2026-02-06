@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../data/models/receipt.dart';
 import '../data/models/receipt_item.dart';
 import '../data/models/tax_breakdown.dart';
@@ -15,9 +16,11 @@ class ReceiptConverterService {
     required String imagePath,
     void Function(String dateString)? onDateParseError,
   }) {
-    print('[ReceiptConverter] START - Converting LLM result');
-    print('[ReceiptConverter] llmResult.documentType: ${llmResult.documentType}');
-    print('[ReceiptConverter] llmResult.vendorAddress: ${llmResult.vendorAddress}');
+    if (kDebugMode) {
+      print('[ReceiptConverter] START - Converting LLM result');
+      print('[ReceiptConverter] llmResult.documentType: ${llmResult.documentType}');
+      print('[ReceiptConverter] llmResult.vendorAddress: ${llmResult.vendorAddress}');
+    }
 
     // Parse date
     DateTime? purchaseDate;
@@ -68,12 +71,14 @@ class ReceiptConverterService {
       }
     }
 
-    print('[ReceiptConverter] Converting LLM result to Receipt');
-    print('[ReceiptConverter] documentType: ${llmResult.documentType}');
-    print('[ReceiptConverter] vendorAddress: ${llmResult.vendorAddress}');
-    print('[ReceiptConverter] customerName: ${llmResult.customerName}');
-    print('[ReceiptConverter] invoiceNumber: ${llmResult.invoiceNumber}');
-    print('[ReceiptConverter] dueDate: $dueDate');
+    if (kDebugMode) {
+      print('[ReceiptConverter] Converting LLM result to Receipt');
+      print('[ReceiptConverter] documentType: ${llmResult.documentType}');
+      print('[ReceiptConverter] vendorAddress: ${llmResult.vendorAddress}');
+      print('[ReceiptConverter] customerName: ${llmResult.customerName}');
+      print('[ReceiptConverter] invoiceNumber: ${llmResult.invoiceNumber}');
+      print('[ReceiptConverter] dueDate: $dueDate');
+    }
 
     return Receipt.create(
       originalImagePath: imagePath,

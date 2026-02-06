@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -148,15 +149,21 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       }
 
       // Process with Scanner API
-      print('[PreviewScreen] Processing with Scanner API...');
+      if (kDebugMode) {
+        print('[PreviewScreen] Processing with Scanner API...');
+      }
       final result = await _scannerService.extractFromFile(file);
 
-      print('[PreviewScreen] LLM extraction completed in ${result.processingTimeMs}ms');
-      print('[PreviewScreen] result.documentType: ${result.documentType}');
-      print('[PreviewScreen] result.vendorAddress: ${result.vendorAddress}');
+      if (kDebugMode) {
+        print('[PreviewScreen] LLM extraction completed in ${result.processingTimeMs}ms');
+        print('[PreviewScreen] result.documentType: ${result.documentType}');
+        print('[PreviewScreen] result.vendorAddress: ${result.vendorAddress}');
+      }
 
       // Convert LLM result to Receipt object
-      print('[PreviewScreen] Calling ReceiptConverterService.fromLLMResult...');
+      if (kDebugMode) {
+        print('[PreviewScreen] Calling ReceiptConverterService.fromLLMResult...');
+      }
       final receipt = ReceiptConverterService.fromLLMResult(
         result,
         imagePath: widget.imagePath,
@@ -177,14 +184,16 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
         _llmReasoning = result.reasoning;
         _step1Result = result.step1Result;
       });
-      print('[PreviewScreen] Receipt created: ${receipt.merchantName}, ${receipt.totalAmount}');
-      print('[PreviewScreen] Document type from receipt: ${receipt.documentType}');
-      print('[PreviewScreen] _documentType state: $_documentType');
-      print('[PreviewScreen] Invoice fields:');
-      print('[PreviewScreen]   vendorAddress: ${receipt.vendorAddress}');
-      print('[PreviewScreen]   customerName: ${receipt.customerName}');
-      print('[PreviewScreen]   invoiceNumber: ${receipt.invoiceNumber}');
-      print('[PreviewScreen]   dueDate: ${receipt.dueDate}');
+      if (kDebugMode) {
+        print('[PreviewScreen] Receipt created: ${receipt.merchantName}, ${receipt.totalAmount}');
+        print('[PreviewScreen] Document type from receipt: ${receipt.documentType}');
+        print('[PreviewScreen] _documentType state: $_documentType');
+        print('[PreviewScreen] Invoice fields:');
+        print('[PreviewScreen]   vendorAddress: ${receipt.vendorAddress}');
+        print('[PreviewScreen]   customerName: ${receipt.customerName}');
+        print('[PreviewScreen]   invoiceNumber: ${receipt.invoiceNumber}');
+        print('[PreviewScreen]   dueDate: ${receipt.dueDate}');
+      }
       if (warning != null) {
         logger.w('Validation warning: $warning');
       }

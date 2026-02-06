@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -267,7 +268,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ? List<Map<String, dynamic>>.from(_lastScanResult!['tax_breakdown'])
           : null;
 
-      print('[HomeScreen] Saving as $documentType...');
+      if (kDebugMode) {
+        print('[HomeScreen] Saving as $documentType...');
+      }
 
       if (documentType == 'invoice') {
         // Parse due date for invoices

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../config/app_config.dart';
@@ -19,18 +20,26 @@ class ScannerApiService {
   /// Extract receipt data from image file via POS API
   Future<LLMExtractionResult> extractFromFile(File imageFile) async {
     final bytes = await imageFile.readAsBytes();
-    print('[ScannerAPI] Image file size: ${bytes.length} bytes');
+    if (kDebugMode) {
+      print('[ScannerAPI] Image file size: ${bytes.length} bytes');
+    }
     final result = await extractFromBytes(bytes);
-    print('[ScannerAPI] extractFromFile: Got result, documentType=${result.documentType}');
+    if (kDebugMode) {
+      print('[ScannerAPI] extractFromFile: Got result, documentType=${result.documentType}');
+    }
     return result;
   }
 
   /// Extract receipt data from image bytes via POS API
   Future<LLMExtractionResult> extractFromBytes(Uint8List imageBytes) async {
     final base64Image = base64Encode(imageBytes);
-    print('[ScannerAPI] Base64 image length: ${base64Image.length}');
+    if (kDebugMode) {
+      print('[ScannerAPI] Base64 image length: ${base64Image.length}');
+    }
     final result = await extractFromBase64(base64Image);
-    print('[ScannerAPI] extractFromBytes: Got result');
+    if (kDebugMode) {
+      print('[ScannerAPI] extractFromBytes: Got result');
+    }
     return result;
   }
 
@@ -39,17 +48,21 @@ class ScannerApiService {
     final stopwatch = Stopwatch()..start();
     final url = AppConfig.scannerExtractUrl;
 
-    print('');
-    print('========================================');
-    print('[ScannerAPI] Starting extraction...');
-    print('[ScannerAPI] URL: $url');
-    print('========================================');
+    if (kDebugMode) {
+      print('');
+      print('========================================');
+      print('[ScannerAPI] Starting extraction...');
+      print('[ScannerAPI] URL: $url');
+      print('========================================');
+    }
 
     try {
       final headers = await getAuthHeaders();
-      print('[ScannerAPI] Headers: ${headers.keys.toList()}');
+      if (kDebugMode) {
+        print('[ScannerAPI] Headers: ${headers.keys.toList()}');
+        print('[ScannerAPI] Sending POST request...');
+      }
 
-      print('[ScannerAPI] Sending POST request...');
       final response = await http
           .post(
             Uri.parse(url),
@@ -62,25 +75,24 @@ class ScannerApiService {
 
       stopwatch.stop();
 
-      print('[ScannerAPI] Response status: ${response.statusCode}');
-      print('[ScannerAPI] Response headers: ${response.headers}');
+      if (kDebugMode) {
+        print('[ScannerAPI] Response status: ${response.statusCode}');
+        print('[ScannerAPI] Response headers: ${response.headers}');
 
-      // Log first 500 chars of response body for debugging
-      final bodyPreview = response.body.length > 500
-          ? response.body.substring(0, 500)
-          : response.body;
-      print('[ScannerAPI] Response body preview: $bodyPreview');
+        // Log first 500 chars of response body for debugging
+        final bodyPreview = response.body.length > 500
+            ? response.body.substring(0, 500)
+            : response.body;
+        print('[ScannerAPI] Response body preview: $bodyPreview');
+      }
 
       // Check if response is HTML (error page)
       if (response.body.trim().startsWith('<') || response.body.trim().startsWith('<!')) {
         print('[ScannerAPI] ERROR: Received HTML instead of JSON!');
-        print('[ScannerAPI] This usually means the endpoint does not exist or returned an error page.');
         throw Exception('Received HTML response instead of JSON. Check if /api/scanner/extract endpoint is deployed.');
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      print('[ScannerAPI] Parsed JSON successfully');
-      print('[ScannerAPI] success: ${data['success']}');
 
       // Check for API-level errors
       if (response.statusCode != 200 || data['success'] != true) {
@@ -89,16 +101,11 @@ class ScannerApiService {
         throw Exception('Scanner API error: $errorMessage');
       }
 
-      print('[ScannerAPI] Extraction successful!');
-      print('[ScannerAPI] Processing time: ${data['processing_time_ms']}ms');
-
-      // Debug: Print invoice fields from response
-      print('[ScannerAPI] document_type: ${data['document_type']}');
-      print('[ScannerAPI] vendor_address: ${data['vendor_address']}');
-      print('[ScannerAPI] vendor_tax_id: ${data['vendor_tax_id']}');
-      print('[ScannerAPI] customer_name: ${data['customer_name']}');
-      print('[ScannerAPI] invoice_number: ${data['invoice_number']}');
-      print('[ScannerAPI] due_date: ${data['due_date']}');
+      if (kDebugMode) {
+        print('[ScannerAPI] Extraction successful!');
+        print('[ScannerAPI] Processing time: ${data['processing_time_ms']}ms');
+        print('[ScannerAPI] document_type: ${data['document_type']}');
+      }
 
       // Parse response from POS API
       final extractionResult = LLMExtractionResult(
@@ -130,12 +137,10 @@ class ScannerApiService {
         invoiceNumber: data['invoice_number'],
         dueDate: data['due_date'],
       );
-      print('[ScannerAPI] LLMExtractionResult created, returning...');
       return extractionResult;
     } catch (e) {
       stopwatch.stop();
       print('[ScannerAPI] EXCEPTION: $e');
-      print('[ScannerAPI] Time elapsed: ${stopwatch.elapsedMilliseconds}ms');
       throw Exception(
           'Scanner API extraction failed after ${stopwatch.elapsedMilliseconds}ms: $e');
     }
@@ -144,7 +149,9 @@ class ScannerApiService {
   /// Check if Scanner API is available
   Future<bool> checkServer() async {
     final url = AppConfig.scannerExtractUrl;
-    print('[ScannerAPI] Checking server availability: $url');
+    if (kDebugMode) {
+      print('[ScannerAPI] Checking server availability: $url');
+    }
 
     try {
       final headers = await getAuthHeaders();
@@ -156,25 +163,35 @@ class ScannerApiService {
           )
           .timeout(const Duration(seconds: 10));
 
-      print('[ScannerAPI] Health check status: ${response.statusCode}');
+      if (kDebugMode) {
+        print('[ScannerAPI] Health check status: ${response.statusCode}');
+      }
 
       if (response.statusCode == 200) {
         // Check if response is HTML
         if (response.body.trim().startsWith('<')) {
-          print('[ScannerAPI] Health check returned HTML - endpoint may not exist');
+          if (kDebugMode) {
+            print('[ScannerAPI] Health check returned HTML - endpoint may not exist');
+          }
           return false;
         }
 
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final available = data['llm_available'] == true;
-        print('[ScannerAPI] LLM available: $available');
+        if (kDebugMode) {
+          print('[ScannerAPI] LLM available: $available');
+        }
         return available;
       }
 
-      print('[ScannerAPI] Health check failed: ${response.statusCode}');
+      if (kDebugMode) {
+        print('[ScannerAPI] Health check failed: ${response.statusCode}');
+      }
       return false;
     } catch (e) {
-      print('[ScannerAPI] Health check exception: $e');
+      if (kDebugMode) {
+        print('[ScannerAPI] Health check exception: $e');
+      }
       return false;
     }
   }
