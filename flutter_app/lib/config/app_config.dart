@@ -13,23 +13,45 @@ class AppConfig {
   // App identifier for billing
   static const String appId = 'receipt';
 
-  // Supabase - AccountApp (receipts metadata)
+  // Supabase - Data storage (AccountantApp - receipts, invoices, etc.)
   // Fetched from server, with .env fallback for development
   static String get accountAppSupabaseUrl {
-    final remote = RemoteConfigService.config.accountappSupabaseUrl;
-    return remote.isNotEmpty ? remote : (dotenv.env['ACCOUNTAPP_SUPABASE_URL'] ?? '');
+    // Use data_supabase_url for receipt/invoice data storage
+    final remote = RemoteConfigService.config.dataSupabaseUrl;
+    if (remote.isNotEmpty) return remote;
+    // Fallback to legacy field
+    final legacy = RemoteConfigService.config.accountappSupabaseUrl;
+    if (legacy.isNotEmpty) return legacy;
+    return dotenv.env['ACCOUNTAPP_SUPABASE_URL'] ?? '';
   }
 
   static String get accountAppSupabaseAnonKey {
-    final remote = RemoteConfigService.config.accountappSupabaseAnonKey;
-    return remote.isNotEmpty ? remote : (dotenv.env['ACCOUNTAPP_SUPABASE_ANON_KEY'] ?? '');
+    // Use data_supabase_anon_key for receipt/invoice data storage
+    final remote = RemoteConfigService.config.dataSupabaseAnonKey;
+    if (remote.isNotEmpty) return remote;
+    // Fallback to legacy field
+    final legacy = RemoteConfigService.config.accountappSupabaseAnonKey;
+    if (legacy.isNotEmpty) return legacy;
+    return dotenv.env['ACCOUNTAPP_SUPABASE_ANON_KEY'] ?? '';
+  }
+
+  // Supabase - Auth (POS - for user authentication)
+  static String get authSupabaseUrl {
+    final remote = RemoteConfigService.config.authSupabaseUrl;
+    return remote.isNotEmpty ? remote : (dotenv.env['AUTH_SUPABASE_URL'] ?? accountAppSupabaseUrl);
+  }
+
+  static String get authSupabaseAnonKey {
+    final remote = RemoteConfigService.config.authSupabaseAnonKey;
+    return remote.isNotEmpty ? remote : (dotenv.env['AUTH_SUPABASE_ANON_KEY'] ?? accountAppSupabaseAnonKey);
   }
 
   // App info
-  static String get appName => 'Receipt Scanner';
+  static String get appName => 'Expense Docs Scanner';
 
   // Auth API endpoints (via POS API)
   static String get authLoginUrl => '$apiBaseUrl/api/auth/login';
+  static String get authSignupUrl => '$apiBaseUrl/api/auth/signup';
   static String get authRefreshUrl => '$apiBaseUrl/api/auth/refresh';
 
   // Billing API endpoints (via POS API)

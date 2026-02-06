@@ -112,17 +112,35 @@ class RemoteConfigService {
 
 /// Remote configuration values
 class RemoteConfig {
+  // Auth Supabase (POS - for user authentication)
+  final String authSupabaseUrl;
+  final String authSupabaseAnonKey;
+
+  // Data Supabase (AccountantApp - for receipts, invoices, etc.)
+  final String dataSupabaseUrl;
+  final String dataSupabaseAnonKey;
+
+  // Legacy fields (for backward compatibility)
   final String accountappSupabaseUrl;
   final String accountappSupabaseAnonKey;
+
   final String googleWebClientId;
 
   const RemoteConfig({
+    required this.authSupabaseUrl,
+    required this.authSupabaseAnonKey,
+    required this.dataSupabaseUrl,
+    required this.dataSupabaseAnonKey,
     required this.accountappSupabaseUrl,
     required this.accountappSupabaseAnonKey,
     required this.googleWebClientId,
   });
 
   factory RemoteConfig.empty() => const RemoteConfig(
+        authSupabaseUrl: '',
+        authSupabaseAnonKey: '',
+        dataSupabaseUrl: '',
+        dataSupabaseAnonKey: '',
         accountappSupabaseUrl: '',
         accountappSupabaseAnonKey: '',
         googleWebClientId: '',
@@ -130,6 +148,10 @@ class RemoteConfig {
 
   factory RemoteConfig.fromJson(Map<String, dynamic> json) {
     return RemoteConfig(
+      authSupabaseUrl: json['auth_supabase_url'] as String? ?? '',
+      authSupabaseAnonKey: json['auth_supabase_anon_key'] as String? ?? '',
+      dataSupabaseUrl: json['data_supabase_url'] as String? ?? '',
+      dataSupabaseAnonKey: json['data_supabase_anon_key'] as String? ?? '',
       accountappSupabaseUrl: json['accountapp_supabase_url'] as String? ?? '',
       accountappSupabaseAnonKey: json['accountapp_supabase_anon_key'] as String? ?? '',
       googleWebClientId: json['google_web_client_id'] as String? ?? '',
@@ -137,13 +159,17 @@ class RemoteConfig {
   }
 
   Map<String, dynamic> toJson() => {
+        'auth_supabase_url': authSupabaseUrl,
+        'auth_supabase_anon_key': authSupabaseAnonKey,
+        'data_supabase_url': dataSupabaseUrl,
+        'data_supabase_anon_key': dataSupabaseAnonKey,
         'accountapp_supabase_url': accountappSupabaseUrl,
         'accountapp_supabase_anon_key': accountappSupabaseAnonKey,
         'google_web_client_id': googleWebClientId,
       };
 
   bool get isValid =>
-      accountappSupabaseUrl.isNotEmpty &&
-      accountappSupabaseAnonKey.isNotEmpty &&
+      dataSupabaseUrl.isNotEmpty &&
+      dataSupabaseAnonKey.isNotEmpty &&
       googleWebClientId.isNotEmpty;
 }
