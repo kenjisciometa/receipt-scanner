@@ -1,4 +1,5 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../services/remote_config_service.dart';
 
 class AppConfig {
   // Environment
@@ -13,8 +14,16 @@ class AppConfig {
   static const String appId = 'receipt';
 
   // Supabase - AccountApp (receipts metadata)
-  static String get accountAppSupabaseUrl => dotenv.env['ACCOUNTAPP_SUPABASE_URL'] ?? '';
-  static String get accountAppSupabaseAnonKey => dotenv.env['ACCOUNTAPP_SUPABASE_ANON_KEY'] ?? '';
+  // Fetched from server, with .env fallback for development
+  static String get accountAppSupabaseUrl {
+    final remote = RemoteConfigService.config.accountappSupabaseUrl;
+    return remote.isNotEmpty ? remote : (dotenv.env['ACCOUNTAPP_SUPABASE_URL'] ?? '');
+  }
+
+  static String get accountAppSupabaseAnonKey {
+    final remote = RemoteConfigService.config.accountappSupabaseAnonKey;
+    return remote.isNotEmpty ? remote : (dotenv.env['ACCOUNTAPP_SUPABASE_ANON_KEY'] ?? '');
+  }
 
   // App info
   static String get appName => 'Receipt Scanner';
@@ -46,5 +55,9 @@ class AppConfig {
   static String get gmailExtractedUrl => '$accountAppApiBaseUrl/api/gmail/extracted';
 
   // Google OAuth (Web client ID for server-side token exchange)
-  static String get googleWebClientId => dotenv.env['GOOGLE_WEB_CLIENT_ID'] ?? '';
+  // Fetched from server, with .env fallback for development
+  static String get googleWebClientId {
+    final remote = RemoteConfigService.config.googleWebClientId;
+    return remote.isNotEmpty ? remote : (dotenv.env['GOOGLE_WEB_CLIENT_ID'] ?? '');
+  }
 }

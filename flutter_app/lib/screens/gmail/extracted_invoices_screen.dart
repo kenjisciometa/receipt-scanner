@@ -406,6 +406,11 @@ class _ExtractedInvoicesScreenState
         textColor = Colors.red.shade800;
         label = 'Rejected';
         break;
+      case ExtractedInvoiceStatus.skipped:
+        bgColor = Colors.grey.shade100;
+        textColor = Colors.grey.shade800;
+        label = 'Skipped';
+        break;
     }
 
     return Container(
@@ -492,9 +497,24 @@ class _ExtractedInvoicesScreenState
     );
 
     if (confirmed == true) {
+      // Server requires edits with total_amount
+      final edits = {
+        'merchant_name': invoice.merchantName ?? '',
+        'invoice_number': invoice.invoiceNumber,
+        'total_amount': invoice.totalAmount ?? 0,
+        'subtotal': invoice.subtotal,
+        'tax_total': invoice.taxTotal,
+        'vendor_address': invoice.vendorAddress,
+        'vendor_tax_id': invoice.vendorTaxId,
+        'customer_name': invoice.customerName,
+        'invoice_date': invoice.invoiceDate?.toIso8601String(),
+        'due_date': invoice.dueDate?.toIso8601String(),
+        'currency': invoice.currency,
+      };
+
       final success = await ref
           .read(extractedInvoicesServiceProvider.notifier)
-          .approveInvoice(invoice.id);
+          .approveInvoice(invoice.id, edits: edits);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

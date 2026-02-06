@@ -80,7 +80,15 @@ class GmailService extends StateNotifier<GmailConnectionState> {
     state = state.copyWith(isConnecting: true, clearError: true);
 
     try {
-      // Sign in with Google (will show account picker if needed)
+      // Disconnect first to ensure we get a fresh auth code
+      // (If app was previously authorized, signIn won't return serverAuthCode)
+      try {
+        await _googleSignIn.disconnect();
+      } catch (_) {
+        // Ignore errors - user might not have been signed in
+      }
+
+      // Sign in with Google (will show account picker and consent screen)
       final account = await _googleSignIn.signIn();
 
       if (account == null) {
@@ -166,8 +174,9 @@ class GmailService extends StateNotifier<GmailConnectionState> {
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      // Sign out from Google Sign-In
-      await _googleSignIn.signOut();
+      // Disconnect from Google (revokes app access, not just sign out)
+      // This ensures next sign-in will show consent screen and provide new auth code
+      await _googleSignIn.disconnect();
 
       // Notify server to remove connection
       final authHeaders = await _ref.read(authServiceProvider.notifier).getAuthHeaders();
@@ -368,11 +377,18 @@ class ExtractedInvoicesService extends StateNotifier<ExtractedInvoicesState> {
       final body = <String, dynamic>{};
       if (edits != null) body['edits'] = edits;
 
+      final url = '${AppConfig.gmailExtractedUrl}/$invoiceId/approve';
+      debugPrint('Approve URL: $url');
+      debugPrint('Approve body: ${jsonEncode(body)}');
+
       final response = await http.post(
-        Uri.parse('${AppConfig.gmailExtractedUrl}/$invoiceId/approve'),
+        Uri.parse(url),
         headers: authHeaders,
         body: jsonEncode(body),
       );
+
+      debugPrint('Approve response status: ${response.statusCode}');
+      debugPrint('Approve response body: ${response.body}');
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 

@@ -5,6 +5,8 @@ import 'package:logger/logger.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'core/config/app_config.dart';
+import 'config/app_config.dart' as api_config;
+import 'services/remote_config_service.dart';
 import 'app/app.dart';
 
 /// Global logger instance
@@ -25,6 +27,9 @@ void main() async {
 
   // Load environment variables
   await dotenv.load(fileName: ".env");
+
+  // Fetch remote config from server (keys managed server-side)
+  await RemoteConfigService.initialize(api_config.AppConfig.accountAppApiBaseUrl);
 
   // Configure system UI
   await _configureSystemUI();

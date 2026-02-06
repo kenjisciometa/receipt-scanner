@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:internet_file/internet_file.dart';
+import 'package:pdfx/pdfx.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/models/gmail_extracted_invoice.dart';
 import '../../services/gmail_service.dart';
 import '../../services/auth_service.dart';
 
-/// Screen for previewing and editing an extracted invoice before approval
+/// Screen for previewing and editing an extracted invoice before approval.
+/// Uses a PageView to allow swiping between image/PDF view and details form.
 class InvoicePreviewScreen extends ConsumerStatefulWidget {
   final GmailExtractedInvoice invoice;
 
@@ -22,6 +25,10 @@ class InvoicePreviewScreen extends ConsumerStatefulWidget {
 }
 
 class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
+  // Current page index (0 = image, 1 = details)
+  int _currentPage = 1;
+
+  // Form controllers
   late TextEditingController _merchantNameController;
   late TextEditingController _invoiceNumberController;
   late TextEditingController _totalAmountController;
@@ -37,10 +44,16 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
 
   bool _hasChanges = false;
 
+  // PDF loading state
+  PdfControllerPinch? _pdfController;
+  bool _isPdfLoading = false;
+  String? _pdfError;
+
   @override
   void initState() {
     super.initState();
     _initControllers();
+    _preloadPdfIfNeeded();
   }
 
   void _initControllers() {
@@ -48,8 +61,9 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
         TextEditingController(text: widget.invoice.merchantName ?? '');
     _invoiceNumberController =
         TextEditingController(text: widget.invoice.invoiceNumber ?? '');
-    _totalAmountController = TextEditingController(
-        text: widget.invoice.totalAmount?.toStringAsFixed(2) ?? '');
+    final totalAmountText = widget.invoice.totalAmount?.toStringAsFixed(2) ?? '';
+    debugPrint('Init totalAmount: ${widget.invoice.totalAmount}, text: "$totalAmountText"');
+    _totalAmountController = TextEditingController(text: totalAmountText);
     _subtotalController = TextEditingController(
         text: widget.invoice.subtotal?.toStringAsFixed(2) ?? '');
     _taxTotalController = TextEditingController(
@@ -80,6 +94,51 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
     }
   }
 
+  void _preloadPdfIfNeeded() {
+    final url = widget.invoice.originalFileUrl;
+    final filename = widget.invoice.attachmentFilename ?? '';
+    final isPdf = filename.toLowerCase().endsWith('.pdf');
+
+    if (url != null && isPdf) {
+      _loadPdfDocument(url);
+    }
+  }
+
+  Future<void> _loadPdfDocument(String url) async {
+    if (_isPdfLoading) return;
+
+    setState(() {
+      _isPdfLoading = true;
+      _pdfError = null;
+    });
+
+    try {
+      final token = ref.read(authServiceProvider).session?.accessToken;
+      final headers = token != null ? {'Authorization': 'Bearer $token'} : <String, String>{};
+
+      final pdfBytes = await InternetFile.get(url, headers: headers);
+      final document = await PdfDocument.openData(pdfBytes);
+
+      if (mounted) {
+        setState(() {
+          _pdfController = PdfControllerPinch(
+            document: Future.value(document),
+          );
+          _isPdfLoading = false;
+        });
+      } else {
+        document.close();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _pdfError = 'Failed to load PDF: $e';
+          _isPdfLoading = false;
+        });
+      }
+    }
+  }
+
   void _markChanged() {
     if (!_hasChanges) {
       setState(() => _hasChanges = true);
@@ -96,81 +155,390 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
     _vendorAddressController.dispose();
     _vendorTaxIdController.dispose();
     _customerNameController.dispose();
+    _pdfController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(extractedInvoicesServiceProvider);
-    final canEdit = widget.invoice.canEdit;
+    final hasDocument = widget.invoice.originalFileUrl != null;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Invoice Details'),
         actions: [
-          if (canEdit && _hasChanges)
+          if (widget.invoice.canEdit && _hasChanges)
             TextButton(
               onPressed: _resetChanges,
               child: const Text('Reset'),
             ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Email source info
-            _buildSourceCard(),
-            const SizedBox(height: 16),
-
-            // Original document preview
-            if (widget.invoice.originalFileUrl != null)
-              _buildDocumentCard(),
-            if (widget.invoice.originalFileUrl != null)
-              const SizedBox(height: 16),
-
-            // Confidence indicator
-            if (widget.invoice.confidence != null) _buildConfidenceCard(),
-            const SizedBox(height: 16),
-
-            // Invoice fields
-            _buildInvoiceFieldsCard(canEdit),
-            const SizedBox(height: 16),
-
-            // Amounts
-            _buildAmountsCard(canEdit),
-            const SizedBox(height: 16),
-
-            // Vendor info
-            _buildVendorCard(canEdit),
-            const SizedBox(height: 24),
-
-            // Error display
-            if (state.error != null)
-              Card(
-                color: Colors.red.shade50,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.error_outline, color: Colors.red.shade700),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          state.error!,
-                          style: TextStyle(color: Colors.red.shade700),
-                        ),
-                      ),
-                    ],
+      body: hasDocument
+          ? Column(
+              children: [
+                // IndexedStack keeps both pages in memory
+                Expanded(
+                  child: GestureDetector(
+                    onHorizontalDragEnd: (details) {
+                      // Swipe left (next page)
+                      if (details.primaryVelocity != null && details.primaryVelocity! < -200) {
+                        if (_currentPage < 1) {
+                          setState(() => _currentPage = 1);
+                        }
+                      }
+                      // Swipe right (previous page)
+                      if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
+                        if (_currentPage > 0) {
+                          setState(() => _currentPage = 0);
+                        }
+                      }
+                    },
+                    child: IndexedStack(
+                      index: _currentPage,
+                      children: [
+                        _buildImagePage(),
+                        _buildDetailsPage(),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+                // Page indicator
+                _buildPageIndicator(),
+              ],
+            )
+          : _buildDetailsPage(), // No document, just show details
+    );
+  }
 
-            // Action buttons
-            if (canEdit) _buildActionButtons(state),
+  Widget _buildImagePage() {
+    final url = widget.invoice.originalFileUrl;
+    if (url == null) return _buildNoImagePlaceholder();
+
+    final filename = widget.invoice.attachmentFilename ?? 'document';
+    final isPdf = filename.toLowerCase().endsWith('.pdf');
+
+    return Column(
+      children: [
+        // Document header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Row(
+            children: [
+              Icon(
+                isPdf ? Icons.picture_as_pdf : Icons.image,
+                color: isPdf ? Colors.red : Colors.blue,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  filename,
+                  style: const TextStyle(fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.open_in_new, size: 20),
+                onPressed: () => _openDocument(url),
+                tooltip: 'Open in browser',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+        // Document view
+        Expanded(
+          child: isPdf ? _buildPdfView() : _buildImageView(url),
+        ),
+        // Hint text
+        Container(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            'Swipe left for details \u2192',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPdfView() {
+    if (_isPdfLoading) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading PDF...'),
           ],
         ),
+      );
+    }
+
+    if (_pdfError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+              const SizedBox(height: 16),
+              Text(
+                'Could not load PDF',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _pdfError!,
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () {
+                  _pdfController?.dispose();
+                  _pdfController = null;
+                  final url = widget.invoice.originalFileUrl;
+                  if (url != null) _loadPdfDocument(url);
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_pdfController == null) {
+      return const Center(child: Text('No PDF loaded'));
+    }
+
+    return PdfViewPinch(
+      controller: _pdfController!,
+      builders: PdfViewPinchBuilders<DefaultBuilderOptions>(
+        options: const DefaultBuilderOptions(),
+        documentLoaderBuilder: (_) =>
+            const Center(child: CircularProgressIndicator()),
+        pageLoaderBuilder: (_) =>
+            const Center(child: CircularProgressIndicator()),
+        errorBuilder: (_, error) => Center(
+          child: Text(
+            'Error: $error',
+            style: TextStyle(color: Colors.red.shade700),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageView(String url) {
+    return InteractiveViewer(
+      minScale: 0.5,
+      maxScale: 4.0,
+      child: Center(
+        child: Image.network(
+          url,
+          headers: _getAuthHeaders(),
+          fit: BoxFit.contain,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded /
+                        loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.broken_image,
+                      size: 48, color: Colors.grey.shade400),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Could not load image',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoImagePlaceholder() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.image_not_supported, size: 64, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          Text(
+            'No document available',
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailsPage() {
+    final state = ref.watch(extractedInvoicesServiceProvider);
+    final canEdit = widget.invoice.canEdit;
+    final hasDocument = widget.invoice.originalFileUrl != null;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Hint to swipe for image (only if document exists)
+          if (hasDocument)
+            Container(
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.swipe, size: 20, color: Colors.blue.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '\u2190 Swipe right to view original document',
+                      style: TextStyle(
+                        color: Colors.blue.shade700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Email source info
+          _buildSourceCard(),
+          const SizedBox(height: 16),
+
+          // Confidence indicator
+          if (widget.invoice.confidence != null) _buildConfidenceCard(),
+          if (widget.invoice.confidence != null) const SizedBox(height: 16),
+
+          // Invoice fields
+          _buildInvoiceFieldsCard(canEdit),
+          const SizedBox(height: 16),
+
+          // Amounts
+          _buildAmountsCard(canEdit),
+          const SizedBox(height: 16),
+
+          // Vendor info
+          _buildVendorCard(canEdit),
+          const SizedBox(height: 24),
+
+          // Error display
+          if (state.error != null)
+            Card(
+              color: Colors.red.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red.shade700),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        state.error!,
+                        style: TextStyle(color: Colors.red.shade700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (state.error != null) const SizedBox(height: 16),
+
+          // Action buttons
+          if (canEdit) _buildActionButtons(state),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageIndicator() {
+    final hasDocument = widget.invoice.originalFileUrl != null;
+    if (!hasDocument) return const SizedBox.shrink();
+
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildDot(0, 'Document'),
+            const SizedBox(width: 16),
+            _buildDot(1, 'Details'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDot(int index, String label) {
+    final isActive = _currentPage == index;
+    return GestureDetector(
+      onTap: () {
+        if (_currentPage != index) {
+          setState(() => _currentPage = index);
+        }
+      },
+      child: Row(
+        children: [
+          Container(
+            width: isActive ? 24 : 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: isActive
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          if (isActive) ...[
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -206,147 +574,6 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildDocumentCard() {
-    final url = widget.invoice.originalFileUrl!;
-    final filename = widget.invoice.attachmentFilename ?? 'document';
-    final isPdf = filename.toLowerCase().endsWith('.pdf');
-
-    return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(
-                  isPdf ? Icons.picture_as_pdf : Icons.image,
-                  color: isPdf ? Colors.red : Colors.blue,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Original Document',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      Text(
-                        filename,
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 12,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.open_in_new),
-                  onPressed: () => _openDocument(url),
-                  tooltip: 'Open in browser',
-                ),
-              ],
-            ),
-          ),
-          // Image preview (for non-PDF files)
-          if (!isPdf)
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-              child: Image.network(
-                url,
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                headers: _getAuthHeaders(),
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return SizedBox(
-                    height: 200,
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                            : null,
-                      ),
-                    ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 100,
-                    color: Colors.grey.shade100,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.broken_image, color: Colors.grey.shade400),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Preview unavailable',
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          // PDF placeholder
-          if (isPdf)
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: OutlinedButton.icon(
-                onPressed: () => _openDocument(url),
-                icon: const Icon(Icons.picture_as_pdf),
-                label: const Text('View PDF'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Map<String, String> _getAuthHeaders() {
-    try {
-      final authState = ref.read(authServiceProvider);
-      final token = authState.session?.accessToken;
-      if (token != null) {
-        return {'Authorization': 'Bearer $token'};
-      }
-    } catch (_) {}
-    return {};
-  }
-
-  Future<void> _openDocument(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open document'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   Widget _buildConfidenceCard() {
@@ -737,6 +964,33 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
     );
   }
 
+  Map<String, String> _getAuthHeaders() {
+    try {
+      final authState = ref.read(authServiceProvider);
+      final token = authState.session?.accessToken;
+      if (token != null) {
+        return {'Authorization': 'Bearer $token'};
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  Future<void> _openDocument(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open document'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   void _resetChanges() {
     setState(() {
       _merchantNameController.text = widget.invoice.merchantName ?? '';
@@ -793,20 +1047,23 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
       return;
     }
 
-    if (_totalAmountController.text.trim().isEmpty ||
-        double.tryParse(_totalAmountController.text) == null) {
+    // Require total amount (0 is allowed, but empty is not)
+    final totalText = _totalAmountController.text.trim();
+    debugPrint('Total amount text: "$totalText", parsed: ${double.tryParse(totalText)}');
+    if (totalText.isEmpty || double.tryParse(totalText) == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Valid total amount is required'),
+        SnackBar(
+          content: Text('Total amount is required (got: "$totalText")'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
+    // Always send current values (server requires total_amount)
     final success = await ref
         .read(extractedInvoicesServiceProvider.notifier)
-        .approveInvoice(widget.invoice.id, edits: _hasChanges ? _getEdits() : null);
+        .approveInvoice(widget.invoice.id, edits: _getEdits());
 
     if (context.mounted) {
       if (success) {
