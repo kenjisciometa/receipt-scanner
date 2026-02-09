@@ -19,11 +19,11 @@ GmailExtractedInvoice _$GmailExtractedInvoiceFromJson(
           : DateTime.parse(json['email_date'] as String),
       sourceType: $enumDecode(_$InvoiceSourceTypeEnumMap, json['source_type']),
       attachmentFilename: json['attachment_filename'] as String?,
-      merchantName: json['merchant_name'] as String?,
-      vendorAddress: json['vendor_address'] as String?,
-      vendorTaxId: json['vendor_tax_id'] as String?,
-      customerName: json['customer_name'] as String?,
-      invoiceNumber: json['invoice_number'] as String?,
+      merchantName: _toString(json['merchant_name']),
+      vendorAddress: _toString(json['vendor_address']),
+      vendorTaxId: _toString(json['vendor_tax_id']),
+      customerName: _toString(json['customer_name']),
+      invoiceNumber: _toString(json['invoice_number']),
       invoiceDate: json['invoice_date'] == null
           ? null
           : DateTime.parse(json['invoice_date'] as String),

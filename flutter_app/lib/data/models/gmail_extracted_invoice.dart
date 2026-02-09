@@ -2,6 +2,13 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'gmail_extracted_invoice.g.dart';
 
+/// Helper to convert any value to String (handles int, double, etc.)
+String? _toString(dynamic value) {
+  if (value == null) return null;
+  if (value is String) return value;
+  return value.toString();
+}
+
 /// Status of an extracted invoice
 enum ExtractedInvoiceStatus {
   @JsonValue('pending')
@@ -49,19 +56,19 @@ class GmailExtractedInvoice {
   final String? attachmentFilename;
 
   // Invoice fields
-  @JsonKey(name: 'merchant_name')
+  @JsonKey(name: 'merchant_name', fromJson: _toString)
   final String? merchantName;
 
-  @JsonKey(name: 'vendor_address')
+  @JsonKey(name: 'vendor_address', fromJson: _toString)
   final String? vendorAddress;
 
-  @JsonKey(name: 'vendor_tax_id')
+  @JsonKey(name: 'vendor_tax_id', fromJson: _toString)
   final String? vendorTaxId;
 
-  @JsonKey(name: 'customer_name')
+  @JsonKey(name: 'customer_name', fromJson: _toString)
   final String? customerName;
 
-  @JsonKey(name: 'invoice_number')
+  @JsonKey(name: 'invoice_number', fromJson: _toString)
   final String? invoiceNumber;
 
   @JsonKey(name: 'invoice_date')
