@@ -241,11 +241,16 @@ class GmailService extends StateNotifier<GmailConnectionState> {
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      // Disconnect from Google (revokes app access, not just sign out)
-      // This ensures next sign-in will show consent screen and provide new auth code
-      await _googleSignIn.disconnect();
+      // Try to disconnect from Google locally
+      // This may fail if no local session exists, but that's OK
+      // Server-side disconnect will revoke the actual tokens with Google
+      try {
+        await _googleSignIn.disconnect();
+      } catch (e) {
+        debugPrint('Google Sign-In local disconnect failed (continuing): $e');
+      }
 
-      // Notify server to remove connection
+      // Notify server to remove connection and revoke tokens with Google
       final authHeaders = await _ref.read(authServiceProvider.notifier).getAuthHeaders();
 
       final response = await http.post(
