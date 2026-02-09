@@ -2,7 +2,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Application configuration constants and settings
 class AppConfig {
-  static const String appName = 'Receipt Scanner';
+  static const String appName = 'Expense Docs Scanner';
   static const String appVersion = '1.0.0';
   static const String appDescription = 'AI-powered receipt digitization app for European languages';
   

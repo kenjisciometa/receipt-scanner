@@ -11,7 +11,7 @@
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     
     <application
-        android:label="Sciometa EDS"
+        android:label="Expense Docs Scanner"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
