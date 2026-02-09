@@ -264,10 +264,12 @@ class GmailService extends StateNotifier<GmailConnectionState> {
     return syncSuccess;
   }
 
-  /// Update sync settings (keywords, enabled state)
+  /// Update sync settings (keywords, enabled state, sync from date)
   Future<bool> updateSyncSettings({
     bool? syncEnabled,
     List<String>? syncKeywords,
+    DateTime? syncFromDate,
+    bool clearSyncFromDate = false,
   }) async {
     if (state.connection == null) return false;
 
@@ -279,6 +281,11 @@ class GmailService extends StateNotifier<GmailConnectionState> {
       final body = <String, dynamic>{};
       if (syncEnabled != null) body['sync_enabled'] = syncEnabled;
       if (syncKeywords != null) body['sync_keywords'] = syncKeywords;
+      if (clearSyncFromDate) {
+        body['sync_from_date'] = null;
+      } else if (syncFromDate != null) {
+        body['sync_from_date'] = syncFromDate.toIso8601String().split('T')[0]; // YYYY-MM-DD
+      }
 
       final response = await http.patch(
         Uri.parse(AppConfig.gmailConnectionsUrl),

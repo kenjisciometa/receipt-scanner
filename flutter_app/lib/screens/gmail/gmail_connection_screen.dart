@@ -399,6 +399,59 @@ class GmailConnectionScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
 
+        // Sync date filter card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Sync From Date',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_calendar, size: 20),
+                      onPressed: () => _showDatePickerDialog(context, ref, connection.syncFromDate),
+                      tooltip: 'Change date',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.date_range, size: 18, color: Colors.grey.shade600),
+                    const SizedBox(width: 8),
+                    Text(
+                      connection.syncFromDate != null
+                          ? DateFormat('yyyy-MM-dd').format(connection.syncFromDate!)
+                          : 'No date filter (recent emails only)',
+                      style: TextStyle(
+                        color: connection.syncFromDate != null
+                            ? Colors.black87
+                            : Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Only emails after this date will be synced',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
         // Sync keywords card
         Card(
           child: Padding(
@@ -605,6 +658,42 @@ class GmailConnectionScreen extends ConsumerWidget {
       await ref
           .read(gmailServiceProvider.notifier)
           .updateSyncSettings(syncKeywords: result);
+    }
+  }
+
+  Future<void> _showDatePickerDialog(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime? currentDate,
+  ) async {
+    final now = DateTime.now();
+    final initialDate = currentDate ?? DateTime(now.year - 1, 4, 1); // Default: April last year
+
+    final result = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      helpText: 'Select start date for email sync',
+      confirmText: 'Set Date',
+      cancelText: 'Cancel',
+    );
+
+    if (result != null) {
+      final success = await ref
+          .read(gmailServiceProvider.notifier)
+          .updateSyncSettings(syncFromDate: result);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success
+                ? 'Sync from date updated to ${DateFormat('yyyy-MM-dd').format(result)}'
+                : 'Failed to update date'),
+            backgroundColor: success ? Colors.green : Colors.red,
+          ),
+        );
+      }
     }
   }
 

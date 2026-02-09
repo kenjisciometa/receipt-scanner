@@ -19,6 +19,9 @@ GmailConnection _$GmailConnectionFromJson(Map<String, dynamic> json) =>
       syncKeywords: (json['sync_keywords'] as List<dynamic>)
           .map((e) => e as String)
           .toList(),
+      syncFromDate: json['sync_from_date'] == null
+          ? null
+          : DateTime.parse(json['sync_from_date'] as String),
       lastSyncAt: json['last_sync_at'] == null
           ? null
           : DateTime.parse(json['last_sync_at'] as String),
@@ -37,6 +40,7 @@ Map<String, dynamic> _$GmailConnectionToJson(GmailConnection instance) =>
       'is_active': instance.isActive,
       'sync_enabled': instance.syncEnabled,
       'sync_keywords': instance.syncKeywords,
+      'sync_from_date': instance.syncFromDate?.toIso8601String(),
       'last_sync_at': instance.lastSyncAt?.toIso8601String(),
       'last_sync_error': instance.lastSyncError,
       'created_at': instance.createdAt.toIso8601String(),
