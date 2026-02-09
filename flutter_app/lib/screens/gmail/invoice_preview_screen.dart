@@ -472,14 +472,20 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
       ),
       child: Row(
         children: [
-          // Left arrow hint
-          AnimatedOpacity(
-            opacity: _currentPage == 1 ? 1.0 : 0.3,
-            duration: const Duration(milliseconds: 200),
-            child: Icon(
-              Icons.chevron_left,
-              color: _currentPage == 1 ? Theme.of(context).colorScheme.primary : Colors.grey,
-              size: 24,
+          // Left arrow - tap to go to Document
+          GestureDetector(
+            onTap: _currentPage == 1 ? () => setState(() => _currentPage = 0) : null,
+            child: AnimatedOpacity(
+              opacity: _currentPage == 1 ? 1.0 : 0.3,
+              duration: const Duration(milliseconds: 200),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  Icons.chevron_left,
+                  color: _currentPage == 1 ? Theme.of(context).colorScheme.primary : Colors.grey,
+                  size: 28,
+                ),
+              ),
             ),
           ),
           Expanded(
@@ -494,14 +500,20 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
               ],
             ),
           ),
-          // Right arrow hint
-          AnimatedOpacity(
-            opacity: _currentPage == 0 ? 1.0 : 0.3,
-            duration: const Duration(milliseconds: 200),
-            child: Icon(
-              Icons.chevron_right,
-              color: _currentPage == 0 ? Theme.of(context).colorScheme.primary : Colors.grey,
-              size: 24,
+          // Right arrow - tap to go to Details
+          GestureDetector(
+            onTap: _currentPage == 0 ? () => setState(() => _currentPage = 1) : null,
+            child: AnimatedOpacity(
+              opacity: _currentPage == 0 ? 1.0 : 0.3,
+              duration: const Duration(milliseconds: 200),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  Icons.chevron_right,
+                  color: _currentPage == 0 ? Theme.of(context).colorScheme.primary : Colors.grey,
+                  size: 28,
+                ),
+              ),
             ),
           ),
         ],
