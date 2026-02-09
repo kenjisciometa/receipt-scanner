@@ -314,33 +314,6 @@ class _ExtractedInvoicesScreenState
                 ],
               ),
 
-              // Confidence indicator
-              if (invoice.confidence != null) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      invoice.hasHighConfidence
-                          ? Icons.verified
-                          : Icons.warning_amber,
-                      size: 14,
-                      color: invoice.hasHighConfidence
-                          ? Colors.green.shade600
-                          : Colors.orange.shade600,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Confidence: ${(invoice.confidence! * 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: invoice.hasHighConfidence
-                            ? Colors.green.shade600
-                            : Colors.orange.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
 
               // Action buttons for pending invoices
               if (invoice.status == ExtractedInvoiceStatus.pending) ...[

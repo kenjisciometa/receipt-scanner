@@ -1087,10 +1087,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     ),
                                   ],
                                 ),
-                                Text(
-                                  'Confidence: ${((_lastScanResult!['confidence'] ?? 0) * 100).toInt()}%',
-                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                                ),
                               ],
                             ),
                             Text(

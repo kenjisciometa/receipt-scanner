@@ -507,16 +507,6 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Confidence indicator (hide in edit mode)
-          if (!_isEditing) ...[
-            ConfidenceIndicator(
-              confidence: _extractedReceipt?.confidence ?? 0.0,
-              padding: const EdgeInsets.all(AppConstants.defaultPadding),
-              borderRadius: AppConstants.defaultBorderRadius,
-            ),
-            const SizedBox(height: AppConstants.defaultPadding),
-          ],
-
           // Validation warning (if totals don't match)
           if (!_isEditing && _validationWarning != null) ...[
             ValidationWarning(
