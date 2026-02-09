@@ -356,7 +356,7 @@ class GmailConnectionScreen extends ConsumerWidget {
                   context,
                   'Last sync',
                   connection.lastSyncAt != null
-                      ? DateFormat('yyyy-MM-dd HH:mm').format(connection.lastSyncAt!)
+                      ? DateFormat('yyyy-MM-dd HH:mm').format(connection.lastSyncAt!.toLocal())
                       : 'Never',
                 ),
                 _buildInfoRow(
