@@ -20,6 +20,13 @@ int? _parseInt(dynamic value) {
   return null;
 }
 
+/// Helper to convert any value to String (handles int, double, etc.)
+String? _parseString(dynamic value) {
+  if (value == null) return null;
+  if (value is String) return value;
+  return value.toString();
+}
+
 /// LLM Extraction Result
 class LLMExtractionResult {
   final String? merchantName;
@@ -76,9 +83,9 @@ class LLMExtractionResult {
 
   factory LLMExtractionResult.fromJson(Map<String, dynamic> json) {
     return LLMExtractionResult(
-      merchantName: json['merchant_name'],
-      date: json['date'],
-      time: json['time'],
+      merchantName: _parseString(json['merchant_name']),
+      date: _parseString(json['date']),
+      time: _parseString(json['time']),
       items: (json['items'] as List? ?? [])
           .map((e) => ExtractedItem.fromJson(e))
           .toList(),
@@ -88,20 +95,20 @@ class LLMExtractionResult {
           .toList(),
       taxTotal: _parseDouble(json['tax_total']),
       total: _parseDouble(json['total']),
-      currency: json['currency'],
-      paymentMethod: json['payment_method'],
-      receiptNumber: json['receipt_number'],
-      rawResponse: json['raw_response'] ?? '',
+      currency: _parseString(json['currency']),
+      paymentMethod: _parseString(json['payment_method']),
+      receiptNumber: _parseString(json['receipt_number']),
+      rawResponse: _parseString(json['raw_response']) ?? '',
       processingTimeMs: _parseInt(json['processing_time_ms']) ?? 0,
       confidence: _parseDouble(json['confidence']) ?? 0.0,
-      reasoning: json['reasoning'],
-      step1Result: json['step1_result'],
-      documentType: json['document_type'],
-      vendorAddress: json['vendor_address'],
-      vendorTaxId: json['vendor_tax_id'],
-      customerName: json['customer_name'],
-      invoiceNumber: json['invoice_number'],
-      dueDate: json['due_date'],
+      reasoning: _parseString(json['reasoning']),
+      step1Result: _parseString(json['step1_result']),
+      documentType: _parseString(json['document_type']),
+      vendorAddress: _parseString(json['vendor_address']),
+      vendorTaxId: _parseString(json['vendor_tax_id']),
+      customerName: _parseString(json['customer_name']),
+      invoiceNumber: _parseString(json['invoice_number']),
+      dueDate: _parseString(json['due_date']),
     );
   }
 

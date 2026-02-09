@@ -109,9 +109,9 @@ class ScannerApiService {
 
       // Parse response from POS API
       final extractionResult = LLMExtractionResult(
-        merchantName: data['merchant_name'],
-        date: data['date'],
-        time: data['time'],
+        merchantName: _parseString(data['merchant_name']),
+        date: _parseString(data['date']),
+        time: _parseString(data['time']),
         items: (data['items'] as List? ?? [])
             .map((e) => ExtractedItem.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -121,21 +121,21 @@ class ScannerApiService {
             .toList(),
         taxTotal: _parseDouble(data['tax_total']),
         total: _parseDouble(data['total']),
-        currency: data['currency'],
-        paymentMethod: data['payment_method'],
-        receiptNumber: data['receipt_number'],
-        rawResponse: data['raw_response'] ?? response.body,
+        currency: _parseString(data['currency']),
+        paymentMethod: _parseString(data['payment_method']),
+        receiptNumber: _parseString(data['receipt_number']),
+        rawResponse: _parseString(data['raw_response']) ?? response.body,
         processingTimeMs: data['processing_time_ms'] ?? stopwatch.elapsedMilliseconds,
         confidence: _parseDouble(data['confidence']) ?? 0.0,
-        reasoning: data['reasoning'],
-        step1Result: data['step1_result'],
+        reasoning: _parseString(data['reasoning']),
+        step1Result: _parseString(data['step1_result']),
         // Document type and Invoice-specific fields
-        documentType: data['document_type'],
-        vendorAddress: data['vendor_address'],
-        vendorTaxId: data['vendor_tax_id'],
-        customerName: data['customer_name'],
-        invoiceNumber: data['invoice_number'],
-        dueDate: data['due_date'],
+        documentType: _parseString(data['document_type']),
+        vendorAddress: _parseString(data['vendor_address']),
+        vendorTaxId: _parseString(data['vendor_tax_id']),
+        customerName: _parseString(data['customer_name']),
+        invoiceNumber: _parseString(data['invoice_number']),
+        dueDate: _parseString(data['due_date']),
       );
       return extractionResult;
     } catch (e) {
@@ -202,4 +202,11 @@ double? _parseDouble(dynamic value) {
   if (value is num) return value.toDouble();
   if (value is String) return double.tryParse(value);
   return null;
+}
+
+/// Helper to convert any value to String (handles int, double, etc.)
+String? _parseString(dynamic value) {
+  if (value == null) return null;
+  if (value is String) return value;
+  return value.toString();
 }
