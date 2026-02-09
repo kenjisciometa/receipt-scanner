@@ -692,6 +692,9 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
   }
 
   Widget _buildAmountsCard(bool canEdit) {
+    // Extract tax_breakdown from rawExtractedData
+    final taxBreakdown = _getTaxBreakdown();
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -728,40 +731,61 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _subtotalController,
-                    decoration: const InputDecoration(
-                      labelText: 'Subtotal',
-                      hintText: '0.00',
-                    ),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    enabled: canEdit,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _taxTotalController,
-                    decoration: const InputDecoration(
-                      labelText: 'Tax Total',
-                      hintText: '0.00',
-                    ),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    enabled: canEdit,
-                  ),
-                ),
-              ],
+            // Subtotal
+            TextField(
+              controller: _subtotalController,
+              decoration: const InputDecoration(
+                labelText: 'Subtotal (Net)',
+                hintText: '0.00',
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              enabled: canEdit,
             ),
             const SizedBox(height: 12),
+            // Tax breakdown display
+            if (taxBreakdown.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'VAT Breakdown',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...taxBreakdown.map((item) => _buildTaxBreakdownRow(item)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            // Tax Total (editable)
+            TextField(
+              controller: _taxTotalController,
+              decoration: const InputDecoration(
+                labelText: 'Tax Total',
+                hintText: '0.00',
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              enabled: canEdit,
+            ),
+            const SizedBox(height: 12),
+            // Total Amount
             TextField(
               controller: _totalAmountController,
               decoration: const InputDecoration(
-                labelText: 'Total Amount *',
+                labelText: 'Total Amount (Gross) *',
                 hintText: '0.00',
               ),
               keyboardType:
@@ -776,6 +800,68 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
         ),
       ),
     );
+  }
+
+  /// Get tax breakdown from rawExtractedData
+  List<Map<String, dynamic>> _getTaxBreakdown() {
+    final rawData = widget.invoice.rawExtractedData;
+    if (rawData == null) return [];
+
+    final breakdown = rawData['tax_breakdown'];
+    if (breakdown is List) {
+      return breakdown
+          .whereType<Map<String, dynamic>>()
+          .where((item) => item['rate'] != null)
+          .toList();
+    }
+    return [];
+  }
+
+  /// Build a row for tax breakdown display
+  Widget _buildTaxBreakdownRow(Map<String, dynamic> item) {
+    final rate = item['rate'];
+    final taxAmount = item['tax_amount'];
+    final taxableAmount = item['taxable_amount'];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'VAT ${rate is num ? rate.toStringAsFixed(rate.truncateToDouble() == rate ? 0 : 1) : rate}%',
+            style: const TextStyle(fontSize: 14),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${_formatAmount(taxAmount)} $_currency',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (taxableAmount != null)
+                Text(
+                  'on ${_formatAmount(taxableAmount)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Format amount for display
+  String _formatAmount(dynamic amount) {
+    if (amount == null) return '0.00';
+    if (amount is num) return amount.toStringAsFixed(2);
+    return amount.toString();
   }
 
   Widget _buildVendorCard(bool canEdit) {
