@@ -27,7 +27,6 @@ class InvoicePreviewScreen extends ConsumerStatefulWidget {
 class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
   // Current page index (0 = image, 1 = details)
   int _currentPage = 1;
-  late PageController _pageController;
 
   // Form controllers
   late TextEditingController _merchantNameController;
@@ -54,7 +53,6 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: _currentPage);
     _initControllers();
     _preloadPdfIfNeeded();
   }
@@ -163,7 +161,6 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
     _merchantNameController.dispose();
     _invoiceNumberController.dispose();
     _totalAmountController.dispose();
@@ -197,17 +194,34 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
               children: [
                 // Page indicator at top for better visibility
                 _buildPageIndicator(),
-                // PageView for smooth swipe animation
+                // Swipeable content with IndexedStack to preserve state
                 Expanded(
-                  child: PageView(
-                    controller: _pageController,
-                    onPageChanged: (index) {
-                      setState(() => _currentPage = index);
+                  child: GestureDetector(
+                    onHorizontalDragEnd: (details) {
+                      if (details.primaryVelocity == null) return;
+                      // Swipe left (next page)
+                      if (details.primaryVelocity! < -200 && _currentPage < 1) {
+                        setState(() => _currentPage = 1);
+                      }
+                      // Swipe right (previous page)
+                      if (details.primaryVelocity! > 200 && _currentPage > 0) {
+                        setState(() => _currentPage = 0);
+                      }
                     },
-                    children: [
-                      _buildImagePage(),
-                      _buildDetailsPage(),
-                    ],
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (child, animation) {
+                        return FadeTransition(opacity: animation, child: child);
+                      },
+                      child: IndexedStack(
+                        key: ValueKey(_currentPage),
+                        index: _currentPage,
+                        children: [
+                          _buildImagePage(),
+                          _buildDetailsPage(),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -507,11 +521,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
     return GestureDetector(
       onTap: () {
         if (_currentPage != index) {
-          _pageController.animateToPage(
-            index,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-          );
+          setState(() => _currentPage = index);
         }
       },
       child: AnimatedContainer(
