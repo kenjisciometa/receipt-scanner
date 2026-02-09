@@ -6,6 +6,7 @@ import '../core/config/app_config.dart';
 import '../core/constants/app_constants.dart';
 import '../presentation/screens/preview/preview_screen.dart';
 import '../screens/auth/auth_wrapper.dart';
+import '../screens/auth/register_screen.dart';
 import '../screens/account/account_screen.dart';
 import '../screens/history/combined_history_screen.dart';
 import '../screens/gmail/gmail_connection_screen.dart';
@@ -64,7 +65,14 @@ class ReceiptScannerApp extends ConsumerWidget {
           name: 'home',
           builder: (context, state) => const AuthWrapper(),
         ),
-        
+
+        // Register screen
+        GoRoute(
+          path: '/register',
+          name: 'register',
+          builder: (context, state) => const RegisterScreen(),
+        ),
+
         // Preview screen
         GoRoute(
           path: '/preview',

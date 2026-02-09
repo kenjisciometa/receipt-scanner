@@ -253,6 +253,40 @@ class AuthService extends StateNotifier<AuthState> {
     }
   }
 
+  /// Sign up with email and password
+  Future<bool> signUp(String email, String password, {String? fullName}) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      final response = await http.post(
+        Uri.parse(AppConfig.authSignupUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+          if (fullName != null && fullName.isNotEmpty) 'fullName': fullName,
+        }),
+      );
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        state = state.copyWith(isLoading: false);
+        debugPrint('✅ Sign up successful for: $email');
+        return true;
+      } else {
+        final error = data['error'] as String? ?? 'Registration failed';
+        state = state.copyWith(isLoading: false, error: error);
+        debugPrint('❌ Sign up failed: $error');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Sign up error: $e');
+      state = state.copyWith(isLoading: false, error: e.toString());
+      return false;
+    }
+  }
+
   /// Sign out
   Future<void> signOut() async {
     await _clearSession();
