@@ -208,19 +208,12 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
                         setState(() => _currentPage = 0);
                       }
                     },
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      transitionBuilder: (child, animation) {
-                        return FadeTransition(opacity: animation, child: child);
-                      },
-                      child: IndexedStack(
-                        key: ValueKey(_currentPage),
-                        index: _currentPage,
-                        children: [
-                          _buildImagePage(),
-                          _buildDetailsPage(),
-                        ],
-                      ),
+                    child: IndexedStack(
+                      index: _currentPage,
+                      children: [
+                        _buildImagePage(),
+                        _buildDetailsPage(),
+                      ],
                     ),
                   ),
                 ),
