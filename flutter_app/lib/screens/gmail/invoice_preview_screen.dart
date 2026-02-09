@@ -33,6 +33,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
   late TextEditingController _invoiceNumberController;
   late TextEditingController _totalAmountController;
   late TextEditingController _subtotalController;
+  late TextEditingController _taxRateController;
   late TextEditingController _taxTotalController;
   late TextEditingController _vendorAddressController;
   late TextEditingController _vendorTaxIdController;
@@ -66,6 +67,18 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
     _totalAmountController = TextEditingController(text: totalAmountText);
     _subtotalController = TextEditingController(
         text: widget.invoice.subtotal?.toStringAsFixed(2) ?? '');
+    // Get tax rate from tax_breakdown if available
+    final taxBreakdown = widget.invoice.rawExtractedData?['tax_breakdown'];
+    String taxRateText = '';
+    if (taxBreakdown is List && taxBreakdown.isNotEmpty) {
+      final firstRate = taxBreakdown[0]['rate'];
+      if (firstRate != null) {
+        taxRateText = firstRate is num
+            ? (firstRate == firstRate.truncate() ? firstRate.toInt().toString() : firstRate.toString())
+            : firstRate.toString();
+      }
+    }
+    _taxRateController = TextEditingController(text: taxRateText);
     _taxTotalController = TextEditingController(
         text: widget.invoice.taxTotal?.toStringAsFixed(2) ?? '');
     _vendorAddressController =
@@ -85,6 +98,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
       _invoiceNumberController,
       _totalAmountController,
       _subtotalController,
+      _taxRateController,
       _taxTotalController,
       _vendorAddressController,
       _vendorTaxIdController,
@@ -151,6 +165,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
     _invoiceNumberController.dispose();
     _totalAmountController.dispose();
     _subtotalController.dispose();
+    _taxRateController.dispose();
     _taxTotalController.dispose();
     _vendorAddressController.dispose();
     _vendorTaxIdController.dispose();
@@ -441,10 +456,6 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
           // Email source info
           _buildSourceCard(),
           const SizedBox(height: 16),
-
-          // Confidence indicator
-          if (widget.invoice.confidence != null) _buildConfidenceCard(),
-          if (widget.invoice.confidence != null) const SizedBox(height: 16),
 
           // Invoice fields
           _buildInvoiceFieldsCard(canEdit),
@@ -743,8 +754,39 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
               enabled: canEdit,
             ),
             const SizedBox(height: 12),
-            // Tax breakdown display
+            // VAT Rate and Tax Total in a row
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _taxRateController,
+                    decoration: const InputDecoration(
+                      labelText: 'VAT Rate (%)',
+                      hintText: '24',
+                    ),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    enabled: canEdit,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _taxTotalController,
+                    decoration: const InputDecoration(
+                      labelText: 'Tax Total',
+                      hintText: '0.00',
+                    ),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    enabled: canEdit,
+                  ),
+                ),
+              ],
+            ),
+            // Tax breakdown display (if available from extraction)
             if (taxBreakdown.isNotEmpty) ...[
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -755,7 +797,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'VAT Breakdown',
+                      'Extracted VAT Breakdown',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -767,19 +809,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
             ],
-            // Tax Total (editable)
-            TextField(
-              controller: _taxTotalController,
-              decoration: const InputDecoration(
-                labelText: 'Tax Total',
-                hintText: '0.00',
-              ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              enabled: canEdit,
-            ),
             const SizedBox(height: 12),
             // Total Amount
             TextField(
@@ -805,14 +835,21 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
   /// Get tax breakdown from rawExtractedData
   List<Map<String, dynamic>> _getTaxBreakdown() {
     final rawData = widget.invoice.rawExtractedData;
-    if (rawData == null) return [];
+    debugPrint('[InvoicePreview] rawExtractedData: $rawData');
+    if (rawData == null) {
+      debugPrint('[InvoicePreview] rawExtractedData is null');
+      return [];
+    }
 
     final breakdown = rawData['tax_breakdown'];
+    debugPrint('[InvoicePreview] tax_breakdown: $breakdown');
     if (breakdown is List) {
-      return breakdown
+      final result = breakdown
           .whereType<Map<String, dynamic>>()
           .where((item) => item['rate'] != null)
           .toList();
+      debugPrint('[InvoicePreview] parsed tax_breakdown: $result');
+      return result;
     }
     return [];
   }
@@ -1085,6 +1122,18 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
           widget.invoice.totalAmount?.toStringAsFixed(2) ?? '';
       _subtotalController.text =
           widget.invoice.subtotal?.toStringAsFixed(2) ?? '';
+      // Reset tax rate from tax_breakdown if available
+      final taxBreakdown = widget.invoice.rawExtractedData?['tax_breakdown'];
+      String taxRateText = '';
+      if (taxBreakdown is List && taxBreakdown.isNotEmpty) {
+        final firstRate = taxBreakdown[0]['rate'];
+        if (firstRate != null) {
+          taxRateText = firstRate is num
+              ? (firstRate == firstRate.truncate() ? firstRate.toInt().toString() : firstRate.toString())
+              : firstRate.toString();
+        }
+      }
+      _taxRateController.text = taxRateText;
       _taxTotalController.text =
           widget.invoice.taxTotal?.toStringAsFixed(2) ?? '';
       _vendorAddressController.text = widget.invoice.vendorAddress ?? '';
@@ -1105,6 +1154,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
           : _invoiceNumberController.text.trim(),
       'total_amount': double.tryParse(_totalAmountController.text),
       'subtotal': double.tryParse(_subtotalController.text),
+      'tax_rate': double.tryParse(_taxRateController.text),
       'tax_total': double.tryParse(_taxTotalController.text),
       'vendor_address': _vendorAddressController.text.trim().isEmpty
           ? null
