@@ -27,6 +27,7 @@ class InvoicePreviewScreen extends ConsumerStatefulWidget {
 class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
   // Current page index (0 = image, 1 = details)
   int _currentPage = 1;
+  late PageController _pageController;
 
   // Form controllers
   late TextEditingController _merchantNameController;
@@ -53,6 +54,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _currentPage);
     _initControllers();
     _preloadPdfIfNeeded();
   }
@@ -161,6 +163,7 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
 
   @override
   void dispose() {
+    _pageController.dispose();
     _merchantNameController.dispose();
     _invoiceNumberController.dispose();
     _totalAmountController.dispose();
@@ -192,34 +195,21 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
       body: hasDocument
           ? Column(
               children: [
-                // IndexedStack keeps both pages in memory
+                // Page indicator at top for better visibility
+                _buildPageIndicator(),
+                // PageView for smooth swipe animation
                 Expanded(
-                  child: GestureDetector(
-                    onHorizontalDragEnd: (details) {
-                      // Swipe left (next page)
-                      if (details.primaryVelocity != null && details.primaryVelocity! < -200) {
-                        if (_currentPage < 1) {
-                          setState(() => _currentPage = 1);
-                        }
-                      }
-                      // Swipe right (previous page)
-                      if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
-                        if (_currentPage > 0) {
-                          setState(() => _currentPage = 0);
-                        }
-                      }
+                  child: PageView(
+                    controller: _pageController,
+                    onPageChanged: (index) {
+                      setState(() => _currentPage = index);
                     },
-                    child: IndexedStack(
-                      index: _currentPage,
-                      children: [
-                        _buildImagePage(),
-                        _buildDetailsPage(),
-                      ],
-                    ),
+                    children: [
+                      _buildImagePage(),
+                      _buildDetailsPage(),
+                    ],
                   ),
                 ),
-                // Page indicator
-                _buildPageIndicator(),
               ],
             )
           : _buildDetailsPage(), // No document, just show details
@@ -268,17 +258,6 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
         // Document view
         Expanded(
           child: isPdf ? _buildPdfView() : _buildImageView(url),
-        ),
-        // Hint text
-        Container(
-          padding: const EdgeInsets.all(8),
-          child: Text(
-            'Swipe left for details \u2192',
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 12,
-            ),
-          ),
         ),
       ],
     );
@@ -420,39 +399,12 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
   Widget _buildDetailsPage() {
     final state = ref.watch(extractedInvoicesServiceProvider);
     final canEdit = widget.invoice.canEdit;
-    final hasDocument = widget.invoice.originalFileUrl != null;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Hint to swipe for image (only if document exists)
-          if (hasDocument)
-            Container(
-              padding: const EdgeInsets.all(8),
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.swipe, size: 20, color: Colors.blue.shade700),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '\u2190 Swipe right to view original document',
-                      style: TextStyle(
-                        color: Colors.blue.shade700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
           // Email source info
           _buildSourceCard(),
           const SizedBox(height: 16),
@@ -503,53 +455,99 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
     final hasDocument = widget.invoice.originalFileUrl != null;
     if (!hasDocument) return const SizedBox.shrink();
 
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildDot(0, 'Document'),
-            const SizedBox(width: 16),
-            _buildDot(1, 'Details'),
-          ],
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade300, width: 1),
         ),
+      ),
+      child: Row(
+        children: [
+          // Left arrow hint
+          AnimatedOpacity(
+            opacity: _currentPage == 1 ? 1.0 : 0.3,
+            duration: const Duration(milliseconds: 200),
+            child: Icon(
+              Icons.chevron_left,
+              color: _currentPage == 1 ? Theme.of(context).colorScheme.primary : Colors.grey,
+              size: 24,
+            ),
+          ),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildTabButton(0, Icons.description, 'Document'),
+                const SizedBox(width: 8),
+                Icon(Icons.swap_horiz, color: Colors.grey.shade400, size: 20),
+                const SizedBox(width: 8),
+                _buildTabButton(1, Icons.edit_note, 'Details'),
+              ],
+            ),
+          ),
+          // Right arrow hint
+          AnimatedOpacity(
+            opacity: _currentPage == 0 ? 1.0 : 0.3,
+            duration: const Duration(milliseconds: 200),
+            child: Icon(
+              Icons.chevron_right,
+              color: _currentPage == 0 ? Theme.of(context).colorScheme.primary : Colors.grey,
+              size: 24,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildDot(int index, String label) {
+  Widget _buildTabButton(int index, IconData icon, String label) {
     final isActive = _currentPage == index;
     return GestureDetector(
       onTap: () {
         if (_currentPage != index) {
-          setState(() => _currentPage = index);
+          _pageController.animateToPage(
+            index,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
         }
       },
-      child: Row(
-        children: [
-          Container(
-            width: isActive ? 24 : 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: isActive
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(4),
-            ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive
+              ? Theme.of(context).colorScheme.primary
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive
+                ? Theme.of(context).colorScheme.primary
+                : Colors.grey.shade400,
+            width: 1,
           ),
-          if (isActive) ...[
-            const SizedBox(width: 4),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isActive ? Colors.white : Colors.grey.shade600,
+            ),
+            const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                color: isActive ? Colors.white : Colors.grey.shade600,
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
