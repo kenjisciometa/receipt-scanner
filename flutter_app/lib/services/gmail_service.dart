@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +23,7 @@ export '../data/models/gmail_connection.dart' show GmailConnectionState;
 /// - Managing extracted invoices (approve/reject)
 class GmailService extends StateNotifier<GmailConnectionState> {
   final Ref _ref;
+  Timer? _syncPollingTimer;
 
   /// Google Sign-In instance configured for Gmail readonly access
   /// Uses serverClientId to get auth code for server-side token exchange
@@ -37,6 +39,63 @@ class GmailService extends StateNotifier<GmailConnectionState> {
 
   GmailService(this._ref) : super(const GmailConnectionState(isLoading: true)) {
     _loadConnection();
+  }
+
+  @override
+  void dispose() {
+    _stopPolling();
+    super.dispose();
+  }
+
+  void _startPolling() {
+    _stopPolling();
+    debugPrint('[GmailService] Starting sync status polling');
+    _syncPollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _checkSyncStatus();
+    });
+  }
+
+  void _stopPolling() {
+    _syncPollingTimer?.cancel();
+    _syncPollingTimer = null;
+  }
+
+  Future<void> _checkSyncStatus() async {
+    debugPrint('[GmailService] Checking sync status...');
+    try {
+      final authHeaders = await _ref.read(authServiceProvider.notifier).getAuthHeaders();
+      if (authHeaders['Authorization'] == null) return;
+
+      final response = await http.get(
+        Uri.parse(AppConfig.gmailConnectionsUrl),
+        headers: authHeaders,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true && data['connection'] != null) {
+          final connection = GmailConnection.fromJson(
+            data['connection'] as Map<String, dynamic>,
+          );
+
+          // Update state with server-side sync status
+          final wasSyncing = state.connection?.syncInProgress ?? false;
+          state = state.copyWith(
+            connection: connection,
+            isSyncing: connection.syncInProgress,
+          );
+
+          // If sync just completed, stop polling and reload invoices
+          if (wasSyncing && !connection.syncInProgress) {
+            debugPrint('[GmailService] Sync completed, reloading invoices');
+            _stopPolling();
+            await _ref.read(extractedInvoicesServiceProvider.notifier).loadInvoices();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[GmailService] Error checking sync status: $e');
+    }
   }
 
   /// Load existing Gmail connection from server
@@ -59,8 +118,16 @@ class GmailService extends StateNotifier<GmailConnectionState> {
           final connection = GmailConnection.fromJson(
             data['connection'] as Map<String, dynamic>,
           );
-          state = GmailConnectionState(connection: connection);
-          debugPrint('Gmail connection loaded: ${connection.gmailEmail}');
+          state = GmailConnectionState(
+            connection: connection,
+            isSyncing: connection.syncInProgress,
+          );
+          debugPrint('Gmail connection loaded: ${connection.gmailEmail}, syncInProgress: ${connection.syncInProgress}');
+
+          // Start polling if sync is in progress
+          if (connection.syncInProgress) {
+            _startPolling();
+          }
         } else {
           state = const GmailConnectionState();
         }
@@ -212,13 +279,20 @@ class GmailService extends StateNotifier<GmailConnectionState> {
   ///
   /// Note: Sync processing can take a long time. Even if the HTTP request
   /// times out, the server may still be processing. We handle this gracefully
-  /// by reloading invoices after any error.
+  /// by starting a polling mechanism to check sync status.
   Future<bool> triggerSync() async {
     if (state.connection == null) return false;
 
+    // Check if already syncing (server-side)
+    if (state.connection!.syncInProgress) {
+      debugPrint('Sync already in progress (server-side)');
+      state = state.copyWith(error: 'Sync is already in progress');
+      return false;
+    }
+
     state = state.copyWith(isSyncing: true, clearError: true);
 
-    bool syncSuccess = false;
+    bool syncStarted = false;
 
     try {
       final authHeaders = await _ref.read(authServiceProvider.notifier).getAuthHeaders();
@@ -233,35 +307,38 @@ class GmailService extends StateNotifier<GmailConnectionState> {
 
       if (response.statusCode == 200 && data['success'] == true) {
         debugPrint('Gmail sync completed successfully');
-        syncSuccess = true;
+        // Sync completed within timeout - reload data
+        await _loadConnection();
+        await _ref.read(extractedInvoicesServiceProvider.notifier).loadInvoices();
+        state = state.copyWith(isSyncing: false);
+        return true;
+      } else if (response.statusCode == 409 && data['code'] == 'SYNC_IN_PROGRESS') {
+        // Sync already in progress - start polling
+        debugPrint('Sync already in progress on server, starting polling');
+        syncStarted = true;
+        _startPolling();
       } else {
         debugPrint('Gmail sync API returned error: ${data['error']}');
+        state = state.copyWith(
+          isSyncing: false,
+          error: data['error'] as String? ?? 'Sync failed',
+        );
+        return false;
       }
     } catch (e) {
       // Timeout or other errors - server may still be processing
       debugPrint('Gmail sync request error (server may still be processing): $e');
+      syncStarted = true;
     }
 
-    // Always reload connection and invoices after sync attempt
-    // Even if request timed out, server may have completed processing
-    try {
+    // If sync started or timed out, start polling to check status
+    if (syncStarted) {
+      _startPolling();
+      // Reload connection to get current sync status
       await _loadConnection();
-      // Reload invoices to show any newly extracted ones
-      await _ref.read(extractedInvoicesServiceProvider.notifier).loadInvoices();
-    } catch (e) {
-      debugPrint('Error reloading after sync: $e');
     }
 
-    state = state.copyWith(isSyncing: false);
-
-    // Check if new invoices were loaded (indicates sync worked even if request failed)
-    final invoicesState = _ref.read(extractedInvoicesServiceProvider);
-    if (!syncSuccess && invoicesState.invoices.isNotEmpty) {
-      debugPrint('Sync appears successful - invoices loaded');
-      syncSuccess = true;
-    }
-
-    return syncSuccess;
+    return syncStarted;
   }
 
   /// Update sync settings (keywords, enabled state, sync from date)

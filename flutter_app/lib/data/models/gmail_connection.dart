@@ -30,6 +30,9 @@ class GmailConnection {
   @JsonKey(name: 'sync_from_date')
   final DateTime? syncFromDate;
 
+  @JsonKey(name: 'sync_in_progress')
+  final bool syncInProgress;
+
   @JsonKey(name: 'last_sync_at')
   final DateTime? lastSyncAt;
 
@@ -52,6 +55,7 @@ class GmailConnection {
     required this.syncEnabled,
     required this.syncKeywords,
     this.syncFromDate,
+    this.syncInProgress = false,
     this.lastSyncAt,
     this.lastSyncError,
     required this.createdAt,
@@ -73,6 +77,7 @@ class GmailConnection {
     bool? syncEnabled,
     List<String>? syncKeywords,
     DateTime? syncFromDate,
+    bool? syncInProgress,
     DateTime? lastSyncAt,
     String? lastSyncError,
     DateTime? createdAt,
@@ -90,6 +95,7 @@ class GmailConnection {
       syncEnabled: syncEnabled ?? this.syncEnabled,
       syncKeywords: syncKeywords ?? this.syncKeywords,
       syncFromDate: clearSyncFromDate ? null : (syncFromDate ?? this.syncFromDate),
+      syncInProgress: syncInProgress ?? this.syncInProgress,
       lastSyncAt: lastSyncAt ?? this.lastSyncAt,
       lastSyncError: clearLastSyncError ? null : (lastSyncError ?? this.lastSyncError),
       createdAt: createdAt ?? this.createdAt,

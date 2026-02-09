@@ -22,6 +22,7 @@ GmailConnection _$GmailConnectionFromJson(Map<String, dynamic> json) =>
       syncFromDate: json['sync_from_date'] == null
           ? null
           : DateTime.parse(json['sync_from_date'] as String),
+      syncInProgress: json['sync_in_progress'] as bool? ?? false,
       lastSyncAt: json['last_sync_at'] == null
           ? null
           : DateTime.parse(json['last_sync_at'] as String),
@@ -41,6 +42,7 @@ Map<String, dynamic> _$GmailConnectionToJson(GmailConnection instance) =>
       'sync_enabled': instance.syncEnabled,
       'sync_keywords': instance.syncKeywords,
       'sync_from_date': instance.syncFromDate?.toIso8601String(),
+      'sync_in_progress': instance.syncInProgress,
       'last_sync_at': instance.lastSyncAt?.toIso8601String(),
       'last_sync_error': instance.lastSyncError,
       'created_at': instance.createdAt.toIso8601String(),
