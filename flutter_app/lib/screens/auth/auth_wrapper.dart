@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/auth_service.dart';
 import '../../services/billing_service.dart';
 import '../../services/google_play_billing_service.dart';
+import '../../services/invoice_cache_service.dart';
 import 'login_screen.dart';
 import '../home/home_screen.dart';
 import '../billing/trial_start_screen.dart';
@@ -38,6 +39,10 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
 
       final billingService = ref.read(billingServiceProvider.notifier);
       await billingService.getAppAccess();
+
+      // Start invoice cache refresh in background (for duplicate detection)
+      ref.read(invoiceCacheServiceProvider.notifier).ensureFresh();
+
       if (mounted) {
         setState(() {
           _billingChecked = true;

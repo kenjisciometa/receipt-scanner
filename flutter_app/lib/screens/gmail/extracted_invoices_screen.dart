@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../data/models/gmail_extracted_invoice.dart';
 import '../../services/gmail_service.dart';
+import '../../services/invoice_cache_service.dart';
 
 /// Screen showing list of extracted invoices from Gmail
 class ExtractedInvoicesScreen extends ConsumerStatefulWidget {
@@ -27,9 +28,10 @@ class _ExtractedInvoicesScreenState
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_onTabChanged);
 
-    // Load invoices on init
+    // Load invoices on init and ensure cache is fresh for duplicate detection
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(extractedInvoicesServiceProvider.notifier).loadInvoices();
+      ref.read(invoiceCacheServiceProvider.notifier).ensureFresh();
     });
   }
 

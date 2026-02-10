@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/billing_service.dart';
@@ -171,6 +172,17 @@ class PaywallScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
               ],
+
+              // View History button - allow users to see their past data
+              OutlinedButton.icon(
+                onPressed: () => context.push('/history'),
+                icon: const Icon(Icons.history),
+                label: const Text('View History'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 8),
 
               // Logout link
               TextButton(

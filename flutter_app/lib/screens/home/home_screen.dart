@@ -11,6 +11,9 @@ import '../../services/receipt_repository.dart';
 import '../../services/invoice_repository.dart';
 import '../../services/image_storage_service.dart';
 import '../../services/scanner/document_scanner_service.dart';
+import '../../services/invoice_cache_service.dart';
+import '../../data/models/invoice_summary.dart';
+import '../../presentation/widgets/duplicate_warning_dialog.dart';
 import '../../config/app_config.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
 import '../../presentation/widgets/account_status_button.dart';
@@ -68,12 +71,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Ensure invoice cache is fresh for duplicate detection
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(invoiceCacheServiceProvider.notifier).ensureFresh();
+    });
+  }
+
+  @override
   void dispose() {
     _documentScanner.dispose();
     super.dispose();
   }
 
   Future<void> _pickAndScanImage() async {
+    // Start cache refresh immediately (runs in parallel with file picker)
+    ref.read(invoiceCacheServiceProvider.notifier).ensureFresh();
+
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
@@ -84,6 +99,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _captureAndScanImage() async {
+    // Start cache refresh immediately (runs in parallel with camera)
+    ref.read(invoiceCacheServiceProvider.notifier).ensureFresh();
+
     final XFile? image = await _picker.pickImage(source: ImageSource.camera);
     if (image == null) return;
 
@@ -91,6 +109,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _documentScanAndProcess() async {
+    // Start cache refresh immediately (runs in parallel with scanner)
+    ref.read(invoiceCacheServiceProvider.notifier).ensureFresh();
+
     try {
       final result = await _documentScanner.scanReceipt();
       if (result != null && result.isSuccess && result.firstImagePath != null) {
@@ -232,6 +253,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     }
 
+    // Check for duplicates (invoices only)
+    final documentType = _lastScanResult!['document_type'] as String? ?? 'receipt';
+    if (documentType == 'invoice') {
+      // Parse date for duplicate check
+      DateTime? invoiceDate;
+      if (_lastScanResult!['date'] != null) {
+        invoiceDate = DateTime.tryParse(_lastScanResult!['date']);
+      }
+
+      final cacheService = ref.read(invoiceCacheServiceProvider.notifier);
+      final duplicates = cacheService.findDuplicates(
+        totalAmount: (_lastScanResult!['total'] as num?)?.toDouble(),
+        invoiceDate: invoiceDate,
+        invoiceNumber: _lastScanResult!['invoice_number'] as String?,
+      );
+
+      if (duplicates.isNotEmpty && mounted) {
+        final result = await DuplicateWarningDialog.show(
+          context,
+          duplicates: duplicates,
+        );
+
+        if (result == null) {
+          // User cancelled
+          return;
+        } else if (result is String) {
+          // User wants to view existing invoice - navigate to history
+          if (mounted) {
+            context.push('/history', extra: result);
+          }
+          return;
+        }
+        // result == true means user chose "Save Anyway"
+      }
+    }
+
     setState(() {
       _isSaving = true;
     });
@@ -282,7 +339,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
 
         final invoiceRepo = _getInvoiceRepository();
-        await invoiceRepo.saveInvoice(
+        final savedInvoice = await invoiceRepo.saveInvoice(
           merchantName: _lastScanResult!['merchant_name'],
           vendorAddress: _lastScanResult!['vendor_address'],
           vendorTaxId: _lastScanResult!['vendor_tax_id'],
@@ -299,6 +356,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           originalImageUrl: imageUrl,
           confidence: (_lastScanResult!['confidence'] as num?)?.toDouble(),
         );
+
+        // Add to cache after successful save
+        if (savedInvoice != null) {
+          final cacheService = ref.read(invoiceCacheServiceProvider.notifier);
+          cacheService.addToCache(InvoiceSummary(
+            id: savedInvoice['id'] as String,
+            merchantName: _lastScanResult!['merchant_name'] as String?,
+            invoiceNumber: _lastScanResult!['invoice_number'] as String?,
+            invoiceDate: purchaseDate,
+            totalAmount: (_lastScanResult!['total'] as num?)?.toDouble(),
+            currency: _lastScanResult!['currency'] as String? ?? 'EUR',
+            source: InvoiceSource.manual,
+          ));
+        }
       } else {
         final receiptRepo = _getReceiptRepository();
         await receiptRepo.saveReceipt(

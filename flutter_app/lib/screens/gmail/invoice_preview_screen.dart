@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:internet_file/internet_file.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/models/gmail_extracted_invoice.dart';
+import '../../data/models/invoice_summary.dart';
 import '../../services/gmail_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/invoice_cache_service.dart';
+import '../../presentation/widgets/duplicate_warning_dialog.dart';
 
 /// Screen for previewing and editing an extracted invoice before approval.
 /// Uses a PageView to allow swiping between image/PDF view and details form.
@@ -1209,6 +1213,35 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
       return;
     }
 
+    // Check for duplicates before saving
+    final cacheService = ref.read(invoiceCacheServiceProvider.notifier);
+    final duplicates = cacheService.findDuplicates(
+      totalAmount: double.tryParse(totalText),
+      invoiceDate: _invoiceDate,
+      invoiceNumber: _invoiceNumberController.text.trim().isEmpty
+          ? null
+          : _invoiceNumberController.text.trim(),
+    );
+
+    if (duplicates.isNotEmpty && context.mounted) {
+      final result = await DuplicateWarningDialog.show(
+        context,
+        duplicates: duplicates,
+      );
+
+      if (result == null) {
+        // User cancelled
+        return;
+      } else if (result is String) {
+        // User wants to view existing invoice - navigate to history
+        if (context.mounted) {
+          context.push('/history', extra: result);
+        }
+        return;
+      }
+      // result == true means user chose "Save Anyway"
+    }
+
     // Always send current values (server requires total_amount)
     final success = await ref
         .read(extractedInvoicesServiceProvider.notifier)
@@ -1216,6 +1249,19 @@ class _InvoicePreviewScreenState extends ConsumerState<InvoicePreviewScreen> {
 
     if (context.mounted) {
       if (success) {
+        // Add to cache after successful save
+        cacheService.addToCache(InvoiceSummary(
+          id: widget.invoice.id,
+          merchantName: _merchantNameController.text.trim(),
+          invoiceNumber: _invoiceNumberController.text.trim().isEmpty
+              ? null
+              : _invoiceNumberController.text.trim(),
+          invoiceDate: _invoiceDate,
+          totalAmount: double.tryParse(totalText),
+          currency: _currency,
+          source: InvoiceSource.gmail,
+        ));
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Invoice approved and saved!'),

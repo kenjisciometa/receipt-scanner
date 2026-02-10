@@ -94,7 +94,11 @@ class ReceiptScannerApp extends ConsumerWidget {
         GoRoute(
           path: '/history',
           name: 'history',
-          builder: (context, state) => const CombinedHistoryScreen(),
+          builder: (context, state) {
+            // Optional: pass invoice ID to highlight via extra
+            final highlightInvoiceId = state.extra as String?;
+            return CombinedHistoryScreen(highlightInvoiceId: highlightInvoiceId);
+          },
         ),
 
         // Gmail integration routes

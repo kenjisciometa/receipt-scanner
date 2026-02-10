@@ -76,6 +76,9 @@ class AppConfig {
   static String get gmailSyncUrl => '$accountAppApiBaseUrl/api/gmail/sync';
   static String get gmailExtractedUrl => '$accountAppApiBaseUrl/api/gmail/extracted';
 
+  // Invoice summary API (for duplicate detection cache)
+  static String get invoiceSummaryUrl => '$accountAppApiBaseUrl/api/invoices/summary';
+
   // Google OAuth (Web client ID for server-side token exchange)
   // Fetched from server, with .env fallback for development
   static String get googleWebClientId {

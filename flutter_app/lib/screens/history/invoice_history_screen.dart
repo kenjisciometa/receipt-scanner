@@ -253,8 +253,15 @@ class _InvoiceHistoryScreenState extends ConsumerState<InvoiceHistoryScreen> {
 
 class InvoiceCard extends ConsumerStatefulWidget {
   final Map<String, dynamic> invoice;
+  final bool initiallyExpanded;
+  final bool isHighlighted;
 
-  const InvoiceCard({super.key, required this.invoice});
+  const InvoiceCard({
+    super.key,
+    required this.invoice,
+    this.initiallyExpanded = false,
+    this.isHighlighted = false,
+  });
 
   @override
   ConsumerState<InvoiceCard> createState() => _InvoiceCardState();
@@ -293,9 +300,22 @@ class _InvoiceCardState extends ConsumerState<InvoiceCard> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      // Highlight with orange border when this is the duplicate match
+      shape: widget.isHighlighted
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.orange.shade600, width: 2),
+            )
+          : null,
+      color: widget.isHighlighted ? Colors.orange.shade50 : null,
       child: ExpansionTile(
-        leading: const CircleAvatar(
-          child: Icon(Icons.description),
+        initiallyExpanded: widget.initiallyExpanded,
+        leading: CircleAvatar(
+          backgroundColor: widget.isHighlighted ? Colors.orange.shade200 : null,
+          child: Icon(
+            Icons.description,
+            color: widget.isHighlighted ? Colors.orange.shade800 : null,
+          ),
         ),
         title: Text(
           merchantName,

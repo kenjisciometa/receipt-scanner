@@ -5,7 +5,13 @@ import 'invoice_history_screen.dart';
 
 /// Combined history screen with tabs for Receipts and Invoices
 class CombinedHistoryScreen extends ConsumerStatefulWidget {
-  const CombinedHistoryScreen({super.key});
+  /// Optional invoice ID to highlight (auto-switches to Invoices tab)
+  final String? highlightInvoiceId;
+
+  const CombinedHistoryScreen({
+    super.key,
+    this.highlightInvoiceId,
+  });
 
   @override
   ConsumerState<CombinedHistoryScreen> createState() => _CombinedHistoryScreenState();
@@ -18,7 +24,9 @@ class _CombinedHistoryScreenState extends ConsumerState<CombinedHistoryScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    // Start on Invoices tab (index 1) if highlighting an invoice
+    final initialIndex = widget.highlightInvoiceId != null ? 1 : 0;
+    _tabController = TabController(length: 2, vsync: this, initialIndex: initialIndex);
   }
 
   @override
@@ -48,9 +56,9 @@ class _CombinedHistoryScreenState extends ConsumerState<CombinedHistoryScreen>
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          _ReceiptsTab(),
-          _InvoicesTab(),
+        children: [
+          const _ReceiptsTab(),
+          _InvoicesTab(highlightInvoiceId: widget.highlightInvoiceId),
         ],
       ),
     );
@@ -266,7 +274,10 @@ class _ReceiptsTabState extends ConsumerState<_ReceiptsTab> {
 
 /// Invoices tab content (extracted from InvoiceHistoryScreen)
 class _InvoicesTab extends ConsumerStatefulWidget {
-  const _InvoicesTab();
+  /// Optional invoice ID to highlight and auto-expand
+  final String? highlightInvoiceId;
+
+  const _InvoicesTab({this.highlightInvoiceId});
 
   @override
   ConsumerState<_InvoicesTab> createState() => _InvoicesTabState();
@@ -421,7 +432,11 @@ class _InvoicesTabState extends ConsumerState<_InvoicesTab> {
                   );
                 }
                 return Column(
-                  children: filtered.map((invoice) => InvoiceCard(invoice: invoice)).toList(),
+                  children: filtered.map((invoice) => InvoiceCard(
+                    invoice: invoice,
+                    initiallyExpanded: invoice['id'] == widget.highlightInvoiceId,
+                    isHighlighted: invoice['id'] == widget.highlightInvoiceId,
+                  )).toList(),
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),

@@ -7,14 +7,17 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/formatters.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/duplicate_warning_dialog.dart';
 import '../../../data/models/receipt.dart';
 import '../../../data/models/tax_breakdown.dart';
+import '../../../data/models/invoice_summary.dart';
 import '../../../services/api/scanner_api_service.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/receipt_validation_service.dart';
 import '../../../services/receipt_converter_service.dart';
 import '../../../services/invoice_repository.dart';
 import '../../../services/receipt_repository.dart';
+import '../../../services/invoice_cache_service.dart';
 import '../../../main.dart';
 
 /// Preview screen for captured receipt images with processing results
@@ -147,6 +150,9 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       if (!apiAvailable) {
         throw Exception('Scanner API not available. Please check API server connection.');
       }
+
+      // Start cache refresh in background (don't block processing)
+      ref.read(invoiceCacheServiceProvider.notifier).ensureFresh();
 
       // Process with Scanner API
       if (kDebugMode) {
@@ -1115,8 +1121,38 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
       return;
     }
 
+    final receipt = _extractedReceipt!;
+
+    // Only check for duplicates for invoices
+    if (_documentType == 'invoice') {
+      final cacheService = ref.read(invoiceCacheServiceProvider.notifier);
+      final duplicates = cacheService.findDuplicates(
+        totalAmount: receipt.totalAmount,
+        invoiceDate: receipt.purchaseDate,
+        invoiceNumber: receipt.invoiceNumber,
+      );
+
+      if (duplicates.isNotEmpty && mounted) {
+        final result = await DuplicateWarningDialog.show(
+          context,
+          duplicates: duplicates,
+        );
+
+        if (result == null) {
+          // User cancelled
+          return;
+        } else if (result is String) {
+          // User wants to view existing invoice - navigate to history
+          if (mounted) {
+            context.push('/history', extra: result);
+          }
+          return;
+        }
+        // result == true means user chose "Save Anyway"
+      }
+    }
+
     try {
-      final receipt = _extractedReceipt!;
       final taxBreakdownMaps = receipt.taxBreakdown.map((tb) => {
         'rate': tb.rate,
         'tax_amount': tb.amount,
@@ -1133,7 +1169,7 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           userId: user.id,
           organizationId: user.organizationId,
         );
-        await invoiceRepo.saveInvoice(
+        final savedInvoice = await invoiceRepo.saveInvoice(
           merchantName: receipt.merchantName,
           vendorAddress: receipt.vendorAddress,
           vendorTaxId: receipt.vendorTaxId,
@@ -1151,6 +1187,20 @@ class _PreviewScreenState extends ConsumerState<PreviewScreen> {
           confidence: receipt.confidence,
         );
         logger.i('Invoice saved to database');
+
+        // Add to cache after successful save
+        if (savedInvoice != null) {
+          final cacheService = ref.read(invoiceCacheServiceProvider.notifier);
+          cacheService.addToCache(InvoiceSummary(
+            id: savedInvoice['id'] as String,
+            merchantName: receipt.merchantName,
+            invoiceNumber: receipt.invoiceNumber,
+            invoiceDate: receipt.purchaseDate,
+            totalAmount: receipt.totalAmount,
+            currency: receipt.currency.name,
+            source: InvoiceSource.manual,
+          ));
+        }
       } else {
         // Save to receipts table
         final authState = ref.read(authServiceProvider);
