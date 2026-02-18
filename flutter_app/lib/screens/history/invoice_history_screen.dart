@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../services/invoice_repository.dart';
 import '../../services/image_storage_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/api/procountor_api_service.dart';
 import '../../presentation/widgets/receipt_edit_dialogs.dart';
 import '../../presentation/widgets/common_widgets.dart';
 import '../../presentation/widgets/file_viewer_widget.dart';
@@ -269,6 +270,7 @@ class InvoiceCard extends ConsumerStatefulWidget {
 
 class _InvoiceCardState extends ConsumerState<InvoiceCard> {
   bool _isEditMode = false;
+  bool _isSendingToProcountor = false;
 
   Map<String, dynamic> get invoice => widget.invoice;
 
@@ -551,6 +553,24 @@ class _InvoiceCardState extends ConsumerState<InvoiceCard> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                // Send to Procountor button
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _isSendingToProcountor ? null : () => _sendToProcountor(context, ref),
+                    icon: _isSendingToProcountor
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.cloud_upload, size: 18, color: Colors.purple),
+                    label: Text(
+                      _isSendingToProcountor ? 'Sending...' : 'Send to Procountor',
+                      style: TextStyle(color: _isSendingToProcountor ? Colors.grey : Colors.purple),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: _isSendingToProcountor ? Colors.grey : Colors.purple),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -794,6 +814,57 @@ class _InvoiceCardState extends ConsumerState<InvoiceCard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
+    }
+  }
+
+  Future<void> _sendToProcountor(BuildContext context, WidgetRef ref) async {
+    final confirmed = await ReceiptEditDialogs.confirmAction(
+      context: context,
+      title: 'Send to Procountor?',
+      message: 'This will create a purchase invoice in Procountor for this invoice.',
+      confirmText: 'Send',
+      confirmColor: Colors.purple,
+    );
+
+    if (!confirmed) return;
+
+    setState(() => _isSendingToProcountor = true);
+
+    try {
+      final authService = ref.read(authServiceProvider.notifier);
+      final service = ProcountorApiService(
+        getAuthHeaders: () => authService.getAuthHeaders(),
+      );
+
+      final result = await service.sendToProcountor(
+        documentId: invoice['id'],
+        documentType: 'invoice',
+      );
+
+      if (!context.mounted) return;
+
+      if (result.success) {
+        final msg = result.invoiceId != null
+            ? 'Sent to Procountor (Invoice #${result.invoiceId})'
+            : 'Sent to Procountor';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.green),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: ${result.error}'), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingToProcountor = false);
+      }
     }
   }
 

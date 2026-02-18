@@ -79,6 +79,10 @@ class AppConfig {
   // Invoice summary API (for duplicate detection cache)
   static String get invoiceSummaryUrl => '$accountAppApiBaseUrl/api/invoices/summary';
 
+  // Procountor integration
+  static String get procountorSendUrl => '$accountAppApiBaseUrl/api/procountor/send';
+  static String get procountorTestUrl => '$accountAppApiBaseUrl/api/procountor/test-connection';
+
   // Google OAuth (Web client ID for server-side token exchange)
   // Fetched from server, with .env fallback for development
   static String get googleWebClientId {
