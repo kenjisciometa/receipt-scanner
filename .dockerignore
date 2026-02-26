@@ -1,0 +1,31 @@
+# Model files (mounted separately)
+models/
+*.gguf
+
+# Flutter app (not needed for Docker build)
+flutter_app/
+
+# Web app
+web-app/
+
+# Test files
+test-results/
+ReceiptSample/
+
+# Git
+.git/
+.gitignore
+
+# Docs
+docs/
+*.md
+
+# Environment files
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
