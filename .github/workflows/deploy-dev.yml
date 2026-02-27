@@ -1,0 +1,124 @@
+# Dev Branch Auto-Deploy via FortiGate IPsec VPN
+#
+# Required GitHub Secrets: VPN_PSK, SERVER_IP, SSH_USER, SSH_PRIVATE_KEY
+
+name: Deploy Dev
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Install strongSwan
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y strongswan strongswan-charon
+          sudo ipsec stop 2>/dev/null || true
+
+      - name: Setup IPsec VPN configuration
+        run: |
+          cat <<'IPSEC_CONF' | sudo tee /etc/ipsec.conf > /dev/null
+          config setup
+              charondebug="ike 1, knl 1, cfg 0"
+              uniqueids=no
+
+          conn fortigate-vpn
+              type=tunnel
+              keyexchange=ikev2
+              authby=secret
+              left=%defaultroute
+              leftsourceip=%config
+              leftfirewall=yes
+              leftauth=psk
+              right=194.157.26.62
+              rightauth=psk
+              rightsubnet=10.10.10.0/24
+              ike=aes256-sha256-modp2048,aes128-sha256-modp2048,aes256-sha256-modp3072,aes128-sha256-modp3072,aes256-sha256-ecp384,aes128-sha256-ecp384!
+              ikelifetime=86400s
+              esp=aes256-sha256,aes128-sha256!
+              lifetime=43200s
+              dpdaction=restart
+              dpddelay=30s
+              dpdtimeout=120s
+              auto=add
+          IPSEC_CONF
+
+          echo "194.157.26.62 : PSK \"${{ secrets.VPN_PSK }}\"" | sudo tee /etc/ipsec.secrets > /dev/null
+          sudo chmod 600 /etc/ipsec.secrets
+
+      - name: Start IPsec VPN connection
+        run: |
+          sudo ipsec restart
+          sleep 5
+          sudo ipsec up fortigate-vpn
+          sleep 15
+
+      - name: Verify VPN connection
+        run: |
+          sudo ipsec status
+          ping -c 3 ${{ secrets.SERVER_IP }}
+
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p 2200 ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy application
+        run: |
+          ssh -p 2200 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} 'bash -s' <<'DEPLOY_SCRIPT'
+          set -euo pipefail
+
+          PROJECT_DIR="/opt/sciometa/servers/dev/receipt-scanner"
+          COMPOSE_CMD="docker compose"
+
+          cd "$PROJECT_DIR"
+          git fetch origin dev
+          git checkout dev
+          git reset --hard origin/dev
+
+          $COMPOSE_CMD down --timeout 30 || true
+          $COMPOSE_CMD up -d --build --remove-orphans
+
+          sleep 10
+          if $COMPOSE_CMD ps | grep -qi "up\|running"; then
+            echo "Deploy successful"
+          else
+            echo "Deploy failed — attempting rollback"
+            $COMPOSE_CMD logs --tail=50
+            git reset --hard HEAD~1
+            $COMPOSE_CMD down --timeout 30 || true
+            $COMPOSE_CMD up -d --build --remove-orphans
+            sleep 10
+            if $COMPOSE_CMD ps | grep -qi "up\|running"; then
+              echo "Rollback successful (previous version)"
+            else
+              echo "Rollback also failed"
+              $COMPOSE_CMD logs --tail=50
+            fi
+            exit 1
+          fi
+
+          docker image prune -f --filter "until=24h" || true
+          DEPLOY_SCRIPT
+
+      - name: Cleanup and disconnect VPN
+        if: always()
+        run: |
+          sudo ipsec down fortigate-vpn 2>/dev/null || true
+          sudo ipsec stop 2>/dev/null || true
+          rm -f ~/.ssh/id_rsa
