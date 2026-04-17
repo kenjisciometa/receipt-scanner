@@ -1,0 +1,61 @@
+{
+  "env": {
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1"
+  },
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:codeberg.org)",
+      "WebFetch(domain:community.nxp.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:hack.cert.pl)",
+      "WebFetch(domain:www.nxp.com)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(pip install pycryptodome)",
+      "Bash(python test_ntag424dna.py)",
+      "WebFetch(domain:proandroiddev.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:cdn.webshopapp.com)",
+      "WebFetch(domain:forum.dangerousthings.com)",
+      "WebFetch(domain:enjoy-rfid.blogspot.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:www.cardlogix.com)",
+      "WebFetch(domain:swisskyrepo.github.io)",
+      "Bash(python -c \"from ntag424dna import change_key; help\\(change_key\\)\")",
+      "Bash(python -c \"import ntag424dna; print\\(''Module loaded OK''\\)\")",
+      "WebFetch(domain:www.scribd.com)",
+      "WebFetch(domain:patents.justia.com)",
+      "WebFetch(domain:patents.google.com)",
+      "Bash(for f in src/i18n/messages/*.json)",
+      "Bash(do echo -n \"$f: \")",
+      "Bash(NEW_NFC_MASTER_KEY=0000000000000000000000000000000000000000000000000000000000000000 npx tsx scripts/rotate-nfc-master-key.ts)",
+      "Read(//table_sessions:/**)",
+      "Bash(for f in /Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/supabase/migrations/*.sql)",
+      "Bash(do if grep -q \"CREATE TABLE.*table_sessions\" \"$f\")",
+      "Bash(then echo \"$f\")",
+      "Bash(for f in app_*.arb)",
+      "Bash(git config --file .gitmodules --get-regexp path)",
+      "Bash(cmp -s /Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/public/brand/Sciometa.png /Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/subscription-web/public/brand/Sciometa.png)",
+      "Read(//Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/**)",
+      "Bash(do node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''$f'',''utf8''\\)\\); console.log\\(''OK $f''\\)\")",
+      "Bash(do node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''$f'',''utf8''\\)\\); console.log\\(''OK: $f''\\)\")",
+      "Bash(command -v npx)",
+      "Bash(npx --no-install tsc --noEmit -p .)",
+      "Bash(node_modules/.bin/tsc --noEmit -p .)",
+      "Bash(./node_modules/.bin/tsc --noEmit -p .)",
+      "Bash(for commit in 42730cd6 c6015e3d ff424ace 12042e01)",
+      "Bash(do echo \"=== $commit ===\")"
+    ],
+    "additionalDirectories": [
+      "/Users/kenjiyano/Desktop",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/.claude",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/types",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/qr-order/resolve/[code]",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/order/[storeId]",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/public",
+      "/tmp",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/table-sessions/[id]",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/demo-tokens"
+    ]
+  }
+}
