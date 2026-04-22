@@ -22,6 +22,7 @@ enum BillingStatus {
 class AppAccessStatus {
   final BillingStatus status;
   final bool canStartTrial;
+  final int trialPeriodDays;
   final DateTime? trialEndsAt;
   final int? trialDaysRemaining;
   final DateTime? subscriptionEndsAt;
@@ -32,6 +33,7 @@ class AppAccessStatus {
   AppAccessStatus({
     required this.status,
     required this.canStartTrial,
+    this.trialPeriodDays = 0,
     this.trialEndsAt,
     this.trialDaysRemaining,
     this.subscriptionEndsAt,
@@ -78,6 +80,7 @@ class AppAccessStatus {
     return AppAccessStatus(
       status: status,
       canStartTrial: canStartTrial,
+      trialPeriodDays: (json['trial_period_days'] as int?) ?? 0,
       trialEndsAt: trialEndsAt,
       trialDaysRemaining: trialData?['days_remaining'] as int?,
       subscriptionEndsAt: subscriptionEndsAt,

@@ -12,6 +12,7 @@ class TrialStartScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final billingState = ref.watch(billingServiceProvider);
     final isLoading = billingState.isLoading;
+    final trialDays = billingState.accessStatus?.trialPeriodDays ?? 0;
 
     return Scaffold(
       body: SafeArea(
@@ -41,7 +42,7 @@ class TrialStartScreen extends ConsumerWidget {
 
               // Trial Info
               Text(
-                'Start your free 30-day trial',
+                'Start your free $trialDays-day trial',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: Theme.of(context).primaryColor,
                 ),
