@@ -36,3 +36,12 @@ local.properties
 # Model files (too large for git)
 *.gguf
 models/
+
+# Standalone repos (not submodules)
+marketing/
+PartnerApp/
+Receipt-scanner/
+accountant-app/
+shift-management-app/
+subscription-web/
+websocket-server/
