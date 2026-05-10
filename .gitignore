@@ -38,7 +38,6 @@ local.properties
 models/
 
 # Standalone repos (not submodules)
-marketing/
 PartnerApp/
 Receipt-scanner/
 accountant-app/
