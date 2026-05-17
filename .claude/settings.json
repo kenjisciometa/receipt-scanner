@@ -44,23 +44,7 @@
       "Bash(node_modules/.bin/tsc --noEmit -p .)",
       "Bash(./node_modules/.bin/tsc --noEmit -p .)",
       "Bash(for commit in 42730cd6 c6015e3d ff424ace 12042e01)",
-      "Bash(do echo \"=== $commit ===\")",
-      "WebFetch(domain:stripe.com)",
-      "WebFetch(domain:docs.stripe.com)",
-      "Bash(ip addr show)",
-      "Bash(ps -p 32949 -o pid,command=)",
-      "Read(//proc/32949/**)",
-      "Bash(ps -p 32949 -o ppid=)",
-      "Bash(ps -p 32948 -o pid,command=)",
-      "Bash(/tmp/nets_refund_analysis.md:*)",
-      "Bash(/tmp/sumup_analysis.md:*)",
-      "Bash(gh auth status)",
-      "Bash(gh repo create kenji-sciometa/monitoring-integrated --private --description \"\")",
-      "Bash(gh api user --jq '.login')",
-      "Bash(gh repo create kenjisciometa/monitoring-integrated --private)",
-      "Bash(unzip \"/Users/kenjiyano/Downloads/Tengu Mask - 4161400.zip\" -d \"/Users/kenjiyano/Downloads/Tengu Mask - 4161400\")",
-      "Bash(unzip \"/Users/kenjiyano/Downloads/tengu mask - 5554830.zip\")",
-      "Bash(unzip \"/Users/kenjiyano/Downloads/tengu mask - 5554830.zip\" -d \"/Users/kenjiyano/Downloads/tengu mask - 5554830\")"
+      "Bash(do echo \"=== $commit ===\")"
     ],
     "additionalDirectories": [
       "/Users/kenjiyano/Desktop",
@@ -71,13 +55,7 @@
       "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/public",
       "/tmp",
       "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/table-sessions/[id]",
-      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/demo-tokens",
-      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/stripe-terminal/session",
-      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/order_sys/bos/docs",
-      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/[locale]/products",
-      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/[locale]/products/kitchen-display",
-      "/Users/kenjiyano/Downloads",
-      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/order_sys/self_station/flutter_app/lib/presentation/widgets"
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/demo-tokens"
     ]
   }
 }
