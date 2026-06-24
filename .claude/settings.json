@@ -44,7 +44,21 @@
       "Bash(node_modules/.bin/tsc --noEmit -p .)",
       "Bash(./node_modules/.bin/tsc --noEmit -p .)",
       "Bash(for commit in 42730cd6 c6015e3d ff424ace 12042e01)",
-      "Bash(do echo \"=== $commit ===\")"
+      "Bash(do echo \"=== $commit ===\")",
+      "WebFetch(domain:shift.sciometa.com)",
+      "WebFetch(domain:api.support.vonage.com)",
+      "WebFetch(domain:messente.com)",
+      "WebFetch(domain:www.twilio.com)",
+      "WebFetch(domain:www.clickatell.com)",
+      "WebFetch(domain:www.traficom.fi)",
+      "WebFetch(domain:quriiri.fi)",
+      "WebFetch(domain:aws.amazon.com)",
+      "WebFetch(domain:blueticks.co)",
+      "WebFetch(domain:www.sweego.io)",
+      "WebFetch(domain:developers.facebook.com)",
+      "WebFetch(domain:chatmaxima.com)",
+      "WebFetch(domain:www.sent.dm)",
+      "WebFetch(domain:formbeep.com)"
     ],
     "additionalDirectories": [
       "/Users/kenjiyano/Desktop",
@@ -55,7 +69,8 @@
       "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/public",
       "/tmp",
       "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/table-sessions/[id]",
-      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/demo-tokens"
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/demo-tokens",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/shift-management-app/flutter_app/assets/images"
     ]
   }
 }
