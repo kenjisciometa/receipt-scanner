@@ -58,7 +58,20 @@
       "WebFetch(domain:developers.facebook.com)",
       "WebFetch(domain:chatmaxima.com)",
       "WebFetch(domain:www.sent.dm)",
-      "WebFetch(domain:formbeep.com)"
+      "WebFetch(domain:formbeep.com)",
+      "Bash(gh repo create kenjisciometa/hp-builder --private --description \"HP Builder — Restaurant Homepage Creator\" --source=. --push)",
+      "Bash(tailscale status)",
+      "Bash(/Applications/Tailscale.app/Contents/MacOS/Tailscale status)",
+      "WebFetch(domain:avi.fi)",
+      "WebFetch(domain:eucam.info)",
+      "WebFetch(domain:valvira.fi)",
+      "WebFetch(domain:lvv.fi)",
+      "Bash(tail -500 /Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/supabase/migrations/*.sql)",
+      "Bash(xcodebuild -version)",
+      "Bash(xcode-select -p)",
+      "Read(//Applications/**)",
+      "Bash(sudo xcode-select -s /Applications/Xcode.app/Contents/Developer)",
+      "Bash(plutil -p /Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/shift-management-app/flutter_app/build/ios/ipa/App.framework/Info.plist)"
     ],
     "additionalDirectories": [
       "/Users/kenjiyano/Desktop",
@@ -70,7 +83,9 @@
       "/tmp",
       "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/table-sessions/[id]",
       "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/ReactRestaurantPOS/src/app/api/demo-tokens",
-      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/shift-management-app/flutter_app/assets/images"
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/shift-management-app/flutter_app/assets/images",
+      "/Users/kenjiyano/Documents/Sciometa/vsc/SciometaPOS/HP/hp-builder",
+      "/Users/kenjiyano/.appstoreconnect"
     ]
   }
 }
