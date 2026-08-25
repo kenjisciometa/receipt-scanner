@@ -61,7 +61,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final receiptsAsync = ref.watch(receiptsProvider);
-    final statsAsync = ref.watch(statisticsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -84,8 +83,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
-              statsAsync.when(
-                data: (stats) => Row(
+              // Statistics follow the selected date filter below
+              receiptsAsync.when(
+                data: (receipts) {
+                  final stats = _computeStats(
+                    _filterReceiptsByAddedDate(receipts, _selectedFilter),
+                  );
+                  return Row(
                   children: [
                     Expanded(
                       child: StatCard(
@@ -111,7 +115,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       ),
                     ),
                   ],
-                ),
+                  );
+                },
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Text('Error: $e'),
               ),
@@ -218,6 +223,21 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         ),
       ),
     );
+  }
+
+  /// Aggregate totals for the (filtered) receipt list shown below.
+  Map<String, dynamic> _computeStats(List<Map<String, dynamic>> receipts) {
+    double totalSpent = 0;
+    double totalTax = 0;
+    for (final receipt in receipts) {
+      totalSpent += (receipt['total_amount'] as num?)?.toDouble() ?? 0;
+      totalTax += (receipt['tax_amount'] as num?)?.toDouble() ?? 0;
+    }
+    return {
+      'total_spent': totalSpent,
+      'total_tax': totalTax,
+      'receipt_count': receipts.length,
+    };
   }
 
   List<Map<String, dynamic>> _filterReceiptsByAddedDate(List<Map<String, dynamic>> receipts, String filter) {
@@ -533,8 +553,9 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
                     ),
                   ],
                 ),
+                // Send to Procountor button — only for organizations with Procountor configured
+                if (ref.watch(procountorConfiguredProvider).valueOrNull == true) ...[
                 const SizedBox(height: 8),
-                // Send to Procountor button
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -551,6 +572,7 @@ class _ReceiptCardState extends ConsumerState<ReceiptCard> {
                     ),
                   ),
                 ),
+                ],
               ],
             ),
           ),
