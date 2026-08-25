@@ -175,6 +175,35 @@ class AuthService extends StateNotifier<AuthState> {
     }
   }
 
+  /// Decode a JSON API response, producing a readable error when the server
+  /// returns something that is not JSON (e.g. a 404/502 HTML page). Without
+  /// this, users see "FormatException: Unexpected character (at character 1)".
+  static Map<String, dynamic> _decodeJsonResponse(
+    http.Response response,
+    String endpoint,
+  ) {
+    final contentType = response.headers['content-type'] ?? '';
+    try {
+      if (!contentType.contains('json')) {
+        throw const FormatException('non-JSON content type');
+      }
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on FormatException {
+      final bodyPreview = response.body.length > 120
+          ? '${response.body.substring(0, 120)}…'
+          : response.body;
+      debugPrint(
+        '❌ Auth $endpoint: unexpected non-JSON response '
+        '(HTTP ${response.statusCode}, $contentType): $bodyPreview',
+      );
+      throw Exception(
+        'Auth server returned an unexpected response '
+        '(HTTP ${response.statusCode}) from ${AppConfig.apiBaseUrl}/api/auth/$endpoint. '
+        'Please try again later or contact support.',
+      );
+    }
+  }
+
   /// Sign in with email and password
   Future<bool> signIn(String email, String password) async {
     state = state.copyWith(isLoading: true, clearError: true);
@@ -190,7 +219,7 @@ class AuthService extends StateNotifier<AuthState> {
         }),
       );
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = _decodeJsonResponse(response, 'login');
 
       if (response.statusCode == 200 && data['success'] == true) {
         final user = AuthUser.fromJson(data['user'] as Map<String, dynamic>);
@@ -226,7 +255,7 @@ class AuthService extends StateNotifier<AuthState> {
         }),
       );
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = _decodeJsonResponse(response, 'refresh');
 
       if (response.statusCode == 200 && data['success'] == true) {
         final newSession = AuthSession.fromJson(data['session'] as Map<String, dynamic>);
@@ -268,7 +297,7 @@ class AuthService extends StateNotifier<AuthState> {
         }),
       );
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = _decodeJsonResponse(response, 'signup');
 
       if (response.statusCode == 200 && data['success'] == true) {
         state = state.copyWith(isLoading: false);
