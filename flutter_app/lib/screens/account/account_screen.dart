@@ -240,10 +240,14 @@ class AccountScreen extends ConsumerWidget {
     }
 
     // Check if purchase is available
-    final canPurchase = accessStatus.status == BillingStatus.trial ||
-        accessStatus.status == BillingStatus.trialExpired ||
-        accessStatus.status == BillingStatus.noAccess ||
-        accessStatus.status == BillingStatus.canceled;
+    // Access bundled with the organization's SciPOS plan is not purchased or
+    // managed from this app.
+    final isBundled = accessStatus.isBundledWithTier;
+    final canPurchase = !isBundled &&
+        (accessStatus.status == BillingStatus.trial ||
+            accessStatus.status == BillingStatus.trialExpired ||
+            accessStatus.status == BillingStatus.noAccess ||
+            accessStatus.status == BillingStatus.canceled);
 
     // Get price string from Google Play product
     final priceString = productDetails?.price ?? '€4.99/month';
@@ -298,7 +302,23 @@ class AccountScreen extends ConsumerWidget {
               ),
             ],
 
-            if (accessStatus.status == BillingStatus.subscribed) ...[
+            if (isBundled) ...[
+              _buildInfoRow(
+                context,
+                'Included in',
+                accessStatus.planName ?? 'your SciPOS plan',
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Receipt Scanner is included in your organization\'s SciPOS subscription. '
+                  'Manage it from the Sciometa subscription portal.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ],
+
+            if (accessStatus.status == BillingStatus.subscribed && !isBundled) ...[
               _buildInfoRow(context, 'Price', priceString),
               if (accessStatus.subscriptionEndsAt != null)
                 _buildInfoRow(
@@ -365,8 +385,8 @@ class AccountScreen extends ConsumerWidget {
                 ),
               ),
 
-            // Manage subscription button (for active subscribers)
-            if (accessStatus.status == BillingStatus.subscribed)
+            // Manage subscription button (for standalone active subscribers)
+            if (accessStatus.status == BillingStatus.subscribed && !isBundled)
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(

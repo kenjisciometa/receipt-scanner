@@ -28,6 +28,9 @@ class AppAccessStatus {
   final String? planName;
   final int? priceCents;
   final String? currency;
+  /// Set to 'tier' when access comes from the organization's SciPOS plan
+  /// (Basic/Premium) rather than a standalone Receipt Scanner subscription.
+  final String? bundledWith;
 
   AppAccessStatus({
     required this.status,
@@ -38,6 +41,7 @@ class AppAccessStatus {
     this.planName,
     this.priceCents,
     this.currency,
+    this.bundledWith,
   });
 
   factory AppAccessStatus.fromJson(Map<String, dynamic> json) {
@@ -68,11 +72,14 @@ class AppAccessStatus {
       }
     }
 
-    // Check for 'can_start_trial' - if not present, derive from status
-    bool canStartTrial = json['can_start_trial'] as bool? ?? false;
-    // If status is 'no_access' and no trial data exists, user can start trial
-    if (!canStartTrial && status == BillingStatus.noAccess && trialData == null) {
-      canStartTrial = true;
+    // 'can_start_trial' is authoritative when the server sends it (it is false
+    // when the standalone plan is retired). Only derive it for legacy servers
+    // that omit the field.
+    bool canStartTrial;
+    if (json.containsKey('can_start_trial')) {
+      canStartTrial = json['can_start_trial'] as bool? ?? false;
+    } else {
+      canStartTrial = status == BillingStatus.noAccess && trialData == null;
     }
 
     return AppAccessStatus(
@@ -84,6 +91,7 @@ class AppAccessStatus {
       planName: subscriptionData?['plan'] as String?,
       priceCents: json['price_cents'] as int?,
       currency: json['currency'] as String?,
+      bundledWith: json['bundled_with'] as String?,
     );
   }
 
@@ -106,6 +114,9 @@ class AppAccessStatus {
         return BillingStatus.unknown;
     }
   }
+
+  /// Access is included in the organization's SciPOS plan (no standalone billing)
+  bool get isBundledWithTier => bundledWith == 'tier';
 
   /// Whether the user has access to the app (trial, subscribed, or canceled but still in period)
   bool get hasAccess =>

@@ -59,7 +59,6 @@ class _InvoiceHistoryScreenState extends ConsumerState<InvoiceHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final invoicesAsync = ref.watch(invoicesProvider);
-    final statsAsync = ref.watch(invoiceStatisticsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -82,8 +81,13 @@ class _InvoiceHistoryScreenState extends ConsumerState<InvoiceHistoryScreen> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
-              statsAsync.when(
-                data: (stats) => Row(
+              // Statistics follow the selected date filter below
+              invoicesAsync.when(
+                data: (invoices) {
+                  final stats = _computeStats(
+                    _filterInvoicesByDate(invoices, _selectedFilter),
+                  );
+                  return Row(
                   children: [
                     Expanded(
                       child: StatCard(
@@ -109,7 +113,8 @@ class _InvoiceHistoryScreenState extends ConsumerState<InvoiceHistoryScreen> {
                       ),
                     ),
                   ],
-                ),
+                  );
+                },
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Text('Error: $e'),
               ),
@@ -213,6 +218,21 @@ class _InvoiceHistoryScreenState extends ConsumerState<InvoiceHistoryScreen> {
         ),
       ),
     );
+  }
+
+  /// Aggregate totals for the (filtered) invoice list shown below.
+  Map<String, dynamic> _computeStats(List<Map<String, dynamic>> invoices) {
+    double totalAmount = 0;
+    double totalTax = 0;
+    for (final invoice in invoices) {
+      totalAmount += (invoice['total_amount'] as num?)?.toDouble() ?? 0;
+      totalTax += (invoice['tax_amount'] as num?)?.toDouble() ?? 0;
+    }
+    return {
+      'total_amount': totalAmount,
+      'total_tax': totalTax,
+      'invoice_count': invoices.length,
+    };
   }
 
   List<Map<String, dynamic>> _filterInvoicesByDate(List<Map<String, dynamic>> invoices, String filter) {
@@ -553,8 +573,9 @@ class _InvoiceCardState extends ConsumerState<InvoiceCard> {
                     ),
                   ],
                 ),
+                // Send to Procountor button — only for organizations with Procountor configured
+                if (ref.watch(procountorConfiguredProvider).valueOrNull == true) ...[
                 const SizedBox(height: 8),
-                // Send to Procountor button
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -571,6 +592,7 @@ class _InvoiceCardState extends ConsumerState<InvoiceCard> {
                     ),
                   ),
                 ),
+                ],
               ],
             ),
           ),

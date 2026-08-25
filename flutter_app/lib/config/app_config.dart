@@ -82,6 +82,7 @@ class AppConfig {
   // Procountor integration
   static String get procountorSendUrl => '$accountAppApiBaseUrl/api/procountor/send';
   static String get procountorTestUrl => '$accountAppApiBaseUrl/api/procountor/test-connection';
+  static String get procountorStatusUrl => '$accountAppApiBaseUrl/api/procountor/status';
 
   // Google OAuth (Web client ID for server-side token exchange)
   // Fetched from server, with .env fallback for development
