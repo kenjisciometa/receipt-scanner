@@ -49,3 +49,6 @@ accountant-app/
 shift-management-app/
 subscription-web/
 websocket-server/
+
+# Next.js build output
+.next/
