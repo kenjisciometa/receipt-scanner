@@ -815,14 +815,13 @@ B-3. FortiGate 管理者  5分
 
 B-4. PSK ローテーション  条件付き・15分＋検証
   [ ] 実施要否を判断（B-2 で足りるなら不要）
-  [x] 所属不明2件のリポジトリを特定（2026-09-21 完了）
+  [ ] 所属不明2件のリポジトリを特定
   [ ] 新 PSK を生成（openssl rand -hex 32 推奨）
   [ ] 1Password に保管
-  [ ] GitHub Secrets を 9 リポジトリすべて更新  ← 先
+  [ ] GitHub Secrets を 7 リポジトリすべて更新  ← 先
   [ ] FortiGate の Pre-shared Key を変更        ← 後
   [ ] workflow_dispatch で検証
-  [ ] 9 リポジトリすべてでデプロイ成功を確認
-  ※ B-6 実施時は、移行後の新リポジトリへ新 PSK を登録（同時実施を推奨）
+  [ ] 7 リポジトリすべてでデプロイ成功を確認
 
 B-5. FortiGate ポリシー棚卸し  15分
   [ ] Virtual IPs: 2200(SSH) の要否判断
@@ -830,32 +829,10 @@ B-5. FortiGate ポリシー棚卸し  15分
   [ ] Firewall Policy: Source=all の洗い出し
   [ ] 管理系ポート(9091/9007/19999/8089)の外部公開確認
 
-B-6. リポジトリ移行  ★重要
-  第1段階: ミラーバックアップ（読み取りのみ・影響なし）
-  [x] ReactRestaurantPOS  3,967 commits / 83 branches / 検証済
-  [x] websocket-server      235 commits / 12 branches / 検証済
-  [x] subscription-web      192 commits /  5 branches / 検証済
-  [ ] scioweb  ← ★未取得（4件目の判明が後だったため）
-  [ ] バックアップを external01 等へ複製（現状ローカル1箇所のみ）
-
-  第2段階: 新リポジトリへ push（本番影響あり・要判断）
-  [ ] Actions Secrets の値を保管元から用意  ← ★最大のボトルネック
-  [ ] 実施タイミングを決定（デプロイが走らない時間帯）
-  [ ] kenjisciometa 配下に空リポジトリ4件を作成
-  [ ] push --mirror で移行
-  [ ] ブランチ先端 SHA で移行先を検証
-  [ ] default branch を設定（websocket-server=master, scioweb=stage）
-  [ ] Actions Secrets を再設定
-  [ ] サーバー上の clone の remote を変更
-      （prod/subscription-web は deploy ユーザー所有に注意）
-  [ ] 4リポジトリすべてでデプロイ動作確認
-  [ ] 旧リポジトリの扱いを決定（削除依頼 / 放置）
-
 事後
   [ ] 1〜2週間後、auth.log に削除鍵の試行がないことを確認
   [ ] FortiGate アカウントを Disable → Delete へ
   [ ] §C の残課題をチケット化
-  [ ] 移行成功の確認後、旧リポジトリの削除を本人へ依頼
 ```
 
 ---
