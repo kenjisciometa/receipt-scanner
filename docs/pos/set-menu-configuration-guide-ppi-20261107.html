@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Set Menu Configuration Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10pt;
+         line-height: 1.55; color: #1a1d21; margin: 0; }
+  h1 { font-size: 21pt; line-height: 1.2; margin: 0 0 4pt; letter-spacing: -0.3pt; }
+  .sub { font-size: 10.5pt; color: #5b6470; margin: 0 0 3pt; }
+  .meta { font-size: 8.5pt; color: #8a929c; margin: 0; }
+  .rule { height: 3px; background: #1a1d21; margin: 10pt 0 16pt; }
+  h2 { font-size: 13pt; margin: 20pt 0 7pt; padding-bottom: 4pt;
+       border-bottom: 1px solid #d4d9df; letter-spacing: -0.2pt; }
+  h2:first-of-type { margin-top: 0; }
+  h3 { font-size: 10.5pt; margin: 13pt 0 5pt; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 7pt; padding-left: 16pt; }
+  li { margin-bottom: 3pt; }
+  table { width: 100%; border-collapse: collapse; margin: 7pt 0 10pt; font-size: 9pt; }
+  th { background: #f0f2f5; text-align: left; padding: 5pt 7pt; font-weight: 600;
+       border-bottom: 1.5px solid #c8cfd6; }
+  td { padding: 5pt 7pt; border-bottom: 1px solid #e6eaee; vertical-align: top; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.5pt;
+         background: #f0f2f5; padding: 1pt 3pt; border-radius: 2px; }
+  .bad { color: #b4232a; font-weight: 600; }
+  .good { color: #1d6b3f; font-weight: 600; }
+  .box { border: 1px solid #d4d9df; border-left: 3px solid #1a1d21;
+         background: #f7f9fa; padding: 8pt 11pt; margin: 9pt 0; }
+  .box.warn { border-left-color: #b4232a; background: #fdf5f5; }
+  .box.tip  { border-left-color: #1d6b3f; background: #f4faf6; }
+  .box p:last-child { margin-bottom: 0; }
+  .box .lbl { font-size: 8pt; font-weight: 700; letter-spacing: 0.6pt;
+              text-transform: uppercase; color: #5b6470; display: block; margin-bottom: 3pt; }
+  .issue { background: #1a1d21; color: #fff; font-size: 8pt; font-weight: 700;
+           padding: 1.5pt 6pt; border-radius: 9pt; margin-right: 5pt;
+           letter-spacing: 0.4pt; vertical-align: 1.5pt; }
+  .formula { font-family: "SF Mono", Menlo, monospace; font-size: 9.5pt;
+             background: #1a1d21; color: #fff; padding: 9pt 12pt;
+             border-radius: 3px; margin: 8pt 0; text-align: center; }
+  .tag { font-size: 7.5pt; font-weight: 700; padding: 1pt 5pt; border-radius: 2px;
+         letter-spacing: 0.3pt; }
+  .t-fix { background: #fdeaea; color: #b4232a; }
+  .t-ok  { background: #e8f3ec; color: #1d6b3f; }
+  .t-min { background: #fef6e7; color: #8a5a00; }
+  .avoid { page-break-inside: avoid; }
+  h2, h3 { page-break-after: avoid; }
+  footer { display: none; }
+</style></head><body>
+
+<h1>Set Menu Configuration Guide</h1>
+<p class="sub">Review findings for <strong>Prairie Plus International Oy</strong> &mdash; IZAKAYA SET</p>
+<p class="meta">Prepared 7 November 2026 &middot; Sciometa POS &middot; No changes have been applied to your data</p>
+<div class="rule"></div>
+
+<div class="box">
+  <span class="lbl">Summary</span>
+  <p>We reviewed the six set menus in your organisation. Five are configured correctly. One &mdash; <strong>IZAKAYA SET</strong> &mdash; has a pricing setup that causes the drink to be charged twice over, and contains one component product that is not needed. This guide explains what is happening, why, and how set menus are designed to be configured. <strong>Nothing has been modified</strong>; all changes are left to you.</p>
+</div>
+
+<h2>1. How set menu pricing actually works</h2>
+
+<p>Understanding this one rule explains all of the findings below. When a customer orders a set menu, the POS does <em>not</em> charge the price shown on the set product. Instead the set is broken into its components, and each component is charged its <strong>allocated price</strong> plus the price of any option the customer selected:</p>
+
+<div class="formula">Charged&nbsp;total&nbsp; =&nbsp; &Sigma; ( allocated price&nbsp; +&nbsp; option added price )&nbsp; &times;&nbsp; quantity</div>
+
+<p>Two consequences follow, and both are at the root of the issues found:</p>
+
+<ul>
+  <li><strong>The component product's own price is ignored.</strong> A component priced at &euro;0.00 is perfectly normal and expected &mdash; the allocated price is what the customer pays. Setting a component's price does nothing for the set.</li>
+  <li><strong>Option prices are added on top, not substituted.</strong> This is the critical point. An option's "added price" means exactly that: it is <em>added</em> to the allocated price. It is not the item's menu price.</li>
+</ul>
+
+<div class="box tip">
+  <span class="lbl">The core principle</span>
+  <p>Put the <strong>cheapest</strong> variant's price into the component's <strong>allocated price</strong>, and set each option's <strong>added price</strong> to the <strong>difference</strong> (the upgrade cost) from that cheapest variant. The cheapest option should always be &euro;0.00.</p>
+</div>
+
+<h2>2. Findings</h2>
+
+<h3><span class="issue">ISSUE 1</span>The drink is charged twice &mdash; customers overpay</h3>
+
+<p>In IZAKAYA SET, the <code>Drinks</code> component has an allocated price of <span class="bad">&euro;0.00</span>, while every drink option carries its full menu price as its added price. Because option prices are <em>added</em> to the set, the customer pays the full set price <em>and then</em> the full price of the drink again.</p>
+
+<table class="avoid">
+  <thead><tr><th>Customer orders</th><th class="num">Set price</th><th class="num">Drink option adds</th><th class="num">Actually charged</th><th class="num">Should be</th></tr></thead>
+  <tbody>
+    <tr><td>IZAKAYA SET + COCA COLA</td><td class="num">&euro;8.00</td><td class="num">&euro;4.00</td><td class="num bad">&euro;12.00</td><td class="num good">&euro;8.00</td></tr>
+    <tr><td>IZAKAYA SET + RAMUNE</td><td class="num">&euro;8.00</td><td class="num">&euro;5.00</td><td class="num bad">&euro;13.00</td><td class="num good">&euro;9.00</td></tr>
+    <tr><td>IZAKAYA SET + YUZUKA</td><td class="num">&euro;8.00</td><td class="num">&euro;7.00</td><td class="num bad">&euro;15.00</td><td class="num good">&euro;11.00</td></tr>
+  </tbody>
+</table>
+
+<p>At the same time, the &euro;8.00 set price itself allocates <strong>nothing</strong> to the drink &mdash; all &euro;8.00 sits on the two snacks. So the set, taken on its own, contains a free drink; the drink revenue only appears because the option double-charges. The two errors mask each other, which is why the total looks plausible while both halves are wrong.</p>
+
+<h4 style="font-size:10pt;margin:11pt 0 4pt;">Recommended option values</h4>
+<p>The cheapest drinks are COCA COLA and COCA COLA Zero at &euro;4.00. That &euro;4.00 becomes the allocated price, and each option's added price becomes its difference from &euro;4.00:</p>
+
+<table class="avoid">
+  <thead><tr><th>Drink option</th><th class="num">Current added price</th><th class="num">Recommended added price</th><th>Reason</th></tr></thead>
+  <tbody>
+    <tr><td>COCA COLA</td><td class="num">&euro;4.00</td><td class="num good">&euro;0.00</td><td>Cheapest &mdash; already included in the set price</td></tr>
+    <tr><td>COCA COLA Zero</td><td class="num">&euro;4.00</td><td class="num good">&euro;0.00</td><td>Same price as cheapest</td></tr>
+    <tr><td>RAMUNE</td><td class="num">&euro;5.00</td><td class="num good">&euro;1.00</td><td>&euro;5.00 &minus; &euro;4.00</td></tr>
+    <tr><td>YUZUKA</td><td class="num">&euro;7.00</td><td class="num good">&euro;3.00</td><td>&euro;7.00 &minus; &euro;4.00</td></tr>
+    <tr><td>MATCHATY</td><td class="num">&euro;7.00</td><td class="num good">&euro;3.00</td><td>&euro;7.00 &minus; &euro;4.00</td></tr>
+    <tr><td>Non Alcohol Beer</td><td class="num">&euro;7.00</td><td class="num good">&euro;3.00</td><td>&euro;7.00 &minus; &euro;4.00</td></tr>
+    <tr><td>Peach Soda</td><td class="num">&euro;7.00</td><td class="num good">&euro;3.00</td><td>&euro;7.00 &minus; &euro;4.00</td></tr>
+  </tbody>
+</table>
+
+<div class="box warn">
+  <span class="lbl">Decision required before changing anything</span>
+  <p>Raising the <code>Drinks</code> allocated price from &euro;0.00 to &euro;4.00 makes the components sum to <strong>&euro;12.00</strong> (&euro;4.00 drink + &euro;4.00 &times; 2 snacks), so the set product's own price must also change to &euro;12.00. The system validates that the set price equals the sum of allocated prices and will reject a mismatch.</p>
+  <p>You therefore need to decide which price you actually intend to sell at:</p>
+  <ul style="margin-bottom:0">
+    <li><strong>Option A &mdash; sell at &euro;12.00.</strong> Set price becomes &euro;12.00. Snacks stay at &euro;4.00 each. This keeps your current per-item values and is the honest sum of what the set contains.</li>
+    <li><strong>Option B &mdash; keep &euro;8.00.</strong> Set price stays &euro;8.00, drink allocated &euro;4.00, and each snack's allocated price drops to &euro;2.00. This presents the set as a discount on the snacks.</li>
+  </ul>
+</div>
+
+<h3><span class="issue">ISSUE 2</span>The "Ice" product should not be a component</h3>
+
+<p>IZAKAYA SET currently lists <code>Ice</code> as a third component product. It should be removed. Ice is a <em>preference</em>, not an item &mdash; it has no price and no kitchen cost, and both of its choices (<code>Ice</code> / <code>No Ice</code>) are &euro;0.00.</p>
+
+<p>An option group named <code>Ice</code> already exists in your organisation with exactly those two choices. The correct setup is simply to <strong>attach that existing option group to the <code>Drinks</code> component</strong>, which is the item the preference actually applies to. The customer then picks their drink and their ice preference in one step, as part of choosing the drink.</p>
+
+<p>Keeping Ice as a component also has a side effect worth noting: it prints as a separate zero-priced line on receipts and kitchen tickets, which adds noise for staff without conveying anything the drink line could not carry.</p>
+
+<div class="box">
+  <span class="lbl">Also worth correcting</span>
+  <p>The <code>Ice</code> product has <strong>no category assigned</strong>. Regardless of the set menu, products without a category can behave unpredictably in menu listings and reports. If you keep the product for any other purpose, please assign it a category; if not, it can be retired once removed from the set.</p>
+</div>
+
+<h3><span class="issue">ISSUE 3</span>Leftover test and duplicate options</h3>
+
+<p>The <code>Drinks</code> option group contains three inactive leftovers from earlier setup. They are currently inactive and so do not affect customers, but they make the group harder to maintain and risk being re-activated by mistake:</p>
+
+<table class="avoid">
+  <thead><tr><th>Option</th><th class="num">Added price</th><th>Status</th><th>Recommendation</th></tr></thead>
+  <tbody>
+    <tr><td>Coke</td><td class="num">&euro;4.00</td><td>Inactive</td><td>Delete &mdash; duplicate of COCA COLA</td></tr>
+    <tr><td>test</td><td class="num">&euro;0.01</td><td>Inactive</td><td>Delete &mdash; test data</td></tr>
+    <tr><td>test</td><td class="num">&euro;1.00</td><td>Inactive</td><td>Delete &mdash; test data</td></tr>
+  </tbody>
+</table>
+
+<h3><span class="issue">ISSUE 4</span>Two different products both named "Snacks"</h3>
+
+<p>Your organisation has two separate products named <code>Snacks</code>, priced &euro;4.00 and &euro;3.00. Both share the same <code>Snack option</code> group, and the &euro;3.00 one is used only by <em>[KIRIN BEER] IZAKAYA STYLE</em>.</p>
+
+<p>If the price difference is deliberate, nothing is broken &mdash; the allocated prices are consistent in both sets. However, because the names are identical, staff editing one set cannot tell which product they are looking at, and a future edit could easily be applied to the wrong one. We suggest renaming them to something distinguishable, for example <code>Snacks (Izakaya)</code> and <code>Snacks (Kirin)</code>.</p>
+
+<h3><span class="issue">ISSUE 5</span>Selection limits left blank</h3>
+
+<p>The <code>Drinks</code> group has no minimum selection set, and the <code>Ice</code> group has neither a minimum nor a maximum. Both are single-choice groups, so in practice this is unlikely to cause problems today. Setting them explicitly &mdash; minimum 1, maximum 1 &mdash; makes the intent unambiguous and protects against the behaviour changing if the group type is ever edited.</p>
+
+<h2>3. Checklist of recommended changes</h2>
+
+<table class="avoid">
+  <thead><tr><th style="width:4%"></th><th>Change</th><th style="width:16%">Priority</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td>Decide the intended selling price for IZAKAYA SET (&euro;12.00 or &euro;8.00)</td><td><span class="tag t-fix">Decide first</span></td></tr>
+    <tr><td class="num">2</td><td>Set the <code>Drinks</code> component allocated price to &euro;4.00</td><td><span class="tag t-fix">Required</span></td></tr>
+    <tr><td class="num">3</td><td>Change each drink option's added price to the difference from &euro;4.00</td><td><span class="tag t-fix">Required</span></td></tr>
+    <tr><td class="num">4</td><td>Update the set product price, and the snack allocated prices if choosing Option B</td><td><span class="tag t-fix">Required</span></td></tr>
+    <tr><td class="num">5</td><td>Remove <code>Ice</code> from the set's components</td><td><span class="tag t-fix">Required</span></td></tr>
+    <tr><td class="num">6</td><td>Attach the existing <code>Ice</code> option group to the <code>Drinks</code> component</td><td><span class="tag t-fix">Required</span></td></tr>
+    <tr><td class="num">7</td><td>Delete the <code>Coke</code> and two <code>test</code> options</td><td><span class="tag t-min">Housekeeping</span></td></tr>
+    <tr><td class="num">8</td><td>Rename the two <code>Snacks</code> products distinguishably</td><td><span class="tag t-min">Housekeeping</span></td></tr>
+    <tr><td class="num">9</td><td>Set min/max selections on the <code>Drinks</code> and <code>Ice</code> groups</td><td><span class="tag t-min">Housekeeping</span></td></tr>
+    <tr><td class="num">10</td><td>Assign a category to <code>Ice</code>, or retire the product</td><td><span class="tag t-min">Housekeeping</span></td></tr>
+  </tbody>
+</table>
+
+<h2>4. Set menu setup tips</h2>
+
+<p>These rules apply to every set menu you build in future. The five other sets in your organisation already follow them.</p>
+
+<h3>Price the cheapest variant in, and charge only upgrades</h3>
+<p>Decide the cheapest acceptable choice for each component. Its price becomes the component's allocated price, and its option becomes &euro;0.00. Every other option is priced at the <em>difference</em>. A quick test: select the cheapest option for every component &mdash; the total must equal the advertised set price exactly.</p>
+
+<h3>Ignore the component product's own price</h3>
+<p>It is not used when charging a set. Components priced at &euro;0.00 are normal. Set the money on the allocated price, every time.</p>
+
+<h3>Use option groups for preferences, components for items</h3>
+<p>If a choice has no price and no separate cost &mdash; ice, spice level, sauce on the side, chopsticks &mdash; it belongs in an option group attached to the item it modifies. Reserve components for things the kitchen or bar actually produces and that carry revenue.</p>
+
+<h3>Keep the set price equal to the sum of its allocated prices</h3>
+<p>The system checks this on save with a tolerance of one cent. Even within that tolerance, a mismatch means the displayed price and the charged price differ slightly, so aim for an exact match rather than a near one.</p>
+
+<h3>Remember that free allowances do not pool across components</h3>
+<p>Each component's option pricing is calculated independently. A free-choice allowance on one component's option group does not carry over to another component. Configure each component's allowances on their own terms.</p>
+
+<h3>Test every set before it goes live</h3>
+<p>Add the set to a cart and step through each combination, starting with the all-cheapest selection and then one upgrade at a time. Confirm the totals against your intended menu prices. This takes a few minutes and catches exactly the kind of double-charge described in Issue 1.</p>
+
+<div class="box tip">
+  <span class="lbl">Before you change anything</span>
+  <p>Please confirm the intended selling price for IZAKAYA SET first (item 1 in the checklist). All of the price-related edits depend on that single decision, and making them in the wrong order will trip the set-price validation. We are happy to apply the whole set of changes for you once you have decided &mdash; just let us know which option you prefer.</p>
+</div>
+
+<footer>Sciometa POS &middot; Set Menu Configuration Guide &middot; Prairie Plus International Oy &middot; 7 November 2026</footer>
+</body></html>

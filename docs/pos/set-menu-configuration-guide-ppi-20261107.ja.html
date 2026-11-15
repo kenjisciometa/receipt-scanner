@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<title>セットメニュー設定ガイド</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+         font-size: 9.5pt; line-height: 1.75; color: #1a1d21; margin: 0;
+         word-break: normal; line-break: strict; overflow-wrap: anywhere; }
+  h1 { font-size: 19pt; line-height: 1.35; margin: 0 0 5pt; font-weight: 600; }
+  .sub { font-size: 10pt; color: #5b6470; margin: 0 0 3pt; }
+  .meta { font-size: 8pt; color: #8a929c; margin: 0; }
+  .rule { height: 3px; background: #1a1d21; margin: 10pt 0 16pt; }
+  h2 { font-size: 12.5pt; margin: 20pt 0 7pt; padding-bottom: 4pt; font-weight: 600;
+       border-bottom: 1px solid #d4d9df; }
+  h3 { font-size: 10.5pt; margin: 13pt 0 5pt; font-weight: 600; }
+  h4 { font-size: 10pt; margin: 11pt 0 4pt; font-weight: 600; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 7pt; padding-left: 16pt; }
+  li { margin-bottom: 4pt; }
+  table { width: 100%; border-collapse: collapse; margin: 7pt 0 10pt; font-size: 8.5pt; }
+  th { background: #f0f2f5; text-align: left; padding: 5pt 7pt; font-weight: 600;
+       border-bottom: 1.5px solid #c8cfd6; line-height: 1.5; }
+  td { padding: 5pt 7pt; border-bottom: 1px solid #e6eaee; vertical-align: top; line-height: 1.6; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8pt;
+         background: #f0f2f5; padding: 1pt 3pt; border-radius: 2px; }
+  .bad { color: #b4232a; font-weight: 600; }
+  .good { color: #1d6b3f; font-weight: 600; }
+  .box { border: 1px solid #d4d9df; border-left: 3px solid #1a1d21;
+         background: #f7f9fa; padding: 8pt 11pt; margin: 9pt 0; }
+  .box.warn { border-left-color: #b4232a; background: #fdf5f5; }
+  .box.tip  { border-left-color: #1d6b3f; background: #f4faf6; }
+  .box p:last-child, .box ul:last-child { margin-bottom: 0; }
+  .box .lbl { font-size: 8pt; font-weight: 700; letter-spacing: 0.4pt;
+              color: #5b6470; display: block; margin-bottom: 4pt; }
+  .issue { background: #1a1d21; color: #fff; font-size: 8pt; font-weight: 700;
+           padding: 1.5pt 6pt; border-radius: 9pt; margin-right: 6pt;
+           letter-spacing: 0.3pt; vertical-align: 1.5pt; white-space: nowrap; }
+  .formula { font-family: "SF Mono", Menlo, monospace; font-size: 9pt;
+             background: #1a1d21; color: #fff; padding: 9pt 12pt;
+             border-radius: 3px; margin: 8pt 0; text-align: center; }
+  .tag { font-size: 7.5pt; font-weight: 700; padding: 1pt 5pt; border-radius: 2px;
+         white-space: nowrap; }
+  .t-fix { background: #fdeaea; color: #b4232a; }
+  .t-min { background: #fef6e7; color: #8a5a00; }
+  .avoid { page-break-inside: avoid; }
+  h2, h3, h4 { page-break-after: avoid; }
+</style></head><body>
+
+<h1>セットメニュー設定ガイド</h1>
+<p class="sub"><strong>Prairie Plus International Oy</strong> 様 ― IZAKAYA SET の確認結果</p>
+<p class="meta">2026年11月7日作成 ・ Sciometa POS ・ データの変更は一切行っていません</p>
+<div class="rule"></div>
+
+<div class="box">
+  <span class="lbl">概要</span>
+  <p>貴組織に登録されている6件のセットメニューを確認いたしました。5件は正しく設定されています。1件 ―― <strong>IZAKAYA SET</strong> ―― に、ドリンク代が二重に請求される設定の誤りと、不要なコンポーネント商品が含まれています。本書では、何が起きているのか、その原因、そしてセットメニュー本来の設定方法をご説明します。<strong>データの変更は行っておりません</strong>。修正はすべてお客様のご判断にお任せします。</p>
+</div>
+
+<h2>1. セットメニューの価格計算の仕組み</h2>
+
+<p>この1つのルールを押さえていただければ、以下のすべての指摘内容をご理解いただけます。お客様がセットメニューを注文された際、POSはセット商品に設定された価格では請求しません。セットは各コンポーネントに分解され、コンポーネントごとに<strong>按分価格（allocated price）</strong>と、選択されたオプションの価格を合算して請求します。</p>
+
+<div class="formula">請求額 ＝ Σ（按分価格 ＋ オプション追加価格）× 数量</div>
+
+<p>ここから2つの帰結が導かれます。今回の問題はいずれもこれが原因です。</p>
+
+<ul>
+  <li><strong>コンポーネント商品自体の価格は使われません。</strong> コンポーネントの価格が €0.00 であることは正常かつ想定どおりの状態です ―― お客様が支払うのは按分価格です。コンポーネントの価格を設定しても、セットの請求額には影響しません。</li>
+  <li><strong>オプション価格は「上乗せ」であり、「置き換え」ではありません。</strong> ここが最も重要な点です。オプションの「追加価格」とは文字どおり按分価格に<em>加算</em>される金額であり、その商品の単品価格ではありません。</li>
+</ul>
+
+<div class="box tip">
+  <span class="lbl">設定の基本原則</span>
+  <p>コンポーネントの<strong>按分価格</strong>には<strong>最も安い</strong>選択肢の価格を設定し、各オプションの<strong>追加価格</strong>にはそこからの<strong>差額</strong>（アップグレード料金）を設定します。最も安いオプションの追加価格は、常に €0.00 になります。</p>
+</div>
+
+<h2>2. 確認された問題</h2>
+
+<h3><span class="issue">問題 1</span>ドリンク代が二重請求されています</h3>
+
+<p>IZAKAYA SET では <code>Drinks</code> コンポーネントの按分価格が <span class="bad">€0.00</span> に設定されている一方、各ドリンクオプションの追加価格には単品価格がそのまま入力されています。オプション価格はセット価格に<em>加算</em>されるため、お客様はセット価格を支払ったうえで、さらにドリンクの全額を支払うことになります。</p>
+
+<table class="avoid">
+  <thead><tr><th>ご注文内容</th><th class="num">セット価格</th><th class="num">オプション加算</th><th class="num">実際の請求額</th><th class="num">本来の金額</th></tr></thead>
+  <tbody>
+    <tr><td>IZAKAYA SET ＋ COCA COLA</td><td class="num">€8.00</td><td class="num">€4.00</td><td class="num bad">€12.00</td><td class="num good">€8.00</td></tr>
+    <tr><td>IZAKAYA SET ＋ RAMUNE</td><td class="num">€8.00</td><td class="num">€5.00</td><td class="num bad">€13.00</td><td class="num good">€9.00</td></tr>
+    <tr><td>IZAKAYA SET ＋ YUZUKA</td><td class="num">€8.00</td><td class="num">€7.00</td><td class="num bad">€15.00</td><td class="num good">€11.00</td></tr>
+  </tbody>
+</table>
+
+<p>同時に、€8.00 というセット価格自体はドリンクに<strong>まったく配分されておらず</strong>、€8.00 すべてが2品のスナックに乗っています。つまりセット単体で見ると、ドリンクが無料で付いている状態です。ドリンクの売上はオプションの二重請求によってのみ発生しています。</p>
+
+<p>この2つの誤りは互いを打ち消し合っているため、合計金額が一見もっともらしく見えてしまいます。しかし実際には両方とも誤っています。<strong>片方だけを修正すると、かえって金額がずれる</strong>点にご注意ください。</p>
+
+<h4>推奨するオプション価格</h4>
+<p>最も安いドリンクは COCA COLA と COCA COLA Zero の €4.00 です。この €4.00 を按分価格とし、各オプションの追加価格は €4.00 からの差額に設定します。</p>
+
+<table class="avoid">
+  <thead><tr><th>ドリンクオプション</th><th class="num">現在の追加価格</th><th class="num">推奨する追加価格</th><th>理由</th></tr></thead>
+  <tbody>
+    <tr><td>COCA COLA</td><td class="num">€4.00</td><td class="num good">€0.00</td><td>最安 ― セット価格に含まれるため</td></tr>
+    <tr><td>COCA COLA Zero</td><td class="num">€4.00</td><td class="num good">€0.00</td><td>最安と同価格のため</td></tr>
+    <tr><td>RAMUNE</td><td class="num">€5.00</td><td class="num good">€1.00</td><td>€5.00 − €4.00</td></tr>
+    <tr><td>YUZUKA</td><td class="num">€7.00</td><td class="num good">€3.00</td><td>€7.00 − €4.00</td></tr>
+    <tr><td>MATCHATY</td><td class="num">€7.00</td><td class="num good">€3.00</td><td>€7.00 − €4.00</td></tr>
+    <tr><td>Non Alcohol Beer</td><td class="num">€7.00</td><td class="num good">€3.00</td><td>€7.00 − €4.00</td></tr>
+    <tr><td>Peach Soda</td><td class="num">€7.00</td><td class="num good">€3.00</td><td>€7.00 − €4.00</td></tr>
+  </tbody>
+</table>
+
+<div class="box warn">
+  <span class="lbl">修正前にご判断いただきたい点</span>
+  <p><code>Drinks</code> の按分価格を €0.00 から €4.00 に変更すると、コンポーネントの合計は <strong>€12.00</strong>（ドリンク €4.00 ＋ スナック €4.00 × 2）となるため、セット商品自体の価格も €12.00 に変更する必要があります。システムはセット価格と按分価格の合計が一致することを検証しており、不一致の場合は保存が拒否されます。</p>
+  <p>つきましては、どちらの価格で販売されるおつもりかをご判断ください。</p>
+  <ul>
+    <li><strong>案A ― €12.00 で販売する。</strong> セット価格を €12.00 に変更します。スナックは €4.00 のまま据え置きです。現在の各商品の価格設定を維持でき、セットの内容に見合った合計金額になります。</li>
+    <li><strong>案B ― €8.00 を維持する。</strong> セット価格は €8.00 のまま、ドリンクの按分価格を €4.00 とし、各スナックの按分価格を €2.00 に引き下げます。スナックを割り引いたセットという位置づけになります。</li>
+  </ul>
+</div>
+
+<h3><span class="issue">問題 2</span>「Ice」はコンポーネントにすべきではありません</h3>
+
+<p>現在 IZAKAYA SET には3つ目のコンポーネント商品として <code>Ice</code> が登録されていますが、これは削除すべきです。氷は商品ではなく<em>好みの指定</em>であり、価格も調理コストも発生しません。選択肢である <code>Ice</code> / <code>No Ice</code> はいずれも €0.00 です。</p>
+
+<p>貴組織にはすでに、この2つの選択肢を持つ <code>Ice</code> という名称のオプショングループが存在します。正しい設定方法は、<strong>その既存のオプショングループを <code>Drinks</code> コンポーネントに付与する</strong>ことです。これにより、お客様はドリンクの選択と氷の有無を一度の操作で指定できるようになります。</p>
+
+<p>なお、Ice をコンポーネントのままにしておくと、レシートやキッチン伝票に €0 の行が独立して印字されます。ドリンクの行に含められる情報であるにもかかわらず、スタッフにとっては確認すべき行が増えることになります。</p>
+
+<div class="box">
+  <span class="lbl">あわせてご確認ください</span>
+  <p><code>Ice</code> 商品には<strong>カテゴリが設定されていません</strong>。セットメニューとは別の問題として、カテゴリ未設定の商品はメニュー一覧やレポートで予期しない挙動を示すことがあります。他の用途でこの商品を残される場合はカテゴリをご設定ください。不要であれば、セットから削除したうえで廃止いただけます。</p>
+</div>
+
+<h3><span class="issue">問題 3</span>テスト用・重複のオプションが残っています</h3>
+
+<p><code>Drinks</code> オプショングループに、過去の設定作業で作られたと思われる無効状態の選択肢が3件残っています。現在は無効のためお客様への影響はありませんが、グループの管理が煩雑になり、誤って有効化されるおそれがあります。</p>
+
+<table class="avoid">
+  <thead><tr><th>オプション</th><th class="num">追加価格</th><th>状態</th><th>推奨対応</th></tr></thead>
+  <tbody>
+    <tr><td>Coke</td><td class="num">€4.00</td><td>無効</td><td>削除 ― COCA COLA と重複</td></tr>
+    <tr><td>test</td><td class="num">€0.01</td><td>無効</td><td>削除 ― テストデータ</td></tr>
+    <tr><td>test</td><td class="num">€1.00</td><td>無効</td><td>削除 ― テストデータ</td></tr>
+  </tbody>
+</table>
+
+<h3><span class="issue">問題 4</span>「Snacks」という同名の商品が2つ存在します</h3>
+
+<p>貴組織には <code>Snacks</code> という同じ名称の商品が2つ登録されており、価格はそれぞれ €4.00 と €3.00 です。両方とも同じ <code>Snack option</code> グループを共有しており、€3.00 の方は <em>[KIRIN BEER] IZAKAYA STYLE</em> でのみ使用されています。</p>
+
+<p>この価格差が意図的なものであれば、不具合ではありません ―― 按分価格はどちらのセットでも整合が取れています。ただし名称が同一であるため、セットを編集する際にどちらの商品を操作しているのか判別できず、将来の編集作業で誤った方に変更を加えてしまうおそれがあります。<code>Snacks (Izakaya)</code>、<code>Snacks (Kirin)</code> のように区別できる名称へのご変更をお勧めします。</p>
+
+<h3><span class="issue">問題 5</span>選択数の上限・下限が未設定です</h3>
+
+<p><code>Drinks</code> グループには最小選択数が設定されておらず、<code>Ice</code> グループには最小・最大のいずれも設定されていません。どちらも単一選択（single）のグループであるため、現時点で問題が生じる可能性は低い状態です。ただし、最小1・最大1と明示的に設定しておくことで設定意図が明確になり、将来グループの種別が変更された場合にも挙動が変わらないよう保護できます。</p>
+
+<h2>3. 修正項目チェックリスト</h2>
+
+<table class="avoid">
+  <thead><tr><th style="width:5%"></th><th>対応内容</th><th style="width:20%">優先度</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td>IZAKAYA SET の販売価格を決定する（€12.00 または €8.00）</td><td><span class="tag t-fix">最初に決定</span></td></tr>
+    <tr><td class="num">2</td><td><code>Drinks</code> コンポーネントの按分価格を €4.00 に設定する</td><td><span class="tag t-fix">必須</span></td></tr>
+    <tr><td class="num">3</td><td>各ドリンクオプションの追加価格を €4.00 からの差額に変更する</td><td><span class="tag t-fix">必須</span></td></tr>
+    <tr><td class="num">4</td><td>セット商品の価格を更新する（案Bの場合はスナックの按分価格も変更）</td><td><span class="tag t-fix">必須</span></td></tr>
+    <tr><td class="num">5</td><td>セットのコンポーネントから <code>Ice</code> を削除する</td><td><span class="tag t-fix">必須</span></td></tr>
+    <tr><td class="num">6</td><td>既存の <code>Ice</code> オプショングループを <code>Drinks</code> に付与する</td><td><span class="tag t-fix">必須</span></td></tr>
+    <tr><td class="num">7</td><td><code>Coke</code> と <code>test</code> 2件のオプションを削除する</td><td><span class="tag t-min">整理</span></td></tr>
+    <tr><td class="num">8</td><td>2つの <code>Snacks</code> 商品を区別できる名称に変更する</td><td><span class="tag t-min">整理</span></td></tr>
+    <tr><td class="num">9</td><td><code>Drinks</code> と <code>Ice</code> グループに最小・最大選択数を設定する</td><td><span class="tag t-min">整理</span></td></tr>
+    <tr><td class="num">10</td><td><code>Ice</code> にカテゴリを設定する、または商品を廃止する</td><td><span class="tag t-min">整理</span></td></tr>
+  </tbody>
+</table>
+
+<h2>4. セットメニュー設定のコツ</h2>
+
+<p>以下は、今後セットメニューを作成される際に共通して当てはまる原則です。貴組織の他の5件のセットは、すでにこれらに沿って設定されています。</p>
+
+<h3>最安の選択肢を価格に含め、差額のみを課金する</h3>
+<p>コンポーネントごとに「最も安い選択肢」を決めます。その価格をコンポーネントの按分価格とし、対応するオプションの追加価格は €0.00 にします。それ以外のオプションには<em>差額</em>を設定します。確認方法は簡単です ―― すべてのコンポーネントで最安の選択肢を選んだとき、合計がセットの表示価格とぴったり一致すれば正しく設定できています。</p>
+
+<h3>コンポーネント商品自体の価格は気にしない</h3>
+<p>セットの請求時には使用されません。コンポーネントの価格が €0.00 であることは正常です。金額は必ず按分価格の側に設定してください。</p>
+
+<h3>「好み」はオプショングループ、「商品」はコンポーネント</h3>
+<p>氷の有無、辛さの調整、ソースの別添え、箸の要否など、価格もコストも発生しない選択は、対象の商品に付与するオプショングループで表現します。コンポーネントは、キッチンやバーが実際に提供し、売上が発生するものに限定してください。</p>
+
+<h3>セット価格と按分価格の合計を一致させる</h3>
+<p>システムは保存時に1セントの許容差でこれを検証します。許容範囲内であっても、不一致があれば表示価格と請求価格がわずかにずれます。「ほぼ一致」ではなく「完全一致」を目指してください。</p>
+
+<h3>無料選択枠はコンポーネント間で共有されない</h3>
+<p>オプションの価格計算はコンポーネントごとに独立して行われます。あるコンポーネントのオプショングループに設定した無料選択枠が、別のコンポーネントに引き継がれることはありません。無料枠は各コンポーネントで個別にご設定ください。</p>
+
+<h3>公開前に必ず動作確認を行う</h3>
+<p>セットをカートに追加し、組み合わせを一つずつ確認します。まず全コンポーネントで最安の選択肢を選び、その後1つずつアップグレードしてください。各段階の合計金額が意図した価格と一致するかをご確認ください。数分で完了する作業ですが、問題1のような二重請求はこの手順で確実に発見できます。</p>
+
+<div class="box tip">
+  <span class="lbl">修正に着手される前に</span>
+  <p>まず IZAKAYA SET の販売価格（チェックリストの項目1）をご決定ください。価格に関する修正はすべてこの1つの判断に依存しており、順序を誤るとセット価格の検証エラーが発生します。ご決定いただければ、一連の修正を弊社で適用することも可能です。どちらの案をご希望か、お知らせください。</p>
+</div>
+
+</body></html>
